@@ -1,0 +1,627 @@
+import { GameSceneInterface, getSceneManager } from './SceneManager';
+import { MissionDefinition } from '../missions/MissionDefinition';
+import { MapManager, TerrainType } from '../map/MapManager';
+import { MAP_WIDTH, MAP_HEIGHT } from '../config';
+
+const TILE_PX = 12;
+
+const TERRAIN_COLORS: Record<number, string> = {
+  [TerrainType.GRASS]: '#4a6b3a',
+  [TerrainType.WATER]: '#2a4a6a',
+  [TerrainType.GOLD_MINE]: '#c8a84e',
+  [TerrainType.STONE]: '#6a6a6a',
+  [TerrainType.DIRT]: '#7a6a4a',
+  [TerrainType.FOREST]: '#2a4a2a',
+  [TerrainType.METAL_FLOOR]: '#50525a',
+  [TerrainType.HULL_WALL]: '#23252a',
+};
+
+// Ensure shared fonts are loaded
+let fontsReady = false;
+function ensureFonts(): void {
+  if (fontsReady) return;
+  fontsReady = true;
+  if (!document.querySelector('link[href*="Teko"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Share+Tech+Mono&display=swap';
+    document.head.appendChild(link);
+  }
+}
+
+let stylesInjected = false;
+function injectDropStyles(): void {
+  if (stylesInjected) return;
+  stylesInjected = true;
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes ds-scanline {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+    @keyframes ds-pulse-ring {
+      0%, 100% { opacity: 0.25; transform: translate(-50%,-50%) scale(1); }
+      50% { opacity: 0.5; transform: translate(-50%,-50%) scale(1.08); }
+    }
+    @keyframes ds-header-in {
+      from { opacity: 0; transform: translateY(-16px); letter-spacing: 14px; }
+      to { opacity: 1; transform: translateY(0); letter-spacing: 6px; }
+    }
+    @keyframes ds-fade-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes ds-glow-pulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(200,152,42,0.15); }
+      50% { box-shadow: 0 0 18px rgba(200,152,42,0.3); }
+    }
+    .ds-zone-btn {
+      transition: all 0.15s;
+    }
+    .ds-zone-btn:hover {
+      border-color: rgba(200,152,42,0.5) !important;
+      color: #e8dcc0 !important;
+      background: rgba(200,152,42,0.06) !important;
+    }
+    .ds-zone-btn[data-active="true"] {
+      border-color: rgba(200,152,42,0.5) !important;
+      background: rgba(200,152,42,0.08) !important;
+      color: #c8982a !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+const LEGEND_ITEMS: { color: string; label: string; round?: boolean }[] = [
+  { color: '#4a6b3a', label: 'GRASS' },
+  { color: '#2a4a6a', label: 'WATER' },
+  { color: '#2a4a2a', label: 'FOREST' },
+  { color: '#6a6a6a', label: 'STONE' },
+  { color: '#7a6a4a', label: 'DIRT' },
+  { color: '#c8a84e', label: 'GOLD' },
+  { color: '#aa3333', label: 'ENEMY', round: true },
+  { color: '#4488ff', label: 'OBJ', round: true },
+];
+
+export class DropSiteScene implements GameSceneInterface {
+  id = 'DropSiteScene';
+
+  private container: HTMLDivElement | null = null;
+  private canvas: HTMLCanvasElement | null = null;
+  private mission!: MissionDefinition;
+  private mapManager!: MapManager;
+  private selectedX: number = -1;
+  private selectedY: number = -1;
+  private hoverX: number = -1;
+  private hoverY: number = -1;
+  private validZones: { x: number; y: number; label: string }[] = [];
+
+  create(data?: { mission?: MissionDefinition }): void {
+    ensureFonts();
+    injectDropStyles();
+
+    if (!data?.mission) {
+      getSceneManager().start('MissionSelectScene');
+      return;
+    }
+    this.mission = data.mission;
+
+    this.mapManager = new MapManager();
+    this.mapManager.loadMissionTerrain(this.mission);
+
+    this.validZones = this.computeDropZones();
+    // No selection yet — marker follows cursor until first click
+    this.selectedX = -1;
+    this.selectedY = -1;
+
+    this.buildUI();
+    this.drawMap();
+  }
+
+  private computeDropZones(): { x: number; y: number; label: string }[] {
+    const zones: { x: number; y: number; label: string }[] = [];
+    const margin = 4;
+    const campMinDist = 8;
+
+    const candidates = [
+      { x: margin + 2, y: margin + 2, label: 'NW Quadrant' },
+      { x: MAP_WIDTH - margin - 2, y: margin + 2, label: 'NE Quadrant' },
+      { x: margin + 2, y: MAP_HEIGHT - margin - 2, label: 'SW Quadrant' },
+      { x: MAP_WIDTH - margin - 2, y: MAP_HEIGHT - margin - 2, label: 'SE Quadrant' },
+      { x: Math.floor(MAP_WIDTH / 2), y: margin + 2, label: 'North Edge' },
+      { x: Math.floor(MAP_WIDTH / 2), y: MAP_HEIGHT - margin - 2, label: 'South Edge' },
+      { x: margin + 2, y: Math.floor(MAP_HEIGHT / 2), label: 'West Edge' },
+      { x: MAP_WIDTH - margin - 2, y: Math.floor(MAP_HEIGHT / 2), label: 'East Edge' },
+    ];
+
+    for (const c of candidates) {
+      let tooClose = false;
+      for (const camp of this.mission.enemyCamps) {
+        const dist = Math.abs(c.x - camp.tileX) + Math.abs(c.y - camp.tileY);
+        if (dist < campMinDist) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+      if (!this.mapManager.isWalkable(c.x, c.y)) continue;
+      zones.push(c);
+    }
+
+    const hasDefault = zones.some(z =>
+      z.x === this.mission.playerStartX && z.y === this.mission.playerStartY
+    );
+    if (!hasDefault) {
+      zones.unshift({ x: this.mission.playerStartX, y: this.mission.playerStartY, label: 'Designated LZ' });
+    }
+
+    return zones;
+  }
+
+  private buildUI(): void {
+    this.container = document.createElement('div');
+    this.container.id = 'drop-site-ui';
+    Object.assign(this.container.style, {
+      position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
+      zIndex: '10', overflow: 'hidden',
+      fontFamily: '"Share Tech Mono", monospace',
+      color: '#c8bfa0',
+      background: 'linear-gradient(160deg, #0a0a0e 0%, #12100c 40%, #0e0c08 100%)',
+      display: 'flex', flexDirection: 'column',
+    });
+
+    const mapW = MAP_WIDTH * TILE_PX;
+    const mapH = MAP_HEIGHT * TILE_PX;
+
+    this.container.innerHTML = `
+      <!-- Atmospheric layers -->
+      <div style="position:absolute;inset:0;pointer-events:none;overflow:hidden;">
+        <div style="position:absolute;inset:0;opacity:0.015;
+          background:repeating-linear-gradient(45deg,transparent,transparent 18px,#c8982a 18px,#c8982a 20px);"></div>
+        <div style="position:absolute;left:0;right:0;height:2px;
+          background:linear-gradient(90deg,transparent,rgba(200,191,160,0.05),transparent);
+          animation:ds-scanline 8s linear infinite;"></div>
+        <div style="position:absolute;inset:0;
+          background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.6) 100%);"></div>
+      </div>
+
+      <!-- Top bar -->
+      <div style="position:relative;display:flex;align-items:center;padding:14px 28px;
+        border-bottom:1px solid rgba(200,152,42,0.1);flex-shrink:0;
+        background:linear-gradient(180deg,rgba(200,152,42,0.03) 0%,transparent 100%);">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:3px;height:24px;background:#c8982a;"></div>
+          <div>
+            <div style="font-family:'Teko',sans-serif;font-size:13px;font-weight:500;
+              color:rgba(200,152,42,0.45);letter-spacing:3px;">DROP SITE SELECTION // ORBITAL AUSPEX</div>
+          </div>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="font-size:10px;color:rgba(200,191,160,0.25);letter-spacing:2px;">
+          ${this.mission.name.toUpperCase()}</div>
+      </div>
+
+      <!-- Main content -->
+      <div style="position:relative;flex:1;display:flex;align-items:center;justify-content:center;
+        padding:24px;gap:32px;overflow:auto;">
+
+        <!-- Left: Map -->
+        <div style="display:flex;flex-direction:column;gap:12px;animation:ds-fade-in 0.4s ease-out;">
+          <!-- Map frame -->
+          <div style="position:relative;border:1px solid rgba(200,152,42,0.15);
+            box-shadow:0 0 20px rgba(0,0,0,0.4), inset 0 0 30px rgba(0,0,0,0.2);
+            animation:ds-glow-pulse 4s ease-in-out infinite;">
+            <!-- Corner decorations -->
+            <div style="position:absolute;top:-1px;left:-1px;width:12px;height:12px;
+              border-top:2px solid rgba(200,152,42,0.4);border-left:2px solid rgba(200,152,42,0.4);pointer-events:none;"></div>
+            <div style="position:absolute;top:-1px;right:-1px;width:12px;height:12px;
+              border-top:2px solid rgba(200,152,42,0.4);border-right:2px solid rgba(200,152,42,0.4);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:-1px;left:-1px;width:12px;height:12px;
+              border-bottom:2px solid rgba(200,152,42,0.4);border-left:2px solid rgba(200,152,42,0.4);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:-1px;right:-1px;width:12px;height:12px;
+              border-bottom:2px solid rgba(200,152,42,0.4);border-right:2px solid rgba(200,152,42,0.4);pointer-events:none;"></div>
+
+            <canvas id="drop-map" width="${mapW}" height="${mapH}"
+              style="display:block;cursor:crosshair;image-rendering:pixelated;"></canvas>
+
+            <!-- Coordinate readout -->
+            <div id="drop-coords" style="position:absolute;bottom:6px;right:8px;
+              font-size:9px;color:rgba(200,152,42,0.35);pointer-events:none;letter-spacing:1px;"></div>
+          </div>
+
+          <!-- Legend -->
+          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+            ${LEGEND_ITEMS.map(l => `
+              <div style="display:flex;align-items:center;gap:4px;">
+                <div style="width:8px;height:8px;background:${l.color};
+                  ${l.round ? 'border-radius:50%;' : ''}opacity:0.7;"></div>
+                <div style="font-size:8px;color:rgba(200,191,160,0.25);letter-spacing:1px;">${l.label}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Right: Controls -->
+        <div style="width:220px;flex-shrink:0;display:flex;flex-direction:column;gap:0;
+          animation:ds-fade-in 0.5s ease-out 0.1s both;">
+
+          <!-- Header -->
+          <div style="font-family:'Teko',sans-serif;font-size:36px;font-weight:700;
+            color:#e8dcc0;letter-spacing:6px;line-height:1;margin-bottom:4px;
+            animation:ds-header-in 0.6s ease-out;">DROP SITE</div>
+          <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:2px;margin-bottom:20px;">
+            SELECT LANDING ZONE OR CLICK MAP</div>
+
+          <!-- Landing zones -->
+          <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:8px;">
+            AVAILABLE LANDING ZONES</div>
+          <div id="zone-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:20px;"></div>
+
+          <!-- Intel readout -->
+          <div style="border-top:1px solid rgba(200,152,42,0.06);padding-top:16px;margin-bottom:20px;">
+            <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:10px;">
+              AUSPEX INTEL</div>
+            <div id="drop-info" style="display:flex;flex-direction:column;gap:6px;"></div>
+          </div>
+
+          <!-- Deploy button -->
+          <button id="deploy-btn" style="
+            position:relative;overflow:hidden;
+            padding:12px 0;width:100%;
+            background:linear-gradient(180deg,rgba(196,48,48,0.06) 0%,rgba(196,48,48,0.02) 100%);
+            color:rgba(196,48,48,0.4);
+            border:1px solid rgba(196,48,48,0.2);
+            font-family:'Teko',sans-serif;font-size:20px;font-weight:600;
+            letter-spacing:6px;cursor:not-allowed;
+            transition:all 0.3s;
+          ">SELECT DROP SITE</button>
+
+          <!-- Back -->
+          <button id="back-btn" style="
+            margin-top:8px;padding:7px 0;width:100%;
+            background:transparent;
+            border:1px solid rgba(200,191,160,0.08);
+            color:#4a4a3a;
+            font-family:'Share Tech Mono',monospace;font-size:10px;
+            letter-spacing:2px;cursor:pointer;transition:all 0.2s;
+          ">ABORT</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('game-container')!.appendChild(this.container);
+    this.canvas = this.container.querySelector('#drop-map') as HTMLCanvasElement;
+
+    // Wire zone buttons
+    const zoneList = this.container.querySelector('#zone-list')!;
+    for (let i = 0; i < this.validZones.length; i++) {
+      const zone = this.validZones[i];
+      const isSelected = zone.x === this.selectedX && zone.y === this.selectedY;
+      const btn = document.createElement('button');
+      btn.className = 'ds-zone-btn';
+      btn.dataset.active = isSelected ? 'true' : 'false';
+      Object.assign(btn.style, {
+        padding: '7px 10px',
+        background: isSelected ? 'rgba(200,152,42,0.08)' : 'transparent',
+        border: `1px solid ${isSelected ? 'rgba(200,152,42,0.4)' : 'rgba(200,191,160,0.06)'}`,
+        color: isSelected ? '#c8982a' : '#5a5a4a',
+        fontFamily: '"Share Tech Mono",monospace',
+        fontSize: '10px', cursor: 'pointer', textAlign: 'left',
+        letterSpacing: '1px', width: '100%',
+        animation: `ds-fade-in 0.25s ease-out ${i * 0.04}s both`,
+      });
+
+      btn.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span>${zone.label}</span>
+          <span style="font-size:9px;opacity:0.4;">${zone.x},${zone.y}</span>
+        </div>
+      `;
+
+      btn.addEventListener('click', () => {
+        this.selectedX = zone.x;
+        this.selectedY = zone.y;
+        this.drawMap();
+        this.updateInfo();
+        this.updateZoneButtons();
+        this.enableDeployButton();
+      });
+      zoneList.appendChild(btn);
+    }
+
+    // Canvas click
+    this.canvas.addEventListener('click', (e) => {
+      const rect = this.canvas!.getBoundingClientRect();
+      const tx = Math.floor((e.clientX - rect.left) / TILE_PX);
+      const ty = Math.floor((e.clientY - rect.top) / TILE_PX);
+      if (tx >= 2 && tx < MAP_WIDTH - 2 && ty >= 2 && ty < MAP_HEIGHT - 2) {
+        if (this.mapManager.isWalkable(tx, ty)) {
+          this.selectedX = tx;
+          this.selectedY = ty;
+          this.drawMap();
+          this.updateInfo();
+          this.updateZoneButtons();
+          this.enableDeployButton();
+        }
+      }
+    });
+
+    // Canvas hover
+    this.canvas.addEventListener('mousemove', (e) => {
+      const rect = this.canvas!.getBoundingClientRect();
+      this.hoverX = Math.floor((e.clientX - rect.left) / TILE_PX);
+      this.hoverY = Math.floor((e.clientY - rect.top) / TILE_PX);
+      const coordsEl = this.container!.querySelector('#drop-coords');
+      if (coordsEl) coordsEl.textContent = `${this.hoverX}, ${this.hoverY}`;
+      this.drawMap();
+      this.updateInfo();
+    });
+
+    // Deploy button
+    const deployBtn = this.container.querySelector('#deploy-btn') as HTMLElement;
+    deployBtn.addEventListener('mouseenter', () => {
+      if (this.selectedX < 0) return;
+      deployBtn.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.2) 0%,rgba(200,152,42,0.08) 100%)';
+      deployBtn.style.borderColor = 'rgba(200,152,42,0.6)';
+      deployBtn.style.letterSpacing = '10px';
+    });
+    deployBtn.addEventListener('mouseleave', () => {
+      if (this.selectedX < 0) return;
+      deployBtn.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.1) 0%,rgba(200,152,42,0.03) 100%)';
+      deployBtn.style.borderColor = 'rgba(200,152,42,0.35)';
+      deployBtn.style.letterSpacing = '6px';
+    });
+    deployBtn.addEventListener('click', () => {
+      if (this.selectedX < 0) return;
+      this.deploy();
+    });
+
+    // Back button
+    const backBtn = this.container.querySelector('#back-btn') as HTMLElement;
+    backBtn.addEventListener('mouseenter', () => {
+      backBtn.style.borderColor = 'rgba(200,191,160,0.2)';
+      backBtn.style.color = '#7a7a6a';
+    });
+    backBtn.addEventListener('mouseleave', () => {
+      backBtn.style.borderColor = 'rgba(200,191,160,0.08)';
+      backBtn.style.color = '#4a4a3a';
+    });
+    backBtn.addEventListener('click', () => getSceneManager().start('MissionSelectScene'));
+
+    this.updateInfo();
+  }
+
+  private enableDeployButton(): void {
+    const btn = this.container?.querySelector('#deploy-btn') as HTMLElement | null;
+    if (!btn) return;
+    btn.textContent = 'DEPLOY';
+    btn.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.1) 0%,rgba(200,152,42,0.03) 100%)';
+    btn.style.color = '#c8982a';
+    btn.style.borderColor = 'rgba(200,152,42,0.35)';
+    btn.style.cursor = 'pointer';
+  }
+
+  private updateZoneButtons(): void {
+    if (!this.container) return;
+    this.container.querySelectorAll('.ds-zone-btn').forEach((el, i) => {
+      const zone = this.validZones[i];
+      if (!zone) return;
+      const isSelected = zone.x === this.selectedX && zone.y === this.selectedY;
+      (el as HTMLElement).dataset.active = isSelected ? 'true' : 'false';
+      (el as HTMLElement).style.background = isSelected ? 'rgba(200,152,42,0.08)' : 'transparent';
+      (el as HTMLElement).style.borderColor = isSelected ? 'rgba(200,152,42,0.4)' : 'rgba(200,191,160,0.06)';
+      (el as HTMLElement).style.color = isSelected ? '#c8982a' : '#5a5a4a';
+    });
+  }
+
+  private updateInfo(): void {
+    const infoEl = this.container?.querySelector('#drop-info');
+    if (!infoEl) return;
+
+    // Use hover position if on the map, otherwise fall back to selected
+    const infoX = (this.hoverX >= 0 && this.hoverX < MAP_WIDTH) ? this.hoverX : this.selectedX;
+    const infoY = (this.hoverY >= 0 && this.hoverY < MAP_HEIGHT) ? this.hoverY : this.selectedY;
+
+    let nearestCamp = Infinity;
+    for (const camp of this.mission.enemyCamps) {
+      const d = Math.abs(infoX - camp.tileX) + Math.abs(infoY - camp.tileY);
+      if (d < nearestCamp) nearestCamp = d;
+    }
+
+    let nearestMine = Infinity;
+    const mines = this.mapManager.getAllMines();
+    for (const mine of mines) {
+      const d = Math.abs(infoX - mine.tileX) + Math.abs(infoY - mine.tileY);
+      if (d < nearestMine) nearestMine = d;
+    }
+
+    const dangerColor = nearestCamp < 8 ? '#c43030' : nearestCamp < 14 ? '#c8982a' : '#4a9e4a';
+    const dangerLabel = nearestCamp < 8 ? 'DANGER CLOSE' : nearestCamp < 14 ? 'MODERATE' : 'SAFE';
+
+    infoEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;
+        padding:6px 8px;background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,152,42,0.2);">
+        <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">COORDINATES</div>
+        <div style="font-family:'Teko',sans-serif;font-size:18px;font-weight:600;
+          color:#c8982a;">${infoX}, ${infoY}</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;
+        padding:6px 8px;background:rgba(200,191,160,0.02);border-left:2px solid ${dangerColor}30;">
+        <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">THREAT PROXIMITY</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:${dangerColor};
+            box-shadow:0 0 4px ${dangerColor}60;"></div>
+          <div style="font-family:'Teko',sans-serif;font-size:16px;font-weight:500;
+            color:${dangerColor};">${nearestCamp} tiles</div>
+          <div style="font-size:8px;color:${dangerColor};opacity:0.5;letter-spacing:1px;">${dangerLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;
+        padding:6px 8px;background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,168,78,0.2);">
+        <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">NEAREST GOLD</div>
+        <div style="font-family:'Teko',sans-serif;font-size:16px;font-weight:500;
+          color:#c8a84e;">${nearestMine === Infinity ? '—' : nearestMine + ' tiles'}</div>
+      </div>
+    `;
+  }
+
+  private drawMap(): void {
+    if (!this.canvas) return;
+    const ctx = this.canvas.getContext('2d')!;
+    const grid = this.mapManager.getTerrainGrid();
+
+    // Terrain
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        const t = grid[y]?.[x] ?? TerrainType.GRASS;
+        ctx.fillStyle = TERRAIN_COLORS[t] || '#4a6b3a';
+        ctx.fillRect(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX);
+      }
+    }
+
+    // Subtle grid overlay
+    ctx.strokeStyle = 'rgba(200,191,160,0.03)';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= MAP_WIDTH; x += 10) {
+      ctx.beginPath();
+      ctx.moveTo(x * TILE_PX, 0);
+      ctx.lineTo(x * TILE_PX, MAP_HEIGHT * TILE_PX);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= MAP_HEIGHT; y += 10) {
+      ctx.beginPath();
+      ctx.moveTo(0, y * TILE_PX);
+      ctx.lineTo(MAP_WIDTH * TILE_PX, y * TILE_PX);
+      ctx.stroke();
+    }
+
+    // Enemy camps
+    for (const camp of this.mission.enemyCamps) {
+      // Aggro radius ring
+      ctx.strokeStyle = 'rgba(170,51,51,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(
+        camp.tileX * TILE_PX + TILE_PX / 2,
+        camp.tileY * TILE_PX + TILE_PX / 2,
+        camp.aggroRadius * TILE_PX, 0, Math.PI * 2
+      );
+      ctx.stroke();
+
+      // Camp dot
+      ctx.fillStyle = '#dd4444';
+      ctx.beginPath();
+      ctx.arc(camp.tileX * TILE_PX + TILE_PX / 2, camp.tileY * TILE_PX + TILE_PX / 2, TILE_PX * 0.9, 0, Math.PI * 2);
+      ctx.fill();
+      // Bright border
+      ctx.strokeStyle = '#ff6666';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Objectives
+    for (const obj of this.mission.objectives) {
+      ctx.fillStyle = '#5599ff';
+      ctx.beginPath();
+      ctx.arc(obj.tileX * TILE_PX + TILE_PX / 2, obj.tileY * TILE_PX + TILE_PX / 2, TILE_PX * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#88bbff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Valid zones (markers)
+    for (const zone of this.validZones) {
+      if (zone.x === this.selectedX && zone.y === this.selectedY) continue;
+      ctx.strokeStyle = 'rgba(232,212,139,0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(zone.x * TILE_PX + TILE_PX / 2, zone.y * TILE_PX + TILE_PX / 2, TILE_PX * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      // Small center dot
+      ctx.fillStyle = 'rgba(232,212,139,0.25)';
+      ctx.beginPath();
+      ctx.arc(zone.x * TILE_PX + TILE_PX / 2, zone.y * TILE_PX + TILE_PX / 2, TILE_PX * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Determine marker position: follows cursor until first click, then stays at selection
+    const hasSelection = this.selectedX >= 0;
+    const hovering = this.hoverX >= 0 && this.hoverX < MAP_WIDTH && this.hoverY >= 0 && this.hoverY < MAP_HEIGHT;
+
+    // Hover crosshair (always follows cursor)
+    if (hovering) {
+      const hcx = this.hoverX * TILE_PX + TILE_PX / 2;
+      const hcy = this.hoverY * TILE_PX + TILE_PX / 2;
+      const walkable = this.mapManager.isWalkable(this.hoverX, this.hoverY);
+      const hoverColor = walkable ? 'rgba(232,212,139,' : 'rgba(220,60,60,';
+
+      ctx.strokeStyle = `${hoverColor}0.45)`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(hcx, 0); ctx.lineTo(hcx, MAP_HEIGHT * TILE_PX);
+      ctx.moveTo(0, hcy); ctx.lineTo(MAP_WIDTH * TILE_PX, hcy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Hover tile highlight
+      ctx.strokeStyle = `${hoverColor}0.6)`;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(this.hoverX * TILE_PX, this.hoverY * TILE_PX, TILE_PX, TILE_PX);
+    }
+
+    // Drop marker: at hover position if no selection yet, otherwise at selection
+    const markerX = hasSelection ? this.selectedX : (hovering ? this.hoverX : -1);
+    const markerY = hasSelection ? this.selectedY : (hovering ? this.hoverY : -1);
+
+    if (markerX >= 0) {
+      const cx = markerX * TILE_PX + TILE_PX / 2;
+      const cy = markerY * TILE_PX + TILE_PX / 2;
+
+      // Clearance radius
+      ctx.strokeStyle = 'rgba(232,212,139,0.25)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, TILE_PX * 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Outer ring
+      ctx.strokeStyle = 'rgba(232,212,139,0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, TILE_PX * 1.2, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner filled dot
+      ctx.fillStyle = '#e8d48b';
+      ctx.beginPath();
+      ctx.arc(cx, cy, TILE_PX * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Center pip
+      ctx.fillStyle = '#0a0a0e';
+      ctx.beginPath();
+      ctx.arc(cx, cy, TILE_PX * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private deploy(): void {
+    const startX = this.selectedX >= 0 ? this.selectedX : this.mission.playerStartX;
+    const startY = this.selectedY >= 0 ? this.selectedY : this.mission.playerStartY;
+    const modifiedMission: MissionDefinition = {
+      ...this.mission,
+      playerStartX: startX,
+      playerStartY: startY,
+    };
+    getSceneManager().start('GameScene', { mission: modifiedMission });
+  }
+
+  shutdown(): void {
+    if (this.container) {
+      this.container.remove();
+      this.container = null;
+      this.canvas = null;
+    }
+  }
+}

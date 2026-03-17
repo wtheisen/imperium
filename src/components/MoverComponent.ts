@@ -1,0 +1,99 @@
+import { Component } from '../entities/Entity';
+import { Unit } from '../entities/Unit';
+import { IsoHelper } from '../map/IsoHelper';
+
+export class MoverComponent implements Component {
+  private unit: Unit;
+  private path: { x: number; y: number }[] = [];
+  private pathIndex: number = 0;
+  private moving: boolean = false;
+  private moveSpeed: number;
+
+  /** Fractional tile position for smooth 3D interpolation */
+  public fracTileX: number;
+  public fracTileY: number;
+
+  constructor(unit: Unit, speed: number) {
+    this.unit = unit;
+    this.moveSpeed = speed;
+    this.fracTileX = unit.tileX;
+    this.fracTileY = unit.tileY;
+  }
+
+  setPath(path: { x: number; y: number }[]): void {
+    this.path = path;
+    this.pathIndex = 0;
+    this.moving = path.length > 0;
+  }
+
+  isMoving(): boolean {
+    return this.moving;
+  }
+
+  getSpeed(): number {
+    return this.moveSpeed;
+  }
+
+  setSpeed(speed: number): void {
+    this.moveSpeed = speed;
+  }
+
+  stop(): void {
+    this.moving = false;
+    this.path = [];
+    this.pathIndex = 0;
+  }
+
+  getTargetTile(): { x: number; y: number } | null {
+    if (this.path.length === 0) return null;
+    return this.path[this.path.length - 1];
+  }
+
+  update(delta: number): void {
+    if (!this.moving || this.pathIndex >= this.path.length) {
+      this.moving = false;
+      return;
+    }
+
+    const target = this.path[this.pathIndex];
+    const dx = target.x - this.fracTileX;
+    const dy = target.y - this.fracTileY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Speed in tiles/second (convert from the old pixel-based speed)
+    const tilesPerSecond = this.moveSpeed * 0.8;
+    const step = tilesPerSecond * (delta / 1000);
+
+    if (dist <= step) {
+      // Arrived at next waypoint
+      this.fracTileX = target.x;
+      this.fracTileY = target.y;
+      this.unit.tileX = target.x;
+      this.unit.tileY = target.y;
+      this.pathIndex++;
+
+      if (this.pathIndex >= this.path.length) {
+        this.moving = false;
+      }
+    } else {
+      // Interpolate toward target
+      const nx = dx / dist;
+      const ny = dy / dist;
+      this.fracTileX += nx * step;
+      this.fracTileY += ny * step;
+
+      // Update integer tile position for game logic (combat range, etc.)
+      this.unit.tileX = Math.round(this.fracTileX);
+      this.unit.tileY = Math.round(this.fracTileY);
+    }
+
+    // Update screen position for any legacy systems that read it
+    const screen = IsoHelper.tileToScreen(this.fracTileX, this.fracTileY);
+    this.unit.screenX = screen.x;
+    this.unit.screenY = screen.y;
+  }
+
+  destroy(): void {
+    this.stop();
+  }
+}
