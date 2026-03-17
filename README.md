@@ -6,6 +6,8 @@ Build your deck. Choose your landing zone. Command your forces. Purge the xenos.
 
 [Play Now](https://imperium.williamtheisen.com)
 
+![Mission Select](screenshots/mission-select.png)
+
 ---
 
 ## What Is This?
@@ -24,6 +26,8 @@ The game runs entirely in the browser -- no install, no login, no backend. Built
 4. **Command your forces** in real-time -- select units, issue move/attack orders, capture objectives
 5. **Complete objectives** to earn requisition and card rewards
 6. **Upgrade between missions** -- buy new cards at the Supply Depot, build new decks, unlock tech tree upgrades
+
+![Drop Site Selection](screenshots/drop-site.png)
 
 ### Card Types
 
@@ -45,6 +49,10 @@ The game runs entirely in the browser -- no install, no login, no backend. Built
 - **Purge the Derelict** -- Board a space hulk and clear its corridors (Hazardous)
 
 Each mission features procedurally generated terrain with rivers, forests, stone formations, and gold mines. Enemy camps continuously spawn reinforcements that escalate over time.
+
+![Gameplay](screenshots/gameplay.png)
+
+![Gameplay - Zoomed Out](screenshots/gameplay-combat.png)
 
 ### Skull Modifiers
 
