@@ -14,6 +14,8 @@ import { DoctrinePanel } from '../ui/DoctrinePanel';
 import { ShopUI } from '../ui/ShopUI';
 import { Minimap } from '../ui/Minimap';
 import { HotkeyGrid } from '../ui/HotkeyGrid';
+import { CardTooltip } from '../ui/CardTooltip';
+import { KeybindingOverlay } from '../ui/KeybindingOverlay';
 import { getCardArtRenderer } from '../renderer/CardArtRenderer';
 
 /**
@@ -38,6 +40,8 @@ export class UIScene implements GameSceneInterface {
   private shopUI: ShopUI | null = null;
   private minimap: Minimap | null = null;
   private hotkeyGrid: HotkeyGrid | null = null;
+  private cardTooltip: CardTooltip | null = null;
+  private keybindingOverlay: KeybindingOverlay | null = null;
   private pauseOverlay: HTMLDivElement | null = null;
   /** Per-slot DOM elements for incremental updates. Index 0 = deck pile. */
   private slotEls: HTMLElement[] = [];
@@ -66,6 +70,8 @@ export class UIScene implements GameSceneInterface {
     this.doctrinePanel = new DoctrinePanel();
     this.shopUI = new ShopUI();
     this.minimap = new Minimap();
+    this.cardTooltip = new CardTooltip();
+    this.keybindingOverlay = new KeybindingOverlay();
 
     // Event listeners
     EventBus.on('card-played', this.onCardPlayed, this);
@@ -788,6 +794,7 @@ export class UIScene implements GameSceneInterface {
         if (!this.dragState.isDragging) {
           frame.style.boxShadow = `0 8px 28px rgba(0,0,0,0.8), 0 0 20px ${color}30`;
           frame.style.borderColor = color;
+          this.cardTooltip?.show(card, slot.getBoundingClientRect());
         }
       });
       slot.addEventListener('mouseleave', () => {
@@ -796,11 +803,13 @@ export class UIScene implements GameSceneInterface {
           frame.style.borderColor = '';
           slot.style.transform = '';
         }
+        this.cardTooltip?.hide();
       });
 
       // Drag start
       slot.addEventListener('mousedown', (e) => {
         e.preventDefault();
+        this.cardTooltip?.hide();
         this.startCardDrag(card, i, slot, e.clientX, e.clientY, color);
       });
 
@@ -907,6 +916,7 @@ export class UIScene implements GameSceneInterface {
         if (!this.dragState.isDragging) {
           frame.style.boxShadow = `0 8px 28px rgba(0,0,0,0.8), 0 0 20px ${color}30`;
           frame.style.borderColor = color;
+          this.cardTooltip?.show(card, newSlot.getBoundingClientRect());
         }
       });
       newSlot.addEventListener('mouseleave', () => {
@@ -915,11 +925,13 @@ export class UIScene implements GameSceneInterface {
           frame.style.borderColor = '';
           newSlot.style.transform = '';
         }
+        this.cardTooltip?.hide();
       });
 
       // Drag
       newSlot.addEventListener('mousedown', (e) => {
         e.preventDefault();
+        this.cardTooltip?.hide();
         this.startCardDrag(card, index, newSlot, e.clientX, e.clientY, color);
       });
     }
@@ -1269,6 +1281,8 @@ export class UIScene implements GameSceneInterface {
     if (this.doctrinePanel) { this.doctrinePanel.destroy(); this.doctrinePanel = null; }
     if (this.shopUI) { this.shopUI.destroy(); this.shopUI = null; }
     if (this.minimap) { this.minimap.destroy(); this.minimap = null; }
+    if (this.cardTooltip) { this.cardTooltip.destroy(); this.cardTooltip = null; }
+    if (this.keybindingOverlay) { this.keybindingOverlay.destroy(); this.keybindingOverlay = null; }
 
     if (this.container) {
       this.container.remove();
