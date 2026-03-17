@@ -34,44 +34,18 @@ export class CommandSystem {
     EventBus.on('request-path', this.handlePathRequest, this);
     EventBus.on('command-stop', this.handleStopCommand, this);
 
-    // Command keyboard handler
+    // Keyboard: Escape cancels attack-move mode
     this.keyHandler = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.shiftKey || e.metaKey) return;
-
-      if ((e.key === 'a' || e.key === 'A') && this.selection.selectedUnits.length > 0) {
-        this.attackMoveMode = true;
-        EventBus.emit('attack-move-cursor', { active: true });
-      }
       if (e.key === 'Escape' && this.attackMoveMode) {
         this.attackMoveMode = false;
         EventBus.emit('attack-move-cursor', { active: false });
       }
-      // Stop command (S key)
-      if ((e.key === 's' || e.key === 'S') && this.selection.selectedUnits.length > 0) {
-        EventBus.emit('command-stop', { units: [...this.selection.selectedUnits] });
-      }
-      // Hold position (H key)
-      if ((e.key === 'h' || e.key === 'H') && this.selection.selectedUnits.length > 0) {
-        for (const unit of this.selection.selectedUnits) {
-          const mover = unit.getComponent<MoverComponent>('mover');
-          if (mover) {
-            mover.stop();
-            mover.holdPosition = true;
-          }
-          const combat = unit.getComponent<CombatComponent>('combat');
-          if (combat) combat.setTarget(null);
-          const gatherer = unit.getComponent<GathererComponent>('gatherer');
-          if (gatherer) gatherer.state = 'idle' as any;
-        }
-        this.showCommandIndicator(
-          this.selection.selectedUnits[0].tileX,
-          this.selection.selectedUnits[0].tileY,
-          'move'
-        );
-        EventBus.emit('command-issued', { type: 'hold', tileX: this.selection.selectedUnits[0].tileX, tileY: this.selection.selectedUnits[0].tileY });
-      }
     };
     document.addEventListener('keydown', this.keyHandler);
+
+    // Listen for events from HotkeyGrid
+    EventBus.on('attack-move-cursor', this.onAttackMoveCursor, this);
+    EventBus.on('command-hold', this.handleHoldCommand, this);
   }
 
   // ── 3D Input Path ──
@@ -107,6 +81,28 @@ export class CommandSystem {
     this.attackMoveMode = false;
     EventBus.emit('attack-move-cursor', { active: false });
     this.handleAttackMove(evt.tileX, evt.tileY);
+  }
+
+  private onAttackMoveCursor = (data: { active: boolean }): void => {
+    this.attackMoveMode = data.active;
+  };
+
+  private handleHoldCommand({ units }: { units: Unit[] }): void {
+    for (const unit of units) {
+      const mover = unit.getComponent<MoverComponent>('mover');
+      if (mover) {
+        mover.stop();
+        mover.holdPosition = true;
+      }
+      const combat = unit.getComponent<CombatComponent>('combat');
+      if (combat) combat.setTarget(null);
+      const gatherer = unit.getComponent<GathererComponent>('gatherer');
+      if (gatherer) gatherer.state = 'idle' as any;
+    }
+    if (units.length > 0) {
+      this.showCommandIndicator(units[0].tileX, units[0].tileY, 'move');
+      EventBus.emit('command-issued', { type: 'hold', tileX: units[0].tileX, tileY: units[0].tileY });
+    }
   }
 
   // ── Shared command logic ──
@@ -230,6 +226,8 @@ export class CommandSystem {
     EventBus.off('input-pointer-down', this.onInputDown3D, this);
     EventBus.off('request-path', this.handlePathRequest, this);
     EventBus.off('command-stop', this.handleStopCommand, this);
+    EventBus.off('attack-move-cursor', this.onAttackMoveCursor, this);
+    EventBus.off('command-hold', this.handleHoldCommand, this);
     if (this.keyHandler) {
       document.removeEventListener('keydown', this.keyHandler);
       this.keyHandler = null;

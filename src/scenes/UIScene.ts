@@ -13,6 +13,7 @@ import { ObjectiveDisplay } from '../ui/ObjectiveDisplay';
 import { DoctrinePanel } from '../ui/DoctrinePanel';
 import { ShopUI } from '../ui/ShopUI';
 import { Minimap } from '../ui/Minimap';
+import { HotkeyGrid } from '../ui/HotkeyGrid';
 import { getCardArtRenderer } from '../renderer/CardArtRenderer';
 
 /**
@@ -36,6 +37,7 @@ export class UIScene implements GameSceneInterface {
   private doctrinePanel: DoctrinePanel | null = null;
   private shopUI: ShopUI | null = null;
   private minimap: Minimap | null = null;
+  private hotkeyGrid: HotkeyGrid | null = null;
   private pauseOverlay: HTMLDivElement | null = null;
   /** Per-slot DOM elements for incremental updates. Index 0 = deck pile. */
   private slotEls: HTMLElement[] = [];
@@ -56,7 +58,8 @@ export class UIScene implements GameSceneInterface {
     this.createUIOverlay();
 
     // Create UI widgets
-    this.commandPanel = new CommandPanel();
+    this.hotkeyGrid = new HotkeyGrid();
+    this.commandPanel = new CommandPanel(this.hotkeyGrid);
     if (this.mission) {
       this.objectiveDisplay = new ObjectiveDisplay(this.mission);
     }
@@ -205,7 +208,7 @@ export class UIScene implements GameSceneInterface {
 
       <!-- Bottom HUD bar spanning full width -->
       <div id="hud-bottom" style="position:absolute; bottom:0; left:0; right:0; pointer-events:auto;
-        display:flex; align-items:stretch; height:192px;
+        display:grid; grid-template-columns:1fr 176px 1fr; align-items:stretch; height:192px;
         background:linear-gradient(180deg,transparent 0%,rgba(10,10,14,0.5) 6%,rgba(10,10,14,0.92) 18%,rgba(12,11,8,0.97) 100%);
         border-top:1px solid rgba(200,152,42,0.1);
         font-family:'Share Tech Mono','Courier New',monospace;">
@@ -218,7 +221,8 @@ export class UIScene implements GameSceneInterface {
           background:linear-gradient(90deg,transparent 5%,rgba(200,152,42,0.15) 30%,rgba(200,152,42,0.15) 70%,transparent 95%);"></div>
 
         <!-- Section: Hand -->
-        <div style="flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; position:relative;">
+        <div style="display:flex; flex-direction:column; min-width:0; overflow:hidden; position:relative;
+          border-right:1px solid rgba(200,152,42,0.08);">
           <div style="padding:6px 12px 0; flex-shrink:0;">
             <div style="font-size:8px; letter-spacing:2px; color:rgba(200,152,42,0.3);">HAND</div>
           </div>
@@ -227,13 +231,9 @@ export class UIScene implements GameSceneInterface {
           </div>
         </div>
 
-        <!-- Divider -->
-        <div style="width:1px; margin:8px 0; position:relative;">
-          <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(200,152,42,0.02),rgba(200,152,42,0.12) 40%,rgba(200,152,42,0.12) 60%,rgba(200,152,42,0.02));"></div>
-        </div>
-
-        <!-- Section: Minimap -->
-        <div style="width:176px; flex-shrink:0; display:flex; flex-direction:column; position:relative;">
+        <!-- Section: Minimap (grid-centered) -->
+        <div style="display:flex; flex-direction:column; position:relative;
+          border-right:1px solid rgba(200,152,42,0.08);">
           <div style="padding:6px 10px 0; flex-shrink:0;">
             <div style="font-size:8px; letter-spacing:2px; color:rgba(200,152,42,0.3);">AUSPEX</div>
           </div>
@@ -242,13 +242,8 @@ export class UIScene implements GameSceneInterface {
           </div>
         </div>
 
-        <!-- Divider -->
-        <div style="width:1px; margin:8px 0; position:relative;">
-          <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(200,152,42,0.02),rgba(200,152,42,0.12) 40%,rgba(200,152,42,0.12) 60%,rgba(200,152,42,0.02));"></div>
-        </div>
-
         <!-- Section: Unit UI / Command Panel -->
-        <div style="width:300px; flex-shrink:0; display:flex; flex-direction:column; position:relative;">
+        <div style="display:flex; flex-direction:column; min-width:0; overflow:hidden; position:relative;">
           <div style="padding:6px 12px 0; flex-shrink:0;">
             <div style="font-size:8px; letter-spacing:2px; color:rgba(200,152,42,0.3);">UNIT STATUS</div>
           </div>
@@ -1269,6 +1264,7 @@ export class UIScene implements GameSceneInterface {
     if (this.dragState.ghostEl) { this.dragState.ghostEl.remove(); this.dragState.ghostEl = null; }
 
     if (this.commandPanel) { this.commandPanel.destroy(); this.commandPanel = null; }
+    if (this.hotkeyGrid) { this.hotkeyGrid.destroy(); this.hotkeyGrid = null; }
     if (this.objectiveDisplay) { this.objectiveDisplay.destroy(); this.objectiveDisplay = null; }
     if (this.doctrinePanel) { this.doctrinePanel.destroy(); this.doctrinePanel = null; }
     if (this.shopUI) { this.shopUI.destroy(); this.shopUI = null; }

@@ -11,6 +11,7 @@ import { ProductionComponent, TRAINABLE_UNITS, TrainableUnit } from '../componen
 import { AuraComponent, AuraConfig } from '../components/AuraComponent';
 import { getTechTree, canUnlockNode, unlockNode, TechNode } from '../state/TechTree';
 import { getPlayerState } from '../state/PlayerState';
+import { HotkeyGrid, HotkeyLayout, HotkeyCell } from './HotkeyGrid';
 
 interface SelectionData {
   entities: Unit[];
@@ -444,6 +445,80 @@ const PANEL_STYLES = `
     height: 1px;
     background: #3d3526;
   }
+
+  /* ── Hotkey Grid ─────────────────────────────────────────── */
+  #command-panel .cp-hk-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    padding: 2px 0;
+  }
+  #command-panel .cp-hk-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 2px;
+    min-height: 32px;
+    border: 1px solid #2a2418;
+    border-radius: 2px;
+    background: rgba(20,18,14,0.6);
+    cursor: pointer;
+    transition: all 0.1s ease-out;
+    overflow: hidden;
+  }
+  #command-panel .cp-hk-cell:hover {
+    background: rgba(107,90,46,0.2);
+    border-color: #6b5a2e;
+  }
+  #command-panel .cp-hk-cell.disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+  }
+  #command-panel .cp-hk-cell.empty {
+    border-color: rgba(42,36,24,0.3);
+    background: rgba(10,10,14,0.3);
+    cursor: default;
+    pointer-events: none;
+  }
+  #command-panel .cp-hk-key {
+    font-family: 'Teko', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #c8982a;
+    line-height: 1;
+  }
+  #command-panel .cp-hk-cell.empty .cp-hk-key {
+    color: rgba(200,152,42,0.15);
+  }
+  #command-panel .cp-hk-label {
+    font-size: 7px;
+    color: #8a7e68;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1.1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  #command-panel .cp-hk-sub {
+    font-size: 7px;
+    color: #6b6350;
+    line-height: 1;
+  }
+  #command-panel .cp-hk-cd-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(200,152,42,0.15);
+    pointer-events: none;
+    transition: height 0.25s linear;
+  }
 `;
 
 export class CommandPanel {
@@ -455,8 +530,11 @@ export class CommandPanel {
   private showTechTree: boolean = false;
   private lastRenderTime: number = 0;
   private dirty: boolean = true;
+  private hotkeyGrid: HotkeyGrid;
 
-  constructor() {
+  constructor(hotkeyGrid: HotkeyGrid) {
+    this.hotkeyGrid = hotkeyGrid;
+
     // Inject styles
     this.styleEl = document.createElement('style');
     this.styleEl.textContent = PANEL_STYLES;
@@ -579,6 +657,9 @@ export class CommandPanel {
       s += `</div>`;
     }
 
+    // Hotkey grid
+    s += this.renderHotkeyGrid();
+
     return s;
   }
 
@@ -615,6 +696,9 @@ export class CommandPanel {
       s += `</div></div></div>`;
     }
 
+    // Hotkey grid
+    s += this.renderHotkeyGrid();
+
     return s;
   }
 
@@ -648,16 +732,8 @@ export class CommandPanel {
       s += this.renderAuraInfo(aura.getConfig());
     }
 
-    // Production: train buttons
+    // Production queue display
     if (production) {
-      s += `<div class="cp-section">`;
-      s += `<div class="cp-label">Train Units</div>`;
-      for (const trainable of TRAINABLE_UNITS) {
-        s += `<button class="cp-btn cp-train-btn" data-unit-type="${trainable.unitType}">${trainable.name} <span style="color:#6b6350">${trainable.cost}g</span></button>`;
-      }
-      s += `</div>`;
-
-      // Production queue
       const queue = production.getQueue();
       if (queue.length > 0) {
         s += `<div class="cp-section">`;
@@ -673,10 +749,8 @@ export class CommandPanel {
       }
     }
 
-    // Requisition button
-    s += `<div class="cp-section">`;
-    s += `<button class="cp-btn cp-btn-full cp-requisition-btn">Requisition Card <span style="color:#6b6350">3g</span></button>`;
-    s += `</div>`;
+    // Hotkey grid (includes train buttons + requisition via Z/X/C/V/B row)
+    s += this.renderHotkeyGrid();
 
     return s;
   }
@@ -875,20 +949,46 @@ export class CommandPanel {
     return s;
   }
 
+  // ── Hotkey grid rendering ────────────────────────────────────
+
+  private renderHotkeyGrid(): string {
+    const layout = this.hotkeyGrid.getLayout();
+    let s = `<div class="cp-section"><div class="cp-label">Hotkeys</div><div class="cp-hk-grid">`;
+
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 5; c++) {
+        const cell = layout.rows[r][c];
+        if (!cell) {
+          const ROW_KEYS = [
+            ['Q', 'W', 'E', 'R', 'T'],
+            ['A', 'S', 'D', 'F', 'G'],
+            ['Z', 'X', 'C', 'V', 'B'],
+          ];
+          s += `<div class="cp-hk-cell empty"><span class="cp-hk-key">${ROW_KEYS[r][c]}</span></div>`;
+        } else {
+          const cls = cell.enabled ? '' : ' disabled';
+          const cdH = cell.cooldownPct > 0 ? `${(cell.cooldownPct * 100).toFixed(0)}%` : '0%';
+          s += `<div class="cp-hk-cell${cls}" data-hk-row="${r}" data-hk-col="${c}">`;
+          if (cell.cooldownPct > 0) {
+            s += `<div class="cp-hk-cd-overlay" style="height:${cdH}"></div>`;
+          }
+          s += `<span class="cp-hk-key">${cell.key}</span>`;
+          s += `<span class="cp-hk-label">${cell.label}</span>`;
+          if (cell.sublabel) {
+            s += `<span class="cp-hk-sub">${cell.sublabel}</span>`;
+          }
+          s += `</div>`;
+        }
+      }
+    }
+
+    s += `</div></div>`;
+    return s;
+  }
+
   // ── Button binding ───────────────────────────────────────────
 
   private bindButtons(): void {
-    const trainBtns = this.container.querySelectorAll('.cp-train-btn');
-    trainBtns.forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const unitType = (e.currentTarget as HTMLElement).dataset.unitType;
-        const trainable = TRAINABLE_UNITS.find((t) => t.unitType === unitType);
-        if (trainable && this.selectedBuilding) {
-          EventBus.emit('train-unit', { unit: trainable, building: this.selectedBuilding });
-        }
-      });
-    });
-
     const unequipBtns = this.container.querySelectorAll('.cp-unequip-btn');
     unequipBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -902,12 +1002,17 @@ export class CommandPanel {
       });
     });
 
-    const reqBtn = this.container.querySelector('.cp-requisition-btn');
-    if (reqBtn) {
-      reqBtn.addEventListener('click', () => {
-        EventBus.emit('requisition-card', { cost: 3, building: this.selectedBuilding });
+    // Hotkey grid cell clicks
+    const hkCells = this.container.querySelectorAll('.cp-hk-cell:not(.empty):not(.disabled)');
+    hkCells.forEach((el) => {
+      el.addEventListener('click', () => {
+        const row = parseInt((el as HTMLElement).dataset.hkRow || '0', 10);
+        const col = parseInt((el as HTMLElement).dataset.hkCol || '0', 10);
+        const layout = this.hotkeyGrid.getLayout();
+        const cell = layout.rows[row]?.[col];
+        if (cell && cell.enabled) cell.action();
       });
-    }
+    });
 
     // Tech tree toggle
     const techToggle = this.container.querySelector('.cp-tech-toggle-btn');

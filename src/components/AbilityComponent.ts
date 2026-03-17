@@ -44,7 +44,7 @@ export const ABILITY_DEFINITIONS: Record<string, AbilityDefinition[]> = {
     { id: 'guardsman_kite_active', name: 'Kite', hotkey: 'W', cooldown: 20000, color: 0x88ff44 },
   ],
   servitor: [
-    { id: 'servitor_repair_active', name: 'Emrg Repair', hotkey: 'Q', cooldown: 20000, color: 0x44ff88 },
+    { id: 'servitor_repair_active', name: 'Repair', hotkey: 'Q', cooldown: 20000, color: 0x44ff88 },
     { id: 'servitor_fortify_active', name: 'Fortify', hotkey: 'W', cooldown: 25000, color: 0xaaaaaa },
   ],
   scout: [
