@@ -16,7 +16,7 @@ import { TimerManager } from '../utils/TimerManager';
 
 /** Per-model stats. Total HP/damage = per-model × squadSize. */
 const UNIT_STATS: Record<string, UnitStats> = {
-  servitor: { maxHp: 25, speed: 2, attackDamage: 3, attackRange: 1, attackCooldown: 1500, isRanged: false, gatherRate: 1, gatherCapacity: 10, squadSize: 1 },
+  servitor: { maxHp: 25, speed: 2, attackDamage: 3, attackRange: 1, attackCooldown: 1500, isRanged: false, gatherRate: 0.8, gatherCapacity: 6, squadSize: 1 },
   guardsman: { maxHp: 30, speed: 2.5, attackDamage: 5, attackRange: 3, attackCooldown: 1200, isRanged: true, squadSize: 6 },
   marine: { maxHp: 60, speed: 1.8, attackDamage: 10, attackRange: 1, attackCooldown: 1000, isRanged: false, squadSize: 4 },
   scout: { maxHp: 20, speed: 4, attackDamage: 3, attackRange: 1, attackCooldown: 1500, isRanged: false, squadSize: 3 },

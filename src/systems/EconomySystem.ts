@@ -45,7 +45,7 @@ export class EconomySystem {
   }
 
   private onObjectiveCompleted({ goldReward }: { objectiveId: string; goldReward: number; cardDraws: number }): void {
-    this.addGold(goldReward + OBJECTIVE_COMPLETION_BONUS);
+    this.addGold(goldReward);
   }
 
   private onSupplyDrop({ gold }: { gold: number }): void {

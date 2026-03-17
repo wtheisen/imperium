@@ -1,6 +1,7 @@
 import { Component, Entity } from '../entities/Entity';
 import { HealthComponent } from './HealthComponent';
 import { CombatComponent } from './CombatComponent';
+import { MoverComponent } from './MoverComponent';
 import { EventBus } from '../EventBus';
 import { IsoHelper } from '../map/IsoHelper';
 
@@ -13,6 +14,12 @@ export interface AuraConfig {
   damageBoost?: number;       // +ATK to nearby friendlies
   boostRadius?: number;       // tile radius for damage boost
   extraCardDraw?: number;     // extra cards drawn per wave completion
+  slowPercent?: number;        // % speed reduction on enemies in radius
+  slowRadius?: number;
+  armorBoost?: number;         // +armor to nearby friendlies
+  armorRadius?: number;
+  selfRepairPerTick?: number;  // HP self-repair per tick
+  selfRepairInterval?: number;
 }
 
 export class AuraComponent implements Component {
@@ -21,6 +28,9 @@ export class AuraComponent implements Component {
   private healTimer: number = 0;
   private goldTimer: number = 0;
   private boostedEntities: Set<string> = new Set();
+  private slowedEntities: Map<string, number> = new Map(); // entityId → original speed
+  private armorBoostedEntities: Set<string> = new Set();
+  private repairTimer: number = 0;
   private getEntitiesFn: () => Entity[];
 
   constructor(entity: Entity, config: AuraConfig, getEntitiesFn: () => Entity[]) {
@@ -28,15 +38,6 @@ export class AuraComponent implements Component {
     this.config = config;
     this.getEntitiesFn = getEntitiesFn;
 
-    if (this.config.extraCardDraw) {
-      EventBus.on('wave-completed', this.onWaveCompleted, this);
-    }
-  }
-
-  private onWaveCompleted(): void {
-    if (this.config.extraCardDraw && this.entity.active) {
-      EventBus.emit('bonus-draws', { count: this.config.extraCardDraw });
-    }
   }
 
   update(delta: number): void {
@@ -66,6 +67,28 @@ export class AuraComponent implements Component {
     // Damage boost aura
     if (this.config.damageBoost && this.config.boostRadius) {
       this.tickDamageBoost();
+    }
+
+    // Slow aura (enemies)
+    if (this.config.slowPercent && this.config.slowRadius) {
+      this.tickSlow();
+    }
+
+    // Armor boost aura (friendlies)
+    if (this.config.armorBoost && this.config.armorRadius) {
+      this.tickArmorBoost();
+    }
+
+    // Self-repair
+    if (this.config.selfRepairPerTick) {
+      this.repairTimer += delta;
+      if (this.repairTimer >= (this.config.selfRepairInterval || 8000)) {
+        this.repairTimer = 0;
+        const health = this.entity.getComponent<HealthComponent>('health');
+        if (health && health.currentHp < health.maxHp) {
+          health.heal(this.config.selfRepairPerTick);
+        }
+      }
     }
   }
 
@@ -126,6 +149,85 @@ export class AuraComponent implements Component {
     }
   }
 
+  private tickSlow(): void {
+    const entities = this.getEntitiesFn();
+    const radius = this.config.slowRadius!;
+    const slowFraction = this.config.slowPercent! / 100;
+    const currentNearby = new Set<string>();
+
+    for (const e of entities) {
+      if (e.team === this.entity.team || e === this.entity) continue;
+      if (!e.active) continue;
+
+      const dist = IsoHelper.tileDistance(this.entity.tileX, this.entity.tileY, e.tileX, e.tileY);
+      const mover = e.getComponent<MoverComponent>('mover');
+      if (!mover) continue;
+
+      if (dist <= radius) {
+        currentNearby.add(e.entityId);
+        if (!this.slowedEntities.has(e.entityId)) {
+          const originalSpeed = mover.getSpeed();
+          this.slowedEntities.set(e.entityId, originalSpeed);
+          mover.setSpeed(originalSpeed * (1 - slowFraction));
+        }
+      } else if (this.slowedEntities.has(e.entityId)) {
+        mover.setSpeed(this.slowedEntities.get(e.entityId)!);
+        this.slowedEntities.delete(e.entityId);
+      }
+    }
+
+    // Restore speed for entities no longer present
+    for (const [id, originalSpeed] of this.slowedEntities) {
+      if (!currentNearby.has(id)) {
+        const e = entities.find(en => en.entityId === id);
+        if (e) {
+          const mover = e.getComponent<MoverComponent>('mover');
+          if (mover) mover.setSpeed(originalSpeed);
+        }
+        this.slowedEntities.delete(id);
+      }
+    }
+  }
+
+  private tickArmorBoost(): void {
+    const entities = this.getEntitiesFn();
+    const radius = this.config.armorRadius!;
+    const boost = this.config.armorBoost!;
+    const currentNearby = new Set<string>();
+
+    for (const e of entities) {
+      if (e.team !== this.entity.team || e === this.entity) continue;
+      if (!e.active) continue;
+
+      const dist = IsoHelper.tileDistance(this.entity.tileX, this.entity.tileY, e.tileX, e.tileY);
+      const health = e.getComponent<HealthComponent>('health');
+      if (!health) continue;
+
+      if (dist <= radius) {
+        currentNearby.add(e.entityId);
+        if (!this.armorBoostedEntities.has(e.entityId)) {
+          health.armor += boost;
+          this.armorBoostedEntities.add(e.entityId);
+        }
+      } else if (this.armorBoostedEntities.has(e.entityId)) {
+        health.armor = Math.max(0, health.armor - boost);
+        this.armorBoostedEntities.delete(e.entityId);
+      }
+    }
+
+    // Remove boost from entities no longer present
+    for (const id of this.armorBoostedEntities) {
+      if (!currentNearby.has(id)) {
+        const e = entities.find(en => en.entityId === id);
+        if (e) {
+          const health = e.getComponent<HealthComponent>('health');
+          if (health) health.armor = Math.max(0, health.armor - boost);
+        }
+        this.armorBoostedEntities.delete(id);
+      }
+    }
+  }
+
   private showGoldPopup(): void {
     EventBus.emit('floating-text-3d', { tileX: this.entity.tileX, tileY: this.entity.tileY, text: `+${this.config.goldPerTick}`, color: '#ffd700' });
   }
@@ -135,10 +237,11 @@ export class AuraComponent implements Component {
   }
 
   destroy(): void {
-    // Remove boosts from all entities
-    if (this.config.damageBoost) {
-      try {
-        const entities = this.getEntitiesFn();
+    try {
+      const entities = this.getEntitiesFn();
+
+      // Remove damage boosts
+      if (this.config.damageBoost) {
         for (const id of this.boostedEntities) {
           const e = entities.find(en => en.entityId === id);
           if (e) {
@@ -146,14 +249,36 @@ export class AuraComponent implements Component {
             if (combat) combat.setDamage(Math.max(1, combat.getDamage() - this.config.damageBoost));
           }
         }
-      } catch (_e) {
-        // Entity manager may be destroyed already
       }
-    }
-    this.boostedEntities.clear();
 
-    if (this.config.extraCardDraw) {
-      EventBus.off('wave-completed', this.onWaveCompleted, this);
+      // Restore slowed entities
+      if (this.config.slowPercent) {
+        for (const [id, originalSpeed] of this.slowedEntities) {
+          const e = entities.find(en => en.entityId === id);
+          if (e) {
+            const mover = e.getComponent<MoverComponent>('mover');
+            if (mover) mover.setSpeed(originalSpeed);
+          }
+        }
+      }
+
+      // Remove armor boosts
+      if (this.config.armorBoost) {
+        for (const id of this.armorBoostedEntities) {
+          const e = entities.find(en => en.entityId === id);
+          if (e) {
+            const health = e.getComponent<HealthComponent>('health');
+            if (health) health.armor = Math.max(0, health.armor - this.config.armorBoost);
+          }
+        }
+      }
+    } catch (_e) {
+      // Entity manager may be destroyed already
     }
+
+    this.boostedEntities.clear();
+    this.slowedEntities.clear();
+    this.armorBoostedEntities.clear();
+
   }
 }

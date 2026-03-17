@@ -1,7 +1,13 @@
-import { getPlayerState, applyPendingRewards } from '../state/PlayerState';
+import { getPlayerState, applyPendingRewards, addRequisitionPoints, savePlayerState } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { MissionDefinition } from '../missions/MissionDefinition';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
+import {
+  MISSION_REWARD_BASE,
+  MISSION_REWARD_PER_DIFFICULTY,
+  MISSION_REWARD_PER_OBJECTIVE,
+  DEFEAT_REWARD_FRACTION,
+} from '../config';
 
 export class GameOverScene implements GameSceneInterface {
   id = 'GameOverScene';
@@ -31,6 +37,19 @@ export class GameOverScene implements GameSceneInterface {
 
     const earnedCards = [...state.pendingRewards];
     applyPendingRewards();
+
+    // Calculate requisition points reward
+    const difficulty = this.mission?.difficulty ?? 1;
+    let reqEarned = MISSION_REWARD_BASE
+      + (difficulty * MISSION_REWARD_PER_DIFFICULTY)
+      + (this.objectivesCompleted * MISSION_REWARD_PER_OBJECTIVE);
+    if (!this.victory) {
+      reqEarned = Math.floor(reqEarned * DEFEAT_REWARD_FRACTION);
+    }
+    addRequisitionPoints(reqEarned);
+
+    // Save after all rewards applied
+    savePlayerState();
 
     this.container = document.createElement('div');
     this.container.id = 'game-over-ui';
@@ -67,6 +86,19 @@ export class GameOverScene implements GameSceneInterface {
           </div>
         </div>`;
     }
+
+    // Req points HTML
+    const reqHtml = `
+      <div style="margin-top:${earnedCards.length > 0 ? '16' : '24'}px;text-align:left;width:300px;">
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">REQUISITION POINTS</div>
+        <div style="display:flex;align-items:center;gap:10px;border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">
+          <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;color:#c8982a;line-height:1;">
+            +${reqEarned}</div>
+          <div style="font-size:11px;color:rgba(200,152,42,0.6);letter-spacing:1px;">REQ POINTS</div>
+        </div>
+        <div style="font-size:10px;color:rgba(200,191,160,0.3);margin-top:4px;padding-left:12px;">
+          Total: ${state.requisitionPoints} RP</div>
+      </div>`;
 
     // XP HTML
     const xpEntries = Object.entries(this.sessionXp).filter(([_, v]) => v > 0);
@@ -119,6 +151,7 @@ export class GameOverScene implements GameSceneInterface {
         </div>
 
         ${rewardsHtml}
+        ${reqHtml}
         ${xpHtml}
 
         <div id="game-over-buttons" style="display:flex;gap:16px;margin-top:32px;justify-content:center;"></div>
@@ -136,6 +169,12 @@ export class GameOverScene implements GameSceneInterface {
       });
       btnsDiv.appendChild(retryBtn);
     }
+
+    const shopBtn = this.makeButton('SUPPLY DEPOT', '#50b0b0');
+    shopBtn.addEventListener('click', () => {
+      getSceneManager().start('ShopScene');
+    });
+    btnsDiv.appendChild(shopBtn);
 
     const returnBtn = this.makeButton('RETURN TO COMMAND', this.victory ? '#4a9e4a' : '#5a7a8a');
     returnBtn.addEventListener('click', () => {

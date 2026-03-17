@@ -83,6 +83,13 @@ export class MissionSelectScene implements GameSceneInterface {
     injectStyles();
     const state = getPlayerState();
 
+    // Ensure selected mission is not locked; fall back to first unlocked
+    const selectedMission = MISSIONS[this.selectedMissionIdx];
+    if (selectedMission && this.isMissionLocked(selectedMission, state)) {
+      const firstUnlocked = MISSIONS.findIndex(m => !this.isMissionLocked(m, state));
+      this.selectedMissionIdx = firstUnlocked >= 0 ? firstUnlocked : 0;
+    }
+
     this.container = document.createElement('div');
     this.container.id = 'mission-select-ui';
     Object.assign(this.container.style, {
@@ -145,6 +152,9 @@ export class MissionSelectScene implements GameSceneInterface {
           <button id="ms-tech-trees" style="padding:6px 14px;background:transparent;
             color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
             font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">TECH TREES</button>
+          <button id="ms-supply-depot" style="padding:6px 14px;background:transparent;
+            color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
+            font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">SUPPLY DEPOT</button>
         </div>
       </div>
 
@@ -265,39 +275,58 @@ export class MissionSelectScene implements GameSceneInterface {
     `;
   }
 
+  private isMissionLocked(mission: MissionDefinition, state: ReturnType<typeof getPlayerState>): boolean {
+    const completedCount = state.completedMissions.size;
+    if (mission.difficulty === 2 && completedCount < 1) return true;
+    if (mission.difficulty === 3 && completedCount < 2) return true;
+    return false;
+  }
+
+  private getLockRequirement(mission: MissionDefinition): string {
+    if (mission.difficulty === 2) return 'COMPLETE 1 MISSION TO UNLOCK';
+    if (mission.difficulty === 3) return 'COMPLETE 2 MISSIONS TO UNLOCK';
+    return '';
+  }
+
   private buildMissionListItem(mission: MissionDefinition, index: number, state: ReturnType<typeof getPlayerState>): string {
     const selected = index === this.selectedMissionIdx;
     const completed = state.completedMissions.has(mission.id);
     const theme = DIFF_THEMES[mission.difficulty] || DIFF_THEMES[1];
+    const locked = this.isMissionLocked(mission, state);
 
     return `
-      <div class="ms-mission-item" data-idx="${index}" style="
-        padding:16px 24px;cursor:pointer;position:relative;
+      <div class="ms-mission-item" data-idx="${index}" data-locked="${locked}" style="
+        padding:16px 24px;cursor:${locked ? 'default' : 'pointer'};position:relative;
         border-bottom:1px solid rgba(200,152,42,0.05);
-        background:${selected ? 'rgba(200,152,42,0.06)' : 'transparent'};
-        border-left:${selected ? `3px solid ${theme.color}` : '3px solid transparent'};
+        background:${selected && !locked ? 'rgba(200,152,42,0.06)' : 'transparent'};
+        border-left:${selected && !locked ? `3px solid ${theme.color}` : '3px solid transparent'};
+        opacity:${locked ? '0.4' : '1'};
+        pointer-events:${locked ? 'none' : 'auto'};
         transition:all 0.2s;
         animation:ms-card-in 0.3s ease-out ${index * 0.08}s both;
       ">
         <!-- Top row: number + name -->
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
-            color:${selected ? theme.color : 'rgba(200,191,160,0.12)'};line-height:1;
+            color:${selected && !locked ? theme.color : 'rgba(200,191,160,0.12)'};line-height:1;
             transition:color 0.2s;min-width:28px;">${String(index + 1).padStart(2, '0')}</div>
           <div style="flex:1;">
             <div style="font-family:'Teko',sans-serif;font-size:18px;font-weight:600;
-              color:${selected ? '#e8dcc0' : '#6a6458'};letter-spacing:1px;
+              color:${selected && !locked ? '#e8dcc0' : '#6a6458'};letter-spacing:1px;
               transition:color 0.2s;">${mission.name.toUpperCase()}</div>
             <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
               <div style="display:flex;gap:2px;">
                 ${[1, 2, 3].map(d => `<div style="width:12px;height:3px;
-                  background:${d <= mission.difficulty ? theme.color + (selected ? '' : '60') : 'rgba(200,191,160,0.06)'};
+                  background:${d <= mission.difficulty ? theme.color + (selected && !locked ? '' : '60') : 'rgba(200,191,160,0.06)'};
                   transition:all 0.2s;"></div>`).join('')}
               </div>
-              <div style="font-size:9px;letter-spacing:1px;color:${selected ? theme.color : 'rgba(200,191,160,0.2)'};">
+              <div style="font-size:9px;letter-spacing:1px;color:${selected && !locked ? theme.color : 'rgba(200,191,160,0.2)'};">
                 ${theme.symbol}</div>
               ${completed ? `<div style="font-size:9px;color:#4a9e4a60;letter-spacing:1px;">COMPLETE</div>` : ''}
+              ${locked ? `<div style="font-size:9px;color:#c43030;letter-spacing:1px;font-weight:bold;">LOCKED</div>` : ''}
             </div>
+            ${locked ? `<div style="font-size:8px;color:#c43030;letter-spacing:1px;margin-top:4px;opacity:0.7;">
+              ${this.getLockRequirement(mission)}</div>` : ''}
           </div>
         </div>
       </div>
@@ -336,6 +365,8 @@ export class MissionSelectScene implements GameSceneInterface {
     // Mission list items
     this.container.querySelectorAll('.ms-mission-item').forEach(el => {
       const idx = parseInt((el as HTMLElement).dataset.idx || '0');
+      const locked = (el as HTMLElement).dataset.locked === 'true';
+      if (locked) return; // Skip locked missions
       el.addEventListener('click', () => {
         this.selectedMissionIdx = idx;
         this.shutdown();
@@ -389,9 +420,12 @@ export class MissionSelectScene implements GameSceneInterface {
     this.container.querySelector('#ms-tech-trees')?.addEventListener('click', () => {
       getSceneManager().start('TechTreeScene');
     });
+    this.container.querySelector('#ms-supply-depot')?.addEventListener('click', () => {
+      getSceneManager().start('ShopScene');
+    });
 
     // Hover effects on utility buttons
-    ['#ms-edit-decks', '#ms-tech-trees'].forEach(sel => {
+    ['#ms-edit-decks', '#ms-tech-trees', '#ms-supply-depot'].forEach(sel => {
       const btn = this.container?.querySelector(sel) as HTMLElement | null;
       if (btn) {
         btn.addEventListener('mouseenter', () => { btn.style.borderColor = 'rgba(90,122,138,0.6)'; btn.style.color = '#7a9aaa'; });

@@ -36,6 +36,7 @@ export class UIScene implements GameSceneInterface {
   private doctrinePanel: DoctrinePanel | null = null;
   private shopUI: ShopUI | null = null;
   private minimap: Minimap | null = null;
+  private pauseOverlay: HTMLDivElement | null = null;
   /** Per-slot DOM elements for incremental updates. Index 0 = deck pile. */
   private slotEls: HTMLElement[] = [];
   private deckPileEl: HTMLElement | null = null;
@@ -80,6 +81,10 @@ export class UIScene implements GameSceneInterface {
     EventBus.on('wargear-return-to-hand', this.onWargearReturnToHand, this);
     EventBus.on('wargear-to-discard', this.onWargearToDiscard, this);
     EventBus.on('mission-update', this.onMissionUpdate, this);
+    EventBus.on('spawner-neutralized', this.onSpawnerNeutralized, this);
+    EventBus.on('reinforcements-incoming', this.onReinforcementsIncoming, this);
+    EventBus.on('game-paused', this.onGamePaused, this);
+    EventBus.on('game-resumed', this.onGameResumed, this);
 
     // Keyboard shortcuts for card selection (1-5)
     document.addEventListener('keydown', this.onKeyDown);
@@ -973,9 +978,12 @@ export class UIScene implements GameSceneInterface {
     }
   }
 
-  private onGoldChanged({ total }: { amount: number; total: number }): void {
+  private onGoldChanged({ amount, total }: { amount: number; total: number }): void {
     this.currentGold = total;
     this.updateGoldDisplay();
+    if (amount > 0) {
+      this.showFloatingGoldText(amount);
+    }
   }
 
   private onSupplyDrop(): void {
@@ -1003,6 +1011,7 @@ export class UIScene implements GameSceneInterface {
     const allCards = getAllCards();
     const randomCard = allCards[Math.floor(Math.random() * allCards.length)];
     addPendingReward(randomCard.id);
+    this.showBanner('OBJECTIVE COMPLETE', '#4a9e4a', 2000);
   }
 
   private onShopBuy({ card }: { card: Card }): void {
@@ -1097,6 +1106,129 @@ export class UIScene implements GameSceneInterface {
     if (this.shopUI) this.shopUI.hide();
   }
 
+  private onSpawnerNeutralized(): void {
+    this.showBanner('SPAWNER NEUTRALIZED', '#4a9e4a', 2000);
+  }
+
+  private onReinforcementsIncoming(): void {
+    this.showBanner('ENEMY REINFORCEMENTS INCOMING', '#c43030', 3000, true);
+  }
+
+  private onGamePaused = (): void => {
+    if (this.pauseOverlay) return;
+    this.pauseOverlay = document.createElement('div');
+    Object.assign(this.pauseOverlay.style, {
+      position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+      background: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: '9999', pointerEvents: 'none',
+    });
+    const text = document.createElement('div');
+    Object.assign(text.style, {
+      fontFamily: 'Teko, sans-serif', fontSize: '96px', color: '#c8982a',
+      letterSpacing: '12px', textTransform: 'uppercase', textShadow: '0 0 30px rgba(200,152,42,0.4)',
+    });
+    text.textContent = 'PAUSED';
+    const hint = document.createElement('div');
+    Object.assign(hint.style, {
+      fontFamily: 'Share Tech Mono, monospace', fontSize: '14px', color: '#c8bfa0',
+      letterSpacing: '2px', marginTop: '12px', textAlign: 'center',
+    });
+    hint.textContent = 'PRESS P TO RESUME';
+    const wrapper = document.createElement('div');
+    wrapper.style.textAlign = 'center';
+    wrapper.appendChild(text);
+    wrapper.appendChild(hint);
+    this.pauseOverlay.appendChild(wrapper);
+    document.body.appendChild(this.pauseOverlay);
+  };
+
+  private onGameResumed = (): void => {
+    if (this.pauseOverlay) {
+      this.pauseOverlay.remove();
+      this.pauseOverlay = null;
+    }
+  };
+
+  /** Show floating "+Xg" text near the gold counter */
+  private showFloatingGoldText(amount: number): void {
+    if (!this.goldEl) return;
+    const span = document.createElement('span');
+    span.textContent = `+${amount}g`;
+    Object.assign(span.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      fontFamily: "'Teko', sans-serif",
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#c8982a',
+      pointerEvents: 'none',
+      zIndex: '100',
+      whiteSpace: 'nowrap',
+      transition: 'transform 1.5s ease-out, opacity 1.5s ease-out',
+      transform: 'translateY(0)',
+      opacity: '1',
+    });
+    // Position near the gold display
+    const rect = this.goldEl.getBoundingClientRect();
+    span.style.left = `${rect.right + 8}px`;
+    span.style.top = `${rect.top}px`;
+    document.body.appendChild(span);
+    // Trigger animation on next frame
+    requestAnimationFrame(() => {
+      span.style.transform = 'translateY(-30px)';
+      span.style.opacity = '0';
+    });
+    setTimeout(() => span.remove(), 1500);
+  }
+
+  /** Show a full-width banner at ~30% from the top of the screen */
+  private showBanner(text: string, color: string, duration: number, pulse = false): void {
+    const banner = document.createElement('div');
+    Object.assign(banner.style, {
+      position: 'fixed',
+      top: '30%',
+      left: '0',
+      width: '100%',
+      textAlign: 'center',
+      fontFamily: "'Teko', sans-serif",
+      fontSize: '32px',
+      fontWeight: '700',
+      letterSpacing: '8px',
+      color: '#e8dcc0',
+      background: `linear-gradient(90deg, transparent, ${color}55, ${color}55, transparent)`,
+      padding: '14px 0',
+      zIndex: '200',
+      pointerEvents: 'none',
+      transform: 'translateY(-100%)',
+      transition: 'transform 0.3s ease-out, opacity 0.3s ease-out',
+      opacity: '0',
+    });
+    if (pulse) {
+      banner.style.animation = 'ui-banner-pulse 0.6s ease-in-out infinite alternate';
+      // Inject keyframes if not already present
+      if (!document.getElementById('ui-banner-pulse-style')) {
+        const style = document.createElement('style');
+        style.id = 'ui-banner-pulse-style';
+        style.textContent = `@keyframes ui-banner-pulse { from { opacity: 0.7; } to { opacity: 1; } }`;
+        document.head.appendChild(style);
+      }
+    }
+    banner.textContent = text;
+    document.body.appendChild(banner);
+    // Slide in
+    requestAnimationFrame(() => {
+      banner.style.transform = 'translateY(0)';
+      banner.style.opacity = '1';
+    });
+    // Slide out after duration
+    setTimeout(() => {
+      banner.style.transform = 'translateY(-100%)';
+      banner.style.opacity = '0';
+      setTimeout(() => banner.remove(), 300);
+    }, duration);
+  }
+
   update(): void {
     if (this.deckInfoEl) {
       this.deckInfoEl.textContent = `Armoury: ${this.deck.getDeckSize()} | Spent: ${this.deck.getDiscardSize()}`;
@@ -1121,6 +1253,11 @@ export class UIScene implements GameSceneInterface {
     EventBus.off('wargear-return-to-hand', this.onWargearReturnToHand, this);
     EventBus.off('wargear-to-discard', this.onWargearToDiscard, this);
     EventBus.off('mission-update', this.onMissionUpdate, this);
+    EventBus.off('spawner-neutralized', this.onSpawnerNeutralized, this);
+    EventBus.off('reinforcements-incoming', this.onReinforcementsIncoming, this);
+    EventBus.off('game-paused', this.onGamePaused, this);
+    EventBus.off('game-resumed', this.onGameResumed, this);
+    if (this.pauseOverlay) { this.pauseOverlay.remove(); this.pauseOverlay = null; }
 
     document.removeEventListener('keydown', this.onKeyDown);
     if (this.boundMouseMove) document.removeEventListener('mousemove', this.boundMouseMove);

@@ -15,6 +15,7 @@ import { DoctrineManager } from '../cards/DoctrineManager';
 import { EnemyAI } from '../ai/EnemyAI';
 import { EnemyPlacement } from '../ai/EnemyPlacement';
 import { FogOfWarSystem } from '../systems/FogOfWarSystem';
+import { SpawnerSystem } from '../systems/SpawnerSystem';
 import { HealthComponent } from '../components/HealthComponent';
 import { EquipmentComponent } from '../components/EquipmentComponent';
 import { Card } from '../cards/Card';
@@ -24,6 +25,7 @@ import { ObjectiveMarker } from '../missions/ObjectiveMarker';
 import { MISSIONS } from '../missions/MissionDatabase';
 import { SupplyPod } from '../entities/SupplyPod';
 import { XpTracker } from '../systems/XpTracker';
+import { TutorialSystem } from '../systems/TutorialSystem';
 import { TimerManager } from '../utils/TimerManager';
 import { InputEvent } from '../renderer/InputBridge';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
@@ -44,6 +46,7 @@ export class GameScene implements GameSceneInterface {
   private doctrineManager!: DoctrineManager;
   private enemyAI!: EnemyAI;
   private fogOfWar!: FogOfWarSystem;
+  private spawnerSystem!: SpawnerSystem;
   private xpTracker!: XpTracker;
   private audioManager!: AudioManager;
   private pendingCard: any = null;
@@ -53,6 +56,8 @@ export class GameScene implements GameSceneInterface {
   private objectiveMarkers: ObjectiveMarker[] = [];
   private supplyPods: SupplyPod[] = [];
   private supplyPodIdCounter = 0;
+  private tutorialSystem!: TutorialSystem;
+  private paused: boolean = false;
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
 
   create(data?: { mission?: MissionDefinition }): void {
@@ -122,6 +127,9 @@ export class GameScene implements GameSceneInterface {
     // Place enemy camps from mission definition
     EnemyPlacement.populate(this.mission, this.entityManager);
 
+    // Setup spawner system for continuous enemy production
+    this.spawnerSystem = new SpawnerSystem(this.entityManager, this.mission.enemyCamps);
+
     // Create objective markers
     for (const obj of this.mission.objectives) {
       this.objectiveMarkers.push(new ObjectiveMarker(obj));
@@ -161,6 +169,9 @@ export class GameScene implements GameSceneInterface {
     // Launch UI scene
     getSceneManager().launch('UIScene', { mission: this.mission });
 
+    // Tutorial system (only active on first mission)
+    this.tutorialSystem = new TutorialSystem();
+
     // Emit terrain data for Minimap (created by UIScene above, so it's now listening)
     EventBus.emit('minimap-terrain', this.mapManager.getTerrainGrid());
 
@@ -175,6 +186,10 @@ export class GameScene implements GameSceneInterface {
         this.pendingFromKeyboard = false;
         EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
         EventBus.emit('card-play-failed', { reason: 'cancelled' });
+      }
+      if (e.key === 'p' || e.key === 'P') {
+        this.paused = !this.paused;
+        EventBus.emit(this.paused ? 'game-paused' : 'game-resumed');
       }
     };
     document.addEventListener('keydown', this.escHandler);
@@ -456,6 +471,12 @@ export class GameScene implements GameSceneInterface {
   }
 
   update(delta: number): void {
+    if (this.paused) {
+      // Still sync entities so renderer keeps drawing, but skip all game logic
+      EventBus.emit('entities-sync', this.entityManager.getAllEntities());
+      return;
+    }
+
     // Update timers
     TimerManager.get().update(delta);
 
@@ -464,6 +485,7 @@ export class GameScene implements GameSceneInterface {
     this.missionSystem.update(delta);
     this.enemyAI.update(delta);
     this.fogOfWar.update(delta);
+    this.spawnerSystem.update(delta);
     this.pathfinding.update();
     this.selectionSystem.update(delta);
 
@@ -530,8 +552,10 @@ export class GameScene implements GameSceneInterface {
     for (const pod of this.supplyPods) pod.destroy();
     this.supplyPods = [];
 
+    this.tutorialSystem?.destroy();
     this.audioManager?.destroy();
     this.xpTracker?.destroy();
+    this.spawnerSystem?.destroy();
     this.fogOfWar?.destroy();
     this.entityManager?.destroy();
     this.economySystem?.destroy();

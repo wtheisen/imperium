@@ -77,11 +77,11 @@ export class EntityManager {
 
     if (buildingType === 'drop_ship') {
       building.addComponent('aura', new AuraComponent(building, {
-        healPerTick: 2,
-        healRadius: 4,
-        healInterval: 5000,
+        healPerTick: 1,
+        healRadius: 3,
+        healInterval: 6000,
         goldPerTick: 1,
-        goldInterval: 15000,
+        goldInterval: 30000,
       }, getAllEntities));
       building.addComponent('production', new ProductionComponent(building));
     } else if (buildingType === 'barracks') {
@@ -97,9 +97,20 @@ export class EntityManager {
         healRadius: 3,
         healInterval: 1000,
       }, getAllEntities));
+    } else if (buildingType === 'tarantula') {
+      building.addComponent('aura', new AuraComponent(building, {
+        slowPercent: 30,
+        slowRadius: 4,
+      }, getAllEntities));
     } else if (buildingType === 'aegis') {
       const health = building.getComponent<HealthComponent>('health');
       if (health) health.armor = 5;
+      building.addComponent('aura', new AuraComponent(building, {
+        armorBoost: 2,
+        armorRadius: 3,
+        selfRepairPerTick: 3,
+        selfRepairInterval: 8000,
+      }, getAllEntities));
     }
 
     this.validator.occupyTiles(tileX, tileY, stats.tileWidth, stats.tileHeight);
@@ -124,9 +135,8 @@ export class EntityManager {
     unitType: string; texture: string; stats: UnitStats;
     tileX: number; tileY: number;
   }): void {
-    const unit = this.spawnUnit(tileX, tileY, texture, unitType, stats, 'player');
-    applyTechTreeBonuses(unit, this);
-    unit.addComponent('levelBadge', new LevelBadgeComponent(unit));
+    this.spawnUnit(tileX, tileY, texture, unitType, stats, 'player');
+    // No tech bonuses, no level badge — vanilla trained unit
   }
 
   private handleEntityDeath({ entity }: { entity: Entity }): void {

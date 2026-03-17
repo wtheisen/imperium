@@ -52,6 +52,7 @@ export class FogOfWarSystem {
 
   private getSightRadius(entity: Entity): number {
     if (entity instanceof Building) {
+      if (entity.buildingType === 'tarantula') return 7;
       return entity.buildingType === 'drop_ship' ? SIGHT_RADIUS_TOWNHALL : SIGHT_RADIUS_BUILDING;
     }
     return SIGHT_RADIUS_UNIT;

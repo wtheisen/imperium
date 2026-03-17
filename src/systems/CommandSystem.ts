@@ -14,6 +14,8 @@ export class CommandSystem {
   private pathfinding: PathfindingSystem;
   private entityManager: EntityManager;
   private mapManager: MapManager;
+  private attackMoveMode: boolean = false;
+  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(
     selection: SelectionSystem,
@@ -27,8 +29,26 @@ export class CommandSystem {
     this.mapManager = mapManager;
 
     EventBus.on('input-pointer-up', this.onInputUp3D, this);
+    EventBus.on('input-pointer-down', this.onInputDown3D, this);
     EventBus.on('request-path', this.handlePathRequest, this);
     EventBus.on('command-stop', this.handleStopCommand, this);
+
+    // Attack-move keyboard handler
+    this.keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'a' || e.key === 'A') {
+        if (!e.ctrlKey && !e.shiftKey && !e.metaKey && this.selection.selectedUnits.length > 0) {
+          this.attackMoveMode = true;
+          EventBus.emit('attack-move-cursor', { active: true });
+        }
+      }
+      if (e.key === 'Escape') {
+        if (this.attackMoveMode) {
+          this.attackMoveMode = false;
+          EventBus.emit('attack-move-cursor', { active: false });
+        }
+      }
+    };
+    document.addEventListener('keydown', this.keyHandler);
   }
 
   // ── 3D Input Path ──
@@ -40,6 +60,17 @@ export class CommandSystem {
     if (evt.tileX < 0) return;
 
     this.handleCommand(evt.tileX, evt.tileY);
+  }
+
+  private onInputDown3D(evt: InputEvent): void {
+    if (evt.button !== 0) return;
+    if (!this.attackMoveMode) return;
+    if (this.selection.selectedUnits.length === 0) return;
+    if (evt.tileX < 0) return;
+
+    this.attackMoveMode = false;
+    EventBus.emit('attack-move-cursor', { active: false });
+    this.handleAttackMove(evt.tileX, evt.tileY);
   }
 
   // ── Shared command logic ──
@@ -93,6 +124,28 @@ export class CommandSystem {
     }
   }
 
+  private handleAttackMove(tileX: number, tileY: number): void {
+    const units = this.selection.selectedUnits;
+    const offsets = this.computeFormationOffsets(units.length);
+    for (let i = 0; i < units.length; i++) {
+      const unit = units[i];
+      const combat = unit.getComponent<CombatComponent>('combat');
+      if (combat) combat.setTarget(null);
+      const gatherer = unit.getComponent<GathererComponent>('gatherer');
+      if (gatherer) gatherer.state = 'idle' as any;
+      const mover = unit.getComponent<MoverComponent>('mover');
+      if (mover) {
+        const tx = tileX + offsets[i].dx;
+        const ty = tileY + offsets[i].dy;
+        mover.attackMoving = true;
+        mover.attackMoveDestination = { x: Math.max(0, tx), y: Math.max(0, ty) };
+      }
+      this.moveUnitToward(unit, Math.max(0, tileX + offsets[i].dx), Math.max(0, tileY + offsets[i].dy));
+    }
+    this.showCommandIndicator(tileX, tileY, 'attack');
+    EventBus.emit('command-issued', { type: 'attack-move', tileX, tileY });
+  }
+
   private showCommandIndicator(tileX: number, tileY: number, type: 'move' | 'attack' | 'gather'): void {
     EventBus.emit('command-indicator-3d', { tileX, tileY, type });
   }
@@ -138,7 +191,12 @@ export class CommandSystem {
 
   destroy(): void {
     EventBus.off('input-pointer-up', this.onInputUp3D, this);
+    EventBus.off('input-pointer-down', this.onInputDown3D, this);
     EventBus.off('request-path', this.handlePathRequest, this);
     EventBus.off('command-stop', this.handleStopCommand, this);
+    if (this.keyHandler) {
+      document.removeEventListener('keydown', this.keyHandler);
+      this.keyHandler = null;
+    }
   }
 }

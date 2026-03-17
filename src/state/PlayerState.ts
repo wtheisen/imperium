@@ -24,7 +24,11 @@ export interface PlayerStateData {
   pendingRewards: string[];             // cards earned during current mission
   unitXp: Record<string, UnitXpData>;
   unlockedNodes: Set<string>;
+  requisitionPoints: number;
+  version: number;
 }
+
+const STORAGE_KEY = 'cardts_player_state';
 
 const state: PlayerStateData = {
   collection: {},
@@ -34,9 +38,11 @@ const state: PlayerStateData = {
   pendingRewards: [],
   unitXp: {},
   unlockedNodes: new Set(),
+  requisitionPoints: 0,
+  version: 1,
 };
 
-export function initPlayerState(): void {
+function initStarterCollection(): void {
   // Starter collection (23 cards)
   state.collection = {
     servitor: 4,
@@ -85,6 +91,56 @@ export function initPlayerState(): void {
     sentinel: { earned: 0, spent: 0 },
   };
   state.unlockedNodes = new Set();
+  state.requisitionPoints = 0;
+  state.version = 1;
+}
+
+export function savePlayerState(): void {
+  const serializable = {
+    collection: state.collection,
+    decks: state.decks,
+    selectedDeckIndex: state.selectedDeckIndex,
+    completedMissions: Array.from(state.completedMissions),
+    pendingRewards: state.pendingRewards,
+    unitXp: state.unitXp,
+    unlockedNodes: Array.from(state.unlockedNodes),
+    requisitionPoints: state.requisitionPoints,
+    version: state.version,
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
+  } catch (e) {
+    console.warn('Failed to save player state:', e);
+  }
+}
+
+export function loadPlayerState(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return false;
+
+    state.collection = data.collection || {};
+    state.decks = data.decks || [];
+    state.selectedDeckIndex = data.selectedDeckIndex ?? 0;
+    state.completedMissions = new Set(data.completedMissions || []);
+    state.pendingRewards = data.pendingRewards || [];
+    state.unitXp = data.unitXp || {};
+    state.unlockedNodes = new Set(data.unlockedNodes || []);
+    state.requisitionPoints = data.requisitionPoints ?? 0;
+    state.version = data.version ?? 1;
+    return true;
+  } catch (e) {
+    console.warn('Failed to load player state:', e);
+    return false;
+  }
+}
+
+export function initPlayerState(): void {
+  if (!loadPlayerState()) {
+    initStarterCollection();
+  }
 }
 
 export function getPlayerState(): PlayerStateData {
@@ -112,6 +168,16 @@ export function applyPendingRewards(): void {
 
 export function addToCollection(cardId: string, qty: number): void {
   state.collection[cardId] = (state.collection[cardId] || 0) + qty;
+}
+
+export function addRequisitionPoints(amount: number): void {
+  state.requisitionPoints += amount;
+}
+
+export function spendRequisitionPoints(amount: number): boolean {
+  if (state.requisitionPoints < amount) return false;
+  state.requisitionPoints -= amount;
+  return true;
 }
 
 export function getUnitXp(unitType: string): UnitXpData {

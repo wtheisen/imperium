@@ -4,25 +4,25 @@ export const MAP_WIDTH = 80;
 export const MAP_HEIGHT = 80;
 
 export const HAND_SIZE = 5;
-export const STARTING_GOLD = 50;
+export const STARTING_GOLD = 30;
 export const PASSIVE_INCOME_PER_WAVE = 10;
-export const KILL_GOLD_BASE = 5;
+export const KILL_GOLD_BASE = 2;
 export const WAVE_COMPLETION_BONUS = 20;
 
 export const PREP_DURATION_MS = 30000;
 
 // Mission system
-export const SUPPLY_DROP_INTERVAL_MS = 60000;
-export const SUPPLY_DROP_GOLD = 15;
-export const SUPPLY_DROP_CARD_DRAWS = 2;
-export const OBJECTIVE_COMPLETION_BONUS = 30;
-export const OBJECTIVE_CARD_DRAWS = 3;
+export const SUPPLY_DROP_INTERVAL_MS = 90000;
+export const SUPPLY_DROP_GOLD = 10;
+export const SUPPLY_DROP_CARD_DRAWS = 1;
+export const OBJECTIVE_COMPLETION_BONUS = 15;
+export const OBJECTIVE_CARD_DRAWS = 2;
 export const CAMP_AGGRO_DEFAULT = 6;
 
 // Mine depletion
-export const NEAR_MINE_GOLD = 200;
-export const DEFAULT_MINE_GOLD = 300;
-export const FAR_MINE_GOLD = 500;
+export const NEAR_MINE_GOLD = 120;
+export const DEFAULT_MINE_GOLD = 200;
+export const FAR_MINE_GOLD = 350;
 
 export const MIN_DECK_SIZE = 8;
 export const MAX_DECK_SIZE = 15;
@@ -49,3 +49,21 @@ export const DEPTH_OFFSET_BUILDING = 1;
 export const DEPTH_OFFSET_UNIT = 2;
 export const DEPTH_OFFSET_PROJECTILE = 3;
 export const DEPTH_OFFSET_EFFECT = 4;
+
+// Meta-currency rewards
+export const MISSION_REWARD_BASE = 50;
+export const MISSION_REWARD_PER_DIFFICULTY = 25;
+export const MISSION_REWARD_PER_OBJECTIVE = 15;
+export const DEFEAT_REWARD_FRACTION = 0.3;
+
+// Shop
+export const SHOP_PRICE_MULTIPLIER = 3;
+
+// Spawner system
+export const SPAWNER_BASE_INTERVAL = 30000;
+export const ROAM_PATROL_INTERVAL = 45000;
+export const ROAM_PATROL_SIZE = 3;
+export const REINFORCEMENT_DELAY = 5000;
+export const REINFORCEMENT_SIZE_BASE = 4;
+export const PRESSURE_ESCALATION_INTERVAL = 60000;
+export const PRESSURE_MAX = 2.0;

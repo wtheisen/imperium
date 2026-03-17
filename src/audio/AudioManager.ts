@@ -8,6 +8,8 @@ export class AudioManager {
   private savedVolume: number = DEFAULT_VOLUME;
   private cooldowns: Map<string, number> = new Map();
   private noiseBuffer: AudioBuffer | null = null;
+  private droneOsc: OscillatorNode | null = null;
+  private droneGain: GainNode | null = null;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -39,6 +41,13 @@ export class AudioManager {
     EventBus.on('supply-pod-incoming', this.onSupplyPodIncoming, this);
     EventBus.on('audio-toggle-mute', this.toggleMute, this);
     EventBus.on('card-discarded', this.onCardDiscarded, this);
+    EventBus.on('spawner-neutralized', this.onSpawnerNeutralized, this);
+    EventBus.on('reinforcements-incoming', this.onReinforcementsIncoming, this);
+    EventBus.on('mine-exhausted', this.onMineExhausted, this);
+    EventBus.on('mission-complete', this.onMissionComplete, this);
+
+    // Start ambient drone
+    this.startDrone();
   }
 
   private canPlay(key: string, cooldownMs: number): boolean {
@@ -379,6 +388,105 @@ export class AudioManager {
     }
   }
 
+  // --- Drone ---
+
+  private startDrone(): void {
+    if (this.droneOsc) return;
+    this.droneOsc = this.ctx.createOscillator();
+    this.droneGain = this.ctx.createGain();
+    this.droneOsc.type = 'sine';
+    this.droneOsc.frequency.value = 55; // A1
+    this.droneGain.gain.value = 0.03;
+    this.droneOsc.connect(this.droneGain);
+    this.droneGain.connect(this.masterGain);
+    this.droneOsc.start();
+  }
+
+  private stopDrone(): void {
+    if (this.droneOsc) {
+      this.droneOsc.stop();
+      this.droneOsc.disconnect();
+      this.droneOsc = null;
+    }
+    if (this.droneGain) {
+      this.droneGain.disconnect();
+      this.droneGain = null;
+    }
+  }
+
+  // --- New event sounds ---
+
+  /** Spawner neutralized: descending "power down" tone 400→100Hz over 0.4s */
+  playPowerDown(): void {
+    if (!this.canPlay('powerDown', 300)) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.4);
+    gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.4);
+  }
+
+  /** Reinforcements incoming: alarm siren — 3 quick oscillating pulses 600-800Hz */
+  playAlarmSiren(): void {
+    if (!this.canPlay('alarmSiren', 500)) return;
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(600, t + i * 0.15);
+      osc.frequency.linearRampToValueAtTime(800, t + i * 0.15 + 0.07);
+      osc.frequency.linearRampToValueAtTime(600, t + i * 0.15 + 0.12);
+      gain.gain.setValueAtTime(0.2, t + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.12);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t + i * 0.15);
+      osc.stop(t + i * 0.15 + 0.12);
+    }
+  }
+
+  /** Mine exhausted: dull thud — low sine 80Hz, quick decay */
+  playMineExhausted(): void {
+    if (!this.canPlay('mineExhausted', 200)) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 80;
+    gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.12);
+  }
+
+  /** Victory fanfare: ascending C-E-G-C chord over 0.5s */
+  playVictoryFanfare(): void {
+    if (!this.canPlay('victoryFanfare', 1000)) return;
+    const t = this.ctx.currentTime;
+    const notes = [261.63, 329.63, 392.0, 523.25]; // C4, E4, G4, C5
+    for (let i = 0; i < notes.length; i++) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = notes[i];
+      const start = t + i * 0.125;
+      gain.gain.setValueAtTime(0.2, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(start);
+      osc.stop(start + 0.2);
+    }
+  }
+
   // --- Event handlers ---
 
   private onSelectionChanged(): void {
@@ -442,6 +550,22 @@ export class AudioManager {
     this.playDiscard();
   }
 
+  private onSpawnerNeutralized(): void {
+    this.playPowerDown();
+  }
+
+  private onReinforcementsIncoming(): void {
+    this.playAlarmSiren();
+  }
+
+  private onMineExhausted(): void {
+    this.playMineExhausted();
+  }
+
+  private onMissionComplete(): void {
+    this.playVictoryFanfare();
+  }
+
   toggleMute(): void {
     this.muted = !this.muted;
     if (this.muted) {
@@ -457,6 +581,8 @@ export class AudioManager {
   }
 
   destroy(): void {
+    this.stopDrone();
+
     EventBus.off('selection-changed', this.onSelectionChanged, this);
     EventBus.off('command-issued', this.onCommandIssued, this);
     EventBus.off('card-played', this.onCardPlayed, this);
@@ -468,6 +594,10 @@ export class AudioManager {
     EventBus.off('supply-pod-incoming', this.onSupplyPodIncoming, this);
     EventBus.off('audio-toggle-mute', this.toggleMute, this);
     EventBus.off('card-discarded', this.onCardDiscarded, this);
+    EventBus.off('spawner-neutralized', this.onSpawnerNeutralized, this);
+    EventBus.off('reinforcements-incoming', this.onReinforcementsIncoming, this);
+    EventBus.off('mine-exhausted', this.onMineExhausted, this);
+    EventBus.off('mission-complete', this.onMissionComplete, this);
     this.ctx.close();
   }
 }

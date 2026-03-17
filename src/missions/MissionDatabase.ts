@@ -11,13 +11,13 @@ export const MISSIONS: MissionDefinition[] = [
     difficulty: 1,
     playerStartX: 40,
     playerStartY: 40,
-    startingGold: 60,
+    startingGold: 30,
     supplyDropIntervalMs: SUPPLY_DROP_INTERVAL_MS,
     terrain: {
       waterCoverage: 0.06,
       stoneCoverage: 0.03,
       forestCoverage: 0.05,
-      goldMineCount: 10,
+      goldMineCount: 6,
       riverCount: 1,
     },
     objectives: [
@@ -29,8 +29,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 16,
         tileY: 16,
         targetCampId: 'camp_ork_nw',
-        goldReward: 30,
-        cardDraws: 3,
+        goldReward: 20,
+        cardDraws: 2,
       },
       {
         id: 'obj_purge_nest',
@@ -40,8 +40,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 64,
         tileY: 28,
         purgeRadius: 7,
-        goldReward: 30,
-        cardDraws: 3,
+        goldReward: 20,
+        cardDraws: 2,
       },
     ],
     enemyCamps: [
@@ -58,6 +58,12 @@ export const MISSIONS: MissionDefinition[] = [
           texture: 'building-barracks',
           buildingType: 'enemy_outpost',
           stats: { maxHp: 100, tileWidth: 2, tileHeight: 2 },
+        },
+        spawner: {
+          spawnInterval: 30000,
+          spawnGroup: [{ type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 2 }],
+          maxActiveUnits: 6,
+          patrolRadius: 8,
         },
       },
       {
@@ -92,13 +98,13 @@ export const MISSIONS: MissionDefinition[] = [
     difficulty: 2,
     playerStartX: 40,
     playerStartY: 68,
-    startingGold: 50,
+    startingGold: 25,
     supplyDropIntervalMs: SUPPLY_DROP_INTERVAL_MS,
     terrain: {
       waterCoverage: 0.08,
       stoneCoverage: 0.04,
       forestCoverage: 0.07,
-      goldMineCount: 12,
+      goldMineCount: 8,
       riverCount: 2,
     },
     objectives: [
@@ -110,8 +116,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 66,
         tileY: 46,
         targetCampId: 'camp_ork_east',
-        goldReward: 30,
-        cardDraws: 3,
+        goldReward: 20,
+        cardDraws: 2,
       },
       {
         id: 'obj_destroy_north',
@@ -121,8 +127,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 40,
         tileY: 12,
         targetCampId: 'camp_ork_north',
-        goldReward: 30,
-        cardDraws: 3,
+        goldReward: 20,
+        cardDraws: 2,
       },
       {
         id: 'obj_recover_relay',
@@ -131,8 +137,8 @@ export const MISSIONS: MissionDefinition[] = [
         description: 'Send a unit to the relay site to recover it.',
         tileX: 14,
         tileY: 24,
-        goldReward: 40,
-        cardDraws: 3,
+        goldReward: 25,
+        cardDraws: 2,
       },
     ],
     enemyCamps: [
@@ -151,6 +157,15 @@ export const MISSIONS: MissionDefinition[] = [
           buildingType: 'enemy_outpost',
           stats: { maxHp: 120, tileWidth: 2, tileHeight: 2 },
         },
+        spawner: {
+          spawnInterval: 25000,
+          spawnGroup: [
+            { type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 2 },
+            { type: 'enemy_archer', texture: 'unit-enemy-ranged', stats: ENEMY_ARCHER, count: 1 },
+          ],
+          maxActiveUnits: 8,
+          patrolRadius: 10,
+        },
       },
       {
         id: 'camp_ork_north',
@@ -166,6 +181,15 @@ export const MISSIONS: MissionDefinition[] = [
           texture: 'building-barracks',
           buildingType: 'enemy_outpost',
           stats: { maxHp: 120, tileWidth: 2, tileHeight: 2 },
+        },
+        spawner: {
+          spawnInterval: 25000,
+          spawnGroup: [
+            { type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 2 },
+            { type: 'enemy_archer', texture: 'unit-enemy-ranged', stats: ENEMY_ARCHER, count: 1 },
+          ],
+          maxActiveUnits: 8,
+          patrolRadius: 10,
         },
       },
       {
@@ -211,13 +235,13 @@ export const MISSIONS: MissionDefinition[] = [
     difficulty: 3,
     playerStartX: 40,
     playerStartY: 70,
-    startingGold: 40,
+    startingGold: 20,
     supplyDropIntervalMs: SUPPLY_DROP_INTERVAL_MS,
     terrain: {
       waterCoverage: 0.10,
       stoneCoverage: 0.05,
       forestCoverage: 0.08,
-      goldMineCount: 14,
+      goldMineCount: 8,
       riverCount: 2,
     },
     objectives: [
@@ -229,8 +253,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 40,
         tileY: 8,
         targetCampId: 'camp_warboss',
-        goldReward: 50,
-        cardDraws: 4,
+        goldReward: 30,
+        cardDraws: 3,
       },
       {
         id: 'obj_purge_west',
@@ -240,8 +264,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 10,
         tileY: 36,
         purgeRadius: 8,
-        goldReward: 35,
-        cardDraws: 3,
+        goldReward: 25,
+        cardDraws: 2,
       },
       {
         id: 'obj_purge_east',
@@ -251,8 +275,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 70,
         tileY: 36,
         purgeRadius: 8,
-        goldReward: 35,
-        cardDraws: 3,
+        goldReward: 25,
+        cardDraws: 2,
       },
     ],
     enemyCamps: [
@@ -272,6 +296,15 @@ export const MISSIONS: MissionDefinition[] = [
           texture: 'building-barracks',
           buildingType: 'enemy_outpost',
           stats: { maxHp: 250, tileWidth: 2, tileHeight: 2 },
+        },
+        spawner: {
+          spawnInterval: 20000,
+          spawnGroup: [
+            { type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 3 },
+            { type: 'enemy_archer', texture: 'unit-enemy-ranged', stats: ENEMY_ARCHER, count: 1 },
+          ],
+          maxActiveUnits: 10,
+          patrolRadius: 12,
         },
       },
       // West nest
@@ -311,6 +344,12 @@ export const MISSIONS: MissionDefinition[] = [
           buildingType: 'enemy_outpost',
           stats: { maxHp: 100, tileWidth: 2, tileHeight: 2 },
         },
+        spawner: {
+          spawnInterval: 25000,
+          spawnGroup: [{ type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 2 }],
+          maxActiveUnits: 6,
+          patrolRadius: 8,
+        },
       },
       {
         id: 'camp_mid_right',
@@ -325,6 +364,12 @@ export const MISSIONS: MissionDefinition[] = [
           texture: 'building-barracks',
           buildingType: 'enemy_outpost',
           stats: { maxHp: 100, tileWidth: 2, tileHeight: 2 },
+        },
+        spawner: {
+          spawnInterval: 25000,
+          spawnGroup: [{ type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 2 }],
+          maxActiveUnits: 6,
+          patrolRadius: 8,
         },
       },
       // Patrol camps near player start
@@ -363,12 +408,12 @@ export const MISSIONS: MissionDefinition[] = [
     difficulty: 2,
     playerStartX: 10,
     playerStartY: 40,
-    startingGold: 50,
+    startingGold: 25,
     supplyDropIntervalMs: SUPPLY_DROP_INTERVAL_MS,
     terrain: {
       mapType: 'space_hulk',
       corridorWidth: 3,
-      goldMineCount: 8,
+      goldMineCount: 5,
     },
     objectives: [
       {
@@ -379,8 +424,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 60,
         tileY: 20,
         targetCampId: 'camp_bridge',
-        goldReward: 35,
-        cardDraws: 3,
+        goldReward: 20,
+        cardDraws: 2,
       },
       {
         id: 'obj_purge_enginarium',
@@ -390,8 +435,8 @@ export const MISSIONS: MissionDefinition[] = [
         tileX: 40,
         tileY: 65,
         purgeRadius: 6,
-        goldReward: 30,
-        cardDraws: 3,
+        goldReward: 20,
+        cardDraws: 2,
       },
       {
         id: 'obj_recover_relic',
@@ -400,8 +445,8 @@ export const MISSIONS: MissionDefinition[] = [
         description: 'Retrieve the holy relic from the chapel vault.',
         tileX: 70,
         tileY: 50,
-        goldReward: 40,
-        cardDraws: 4,
+        goldReward: 25,
+        cardDraws: 2,
       },
     ],
     enemyCamps: [
@@ -419,6 +464,15 @@ export const MISSIONS: MissionDefinition[] = [
           texture: 'building-barracks',
           buildingType: 'enemy_outpost',
           stats: { maxHp: 140, tileWidth: 2, tileHeight: 2 },
+        },
+        spawner: {
+          spawnInterval: 25000,
+          spawnGroup: [
+            { type: 'enemy_grunt', texture: 'unit-enemy', stats: ENEMY_GRUNT, count: 2 },
+            { type: 'enemy_archer', texture: 'unit-enemy-ranged', stats: ENEMY_ARCHER, count: 1 },
+          ],
+          maxActiveUnits: 8,
+          patrolRadius: 8,
         },
       },
       {

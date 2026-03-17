@@ -37,6 +37,13 @@ export interface EnemyCampDefinition {
   };
   aggroRadius: number;
   patrolPath?: { x: number; y: number }[];
+  /** Spawner config — if present, this camp continuously produces units */
+  spawner?: {
+    spawnInterval: number;
+    spawnGroup: { type: string; texture: string; stats: any; count: number }[];
+    maxActiveUnits: number;
+    patrolRadius?: number;
+  };
 }
 
 export interface TerrainParams {

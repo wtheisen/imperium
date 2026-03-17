@@ -21,21 +21,21 @@ export const TRAINABLE_UNITS: TrainableUnit[] = [
   {
     unitType: 'servitor', texture: 'unit-servitor', name: 'Servitor',
     cost: 5, buildTime: 5000,
-    stats: { maxHp: 25, speed: 2, attackDamage: 3, attackRange: 1, attackCooldown: 1500, isRanged: false, gatherRate: 1, gatherCapacity: 10, squadSize: 1 },
+    stats: { maxHp: 25, speed: 2, attackDamage: 3, attackRange: 1, attackCooldown: 1500, isRanged: false, gatherRate: 0.8, gatherCapacity: 6, squadSize: 1 },
   },
   {
     unitType: 'scout', texture: 'unit-scout', name: 'Scout Recon Team',
-    cost: 8, buildTime: 6000,
+    cost: 5, buildTime: 6000,
     stats: { maxHp: 20, speed: 4, attackDamage: 3, attackRange: 1, attackCooldown: 1500, isRanged: false, squadSize: 3 },
   },
   {
     unitType: 'guardsman', texture: 'unit-guardsman', name: 'Infantry Squad',
-    cost: 12, buildTime: 8000,
+    cost: 8, buildTime: 8000,
     stats: { maxHp: 30, speed: 2.5, attackDamage: 5, attackRange: 3, attackCooldown: 1200, isRanged: true, squadSize: 6 },
   },
   {
     unitType: 'marine', texture: 'unit-marine', name: 'Combat Squad',
-    cost: 15, buildTime: 10000,
+    cost: 8, buildTime: 10000,
     stats: { maxHp: 60, speed: 1.8, attackDamage: 10, attackRange: 1, attackCooldown: 1000, isRanged: false, squadSize: 4 },
   },
 ];

@@ -59,13 +59,18 @@ export class MissionSystem {
   private checkPurgeObjective(status: ObjectiveStatus): void {
     const obj = status.definition;
     const radius = obj.purgeRadius || 5;
+
+    // Filter units by HOME position, not current position.
+    // This prevents roaming patrols and spawner units from distant camps
+    // from blocking purge completion.
     const enemies = this.entityManager.getUnits('enemy');
     const enemiesInRadius = enemies.filter((e) => {
-      const dx = e.tileX - obj.tileX;
-      const dy = e.tileY - obj.tileY;
-      return Math.abs(dx) + Math.abs(dy) <= radius;
+      const hx = e.homeX ?? e.tileX;
+      const hy = e.homeY ?? e.tileY;
+      return Math.abs(hx - obj.tileX) + Math.abs(hy - obj.tileY) <= radius;
     });
-    // Also check enemy buildings in radius
+
+    // Also check enemy buildings in radius (unchanged — buildings don't move)
     const enemyBuildings = this.entityManager.getBuildings('enemy');
     const buildingsInRadius = enemyBuildings.filter((b) => {
       const dx = b.tileX - obj.tileX;
@@ -99,6 +104,8 @@ export class MissionSystem {
       objectiveId: obj.id,
       goldReward: obj.goldReward,
       cardDraws: obj.cardDraws,
+      tileX: obj.tileX,
+      tileY: obj.tileY,
     });
 
     // Check if all objectives are done

@@ -1,5 +1,5 @@
 import { GameSceneInterface, getSceneManager } from './SceneManager';
-import { getPlayerState, SavedDeck } from '../state/PlayerState';
+import { getPlayerState, SavedDeck, savePlayerState } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { Card, CardType } from '../cards/Card';
 import { MIN_DECK_SIZE, MAX_DECK_SIZE } from '../config';
@@ -283,6 +283,7 @@ export class DeckEditScene implements GameSceneInterface {
           return;
         }
       }
+      savePlayerState();
       getSceneManager().start('MissionSelectScene');
     });
     bar.appendChild(backBtn);

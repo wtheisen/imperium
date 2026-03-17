@@ -2,6 +2,7 @@ import { MissionDefinition, EnemyCampDefinition } from '../missions/MissionDefin
 import { EntityManager } from '../systems/EntityManager';
 import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
+import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 
 export class EnemyPlacement {
   static populate(mission: MissionDefinition, entityManager: EntityManager): void {
@@ -26,8 +27,8 @@ export class EnemyPlacement {
           // Spread units around camp center with some randomization
           const offsetX = Math.floor(Math.random() * 5) - 2;
           const offsetY = Math.floor(Math.random() * 5) - 2;
-          const spawnX = Math.max(0, Math.min(39, camp.tileX + offsetX));
-          const spawnY = Math.max(0, Math.min(39, camp.tileY + offsetY));
+          const spawnX = Math.max(0, Math.min(MAP_WIDTH - 1, camp.tileX + offsetX));
+          const spawnY = Math.max(0, Math.min(MAP_HEIGHT - 1, camp.tileY + offsetY));
 
           const unit = entityManager.spawnUnit(
             spawnX, spawnY,

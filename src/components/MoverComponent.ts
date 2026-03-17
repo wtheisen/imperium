@@ -9,6 +9,11 @@ export class MoverComponent implements Component {
   private moving: boolean = false;
   private moveSpeed: number;
 
+  /** When true, unit will stop to engage enemies encountered en route */
+  public attackMoving: boolean = false;
+  /** Stored attack-move destination for resuming after combat */
+  public attackMoveDestination: { x: number; y: number } | null = null;
+
   /** Fractional tile position for smooth 3D interpolation */
   public fracTileX: number;
   public fracTileY: number;
@@ -39,6 +44,15 @@ export class MoverComponent implements Component {
   }
 
   stop(): void {
+    this.moving = false;
+    this.path = [];
+    this.pathIndex = 0;
+    this.attackMoving = false;
+    this.attackMoveDestination = null;
+  }
+
+  /** Stop movement but preserve attack-move destination for resuming */
+  stopForCombat(): void {
     this.moving = false;
     this.path = [];
     this.pathIndex = 0;

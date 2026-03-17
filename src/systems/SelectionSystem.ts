@@ -12,8 +12,14 @@ export class SelectionSystem {
   private dragStart: { screenX: number; screenY: number; tileX: number; tileY: number } | null = null;
   private isDragging: boolean = false;
 
+  // Control groups: Ctrl+1-9 to save, Shift+1-9 to recall
+  private controlGroups: Map<number, string[]> = new Map();
+
   // CSS overlay selection box
   private selectionBoxDiv: HTMLDivElement | null = null;
+
+  // Keyboard handler ref for cleanup
+  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(entityManager: EntityManager) {
     this.entityManager = entityManager;
@@ -22,6 +28,32 @@ export class SelectionSystem {
     EventBus.on('input-pointer-down', this.onInputDown, this);
     EventBus.on('input-pointer-move', this.onInputMove, this);
     EventBus.on('input-pointer-up', this.onInputUp, this);
+
+    // Control group keyboard shortcuts
+    this.keyHandler = (e: KeyboardEvent) => {
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 9) {
+        if (e.ctrlKey || e.metaKey) {
+          // Save control group
+          e.preventDefault();
+          this.controlGroups.set(num, this.selectedUnits.map((u) => u.entityId));
+        } else if (e.shiftKey) {
+          // Recall control group
+          e.preventDefault();
+          const ids = this.controlGroups.get(num);
+          if (ids && ids.length > 0) {
+            this.clearSelection();
+            const allUnits = this.entityManager.getUnits('player');
+            this.selectedUnits = allUnits.filter((u) => u.active && ids.includes(u.entityId));
+            for (const unit of this.selectedUnits) {
+              this.highlightUnit(unit, true);
+            }
+            EventBus.emit('selection-changed', { entities: this.selectedUnits });
+          }
+        }
+      }
+    };
+    document.addEventListener('keydown', this.keyHandler);
 
     // Create CSS selection box overlay
     this.selectionBoxDiv = document.createElement('div');
@@ -230,6 +262,10 @@ export class SelectionSystem {
     EventBus.off('input-pointer-down', this.onInputDown, this);
     EventBus.off('input-pointer-move', this.onInputMove, this);
     EventBus.off('input-pointer-up', this.onInputUp, this);
+    if (this.keyHandler) {
+      document.removeEventListener('keydown', this.keyHandler);
+      this.keyHandler = null;
+    }
     if (this.selectionBoxDiv) {
       this.selectionBoxDiv.remove();
       this.selectionBoxDiv = null;

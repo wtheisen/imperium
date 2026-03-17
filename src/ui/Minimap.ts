@@ -43,6 +43,9 @@ export class Minimap {
   private entities: Entity[] = [];
   private terrainImage: ImageData | null = null;
 
+  // Minimap pings
+  private pings: { tileX: number; tileY: number; color: [number, number, number]; startTime: number; duration: number }[] = [];
+
   // Camera viewport (tile coords)
   private camX = MAP_WIDTH / 2;
   private camZ = MAP_HEIGHT / 2;
@@ -81,6 +84,12 @@ export class Minimap {
     EventBus.on('fog-updated', this.onFogUpdated, this);
     EventBus.on('entities-sync', this.onEntitiesSync, this);
     EventBus.on('camera-moved', this.onCameraMoved, this);
+
+    // Ping events
+    EventBus.on('reinforcements-incoming', this.onPingReinforcements, this);
+    EventBus.on('supply-pod-incoming', this.onPingSupplyPod, this);
+    EventBus.on('spawner-neutralized', this.onPingSpawnerNeutralized, this);
+    EventBus.on('objective-completed', this.onPingObjectiveCompleted, this);
 
     // Click/drag to move camera
     this.canvas.addEventListener('mousedown', this.onMouseDown);
@@ -220,6 +229,67 @@ export class Minimap {
     ctx.strokeStyle = 'rgba(232, 212, 139, 0.6)';
     ctx.lineWidth = 1;
     ctx.strokeRect(vpLeft, vpTop, vpW, vpH);
+
+    // 5. Draw pings
+    this.drawPings();
+  }
+
+  // ── Pings ────────────────────────────────────────────────────
+
+  private ping(tileX: number, tileY: number, color: [number, number, number], duration = 3000): void {
+    this.pings.push({ tileX, tileY, color, startTime: performance.now(), duration });
+  }
+
+  private onPingReinforcements = (data: { tileX: number; tileY: number }): void => {
+    this.ping(data.tileX, data.tileY, [220, 60, 60]); // red
+  };
+
+  private onPingSupplyPod = (data: { tileX: number; tileY: number }): void => {
+    this.ping(data.tileX, data.tileY, [200, 152, 42]); // gold
+  };
+
+  private onPingSpawnerNeutralized = (data: { tileX?: number; tileY?: number }): void => {
+    if (data.tileX != null && data.tileY != null) {
+      this.ping(data.tileX, data.tileY, [74, 158, 74]); // green
+    }
+  };
+
+  private onPingObjectiveCompleted = (data: { tileX?: number; tileY?: number }): void => {
+    if (data.tileX != null && data.tileY != null) {
+      this.ping(data.tileX, data.tileY, [74, 158, 74]); // green
+    }
+  };
+
+  private drawPings(): void {
+    const now = performance.now();
+    const ctx = this.ctx;
+
+    for (let i = this.pings.length - 1; i >= 0; i--) {
+      const p = this.pings[i];
+      const elapsed = now - p.startTime;
+      if (elapsed >= p.duration) {
+        this.pings.splice(i, 1);
+        continue;
+      }
+
+      const t = elapsed / p.duration;
+      const alpha = 1 - t;
+      const radius = 3 + t * 10; // expand from 3 to 13px
+      const px = p.tileX * TILE_PX + TILE_PX / 2;
+      const py = p.tileY * TILE_PX + TILE_PX / 2;
+
+      ctx.beginPath();
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${p.color[0]},${p.color[1]},${p.color[2]},${alpha.toFixed(2)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Inner filled dot
+      ctx.beginPath();
+      ctx.arc(px, py, 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${p.color[0]},${p.color[1]},${p.color[2]},${alpha.toFixed(2)})`;
+      ctx.fill();
+    }
   }
 
   // ── Click-to-pan ──────────────────────────────────────────────
@@ -254,6 +324,10 @@ export class Minimap {
     EventBus.off('fog-updated', this.onFogUpdated, this);
     EventBus.off('entities-sync', this.onEntitiesSync, this);
     EventBus.off('camera-moved', this.onCameraMoved, this);
+    EventBus.off('reinforcements-incoming', this.onPingReinforcements, this);
+    EventBus.off('supply-pod-incoming', this.onPingSupplyPod, this);
+    EventBus.off('spawner-neutralized', this.onPingSpawnerNeutralized, this);
+    EventBus.off('objective-completed', this.onPingObjectiveCompleted, this);
 
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
     this.canvas.removeEventListener('mousemove', this.onMouseMove);

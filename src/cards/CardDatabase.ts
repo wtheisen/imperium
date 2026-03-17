@@ -282,9 +282,9 @@ export const CARD_DATABASE: Record<string, Card> = {
     type: 'doctrine',
     cost: 15,
     faction: 'neutral',
-    description: 'Imperial tithe. +2g per card played.',
+    description: 'Imperial tithe. +1g per card played.',
     doctrineEffect: 'tithe_collector',
-    doctrineValue: 2,
+    doctrineValue: 1,
   },
   scavenger_rites: {
     id: 'scavenger_rites',
@@ -292,9 +292,9 @@ export const CARD_DATABASE: Record<string, Card> = {
     type: 'doctrine',
     cost: 15,
     faction: 'neutral',
-    description: 'Battlefield salvage. +3g per enemy killed.',
+    description: 'Battlefield salvage. +1g per enemy killed.',
     doctrineEffect: 'scavenger_rites',
-    doctrineValue: 3,
+    doctrineValue: 1,
   },
   forward_supply: {
     id: 'forward_supply',
@@ -312,9 +312,9 @@ export const CARD_DATABASE: Record<string, Card> = {
     type: 'doctrine',
     cost: 25,
     faction: 'neutral',
-    description: 'Plunder directive. Objective gold rewards +50%.',
+    description: 'Plunder directive. Objective gold rewards +25%.',
     doctrineEffect: 'war_spoils',
-    doctrineValue: 1.5,
+    doctrineValue: 1.25,
   },
 
   // Combat Doctrines

@@ -1,4 +1,4 @@
-import { getPlayerState } from './PlayerState';
+import { getPlayerState, savePlayerState } from './PlayerState';
 import { TECH_TREES } from './TechTreeData';
 
 export type TechNodeEffect =
@@ -61,6 +61,7 @@ export function unlockNode(nodeId: string): boolean {
 
   state.unitXp[node.unitType].spent += node.xpCost;
   state.unlockedNodes.add(node.id);
+  savePlayerState();
   return true;
 }
 
