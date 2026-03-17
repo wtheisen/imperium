@@ -29,6 +29,8 @@ import { TutorialSystem } from '../systems/TutorialSystem';
 import { TimerManager } from '../utils/TimerManager';
 import { InputEvent } from '../renderer/InputBridge';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
+import { getActiveModifiers } from '../state/PlayerState';
+import { getMergedEffects } from '../state/DifficultyModifiers';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -162,6 +164,8 @@ export class GameScene implements GameSceneInterface {
     EventBus.on('mine-tick', this.onMineTick, this);
     EventBus.on('input-pointer-move', this.onInputMove3D, this);
     EventBus.on('input-pointer-down', this.onInputDown3D, this);
+    EventBus.on('ordnance-vfx-3d', this.onOrdnanceVfx, this);
+    EventBus.on('entity-died', this.onEntityDiedCameraShake, this);
 
     // Audio
     this.audioManager = new AudioManager();
@@ -394,6 +398,9 @@ export class GameScene implements GameSceneInterface {
   }
 
   private onSupplyPodIncoming(data: { tileX: number; tileY: number; gold: number; cardDraws: number }): void {
+    // Block supply drops if modifier is active
+    const effects = getMergedEffects(getActiveModifiers());
+    if (effects.noSupplyDrops) return;
     const podId = `pod-${++this.supplyPodIdCounter}`;
     EventBus.emit('supply-pod-3d', { id: podId, tileX: data.tileX, tileY: data.tileY });
     const pod = new SupplyPod(data.tileX, data.tileY, data.gold, data.cardDraws);
@@ -461,6 +468,26 @@ export class GameScene implements GameSceneInterface {
 
   private onWargearOrphaned({ card }: { card: Card }): void {
     EventBus.emit('wargear-to-discard', { card });
+  }
+
+  private onOrdnanceVfx(_data: any): void {
+    const gameRenderer = (window as any).__gameRenderer;
+    if (gameRenderer?.cameraController) {
+      gameRenderer.cameraController.shake(0.15, 300);
+    }
+  }
+
+  private onEntityDiedCameraShake({ entity }: { entity: any }): void {
+    // Shake on boss-type enemy deaths (Nobs, buildings)
+    if (entity?.team === 'enemy') {
+      const health = entity.getComponent?.('health');
+      if (health && health.maxHp >= 80) {
+        const gameRenderer = (window as any).__gameRenderer;
+        if (gameRenderer?.cameraController) {
+          gameRenderer.cameraController.shake(0.1, 200);
+        }
+      }
+    }
   }
 
   private onPanToObjective({ tileX, tileY }: { tileX: number; tileY: number }): void {
@@ -541,6 +568,8 @@ export class GameScene implements GameSceneInterface {
     EventBus.off('mine-tick', this.onMineTick, this);
     EventBus.off('input-pointer-move', this.onInputMove3D, this);
     EventBus.off('input-pointer-down', this.onInputDown3D, this);
+    EventBus.off('ordnance-vfx-3d', this.onOrdnanceVfx, this);
+    EventBus.off('entity-died', this.onEntityDiedCameraShake, this);
 
     if (this.escHandler) {
       document.removeEventListener('keydown', this.escHandler);

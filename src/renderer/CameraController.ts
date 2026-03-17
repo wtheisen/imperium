@@ -39,6 +39,10 @@ export class CameraController {
   private keysHeld = new Set<string>();
   private keyRotateSpeed = 0.03;
 
+  // Screen shake
+  private shakeTimer = 0;
+  private shakeIntensity = 0;
+
   private domElement: HTMLElement;
 
   constructor(domElement: HTMLElement, aspect: number) {
@@ -168,7 +172,16 @@ export class CameraController {
     this.updateCameraPosition();
   };
 
-  /** Call each frame to apply keyboard rotation (Q/E) and edge-of-screen panning. */
+  /** Trigger camera shake (e.g. on ordnance impact). */
+  shake(intensity: number, durationMs: number): void {
+    // Only override if stronger than current shake
+    if (intensity > this.shakeIntensity) {
+      this.shakeIntensity = intensity;
+    }
+    this.shakeTimer = Math.max(this.shakeTimer, durationMs);
+  }
+
+  /** Call each frame to apply keyboard rotation (Q/E), edge-of-screen panning, and screen shake. */
   tick(): void {
     let changed = false;
     if (this.keysHeld.has('q')) { this.theta += this.keyRotateSpeed; changed = true; }
@@ -203,6 +216,20 @@ export class CameraController {
     }
 
     if (changed) this.updateCameraPosition();
+
+    // Screen shake
+    if (this.shakeTimer > 0) {
+      const decay = this.shakeTimer / 300; // fade out
+      const offsetX = (Math.random() - 0.5) * 2 * this.shakeIntensity * Math.min(decay, 1);
+      const offsetY = (Math.random() - 0.5) * 2 * this.shakeIntensity * Math.min(decay, 1);
+      this.camera.position.x += offsetX;
+      this.camera.position.y += offsetY;
+      this.shakeTimer -= 16; // ~60fps step
+      if (this.shakeTimer <= 0) {
+        this.shakeTimer = 0;
+        this.shakeIntensity = 0;
+      }
+    }
   }
 
   /** Smoothly pan the camera target to a tile position. */

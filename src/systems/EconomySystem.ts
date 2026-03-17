@@ -1,5 +1,7 @@
 import { STARTING_GOLD, KILL_GOLD_BASE, OBJECTIVE_COMPLETION_BONUS } from '../config';
 import { EventBus } from '../EventBus';
+import { getActiveModifiers } from '../state/PlayerState';
+import { getMergedEffects } from '../state/DifficultyModifiers';
 
 export class EconomySystem {
   private gold: number;
@@ -30,8 +32,10 @@ export class EconomySystem {
   }
 
   addGold(amount: number): void {
-    this.gold += amount;
-    EventBus.emit('gold-changed', { amount, total: this.gold });
+    const effects = getMergedEffects(getActiveModifiers());
+    const adjusted = effects.goldMult ? Math.round(amount * effects.goldMult) : amount;
+    this.gold += adjusted;
+    EventBus.emit('gold-changed', { amount: adjusted, total: this.gold });
   }
 
   private onEntityDied({ entity, killer }: { entity: any; killer?: any }): void {

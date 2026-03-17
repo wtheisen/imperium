@@ -1,7 +1,8 @@
-import { getPlayerState, applyPendingRewards, addRequisitionPoints, savePlayerState } from '../state/PlayerState';
+import { getPlayerState, applyPendingRewards, addRequisitionPoints, savePlayerState, getActiveModifiers, clearModifiers } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { MissionDefinition } from '../missions/MissionDefinition';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
+import { getModifierBonus } from '../state/DifficultyModifiers';
 import {
   MISSION_REWARD_BASE,
   MISSION_REWARD_PER_DIFFICULTY,
@@ -40,13 +41,18 @@ export class GameOverScene implements GameSceneInterface {
 
     // Calculate requisition points reward
     const difficulty = this.mission?.difficulty ?? 1;
+    const modifierBonus = this.victory ? getModifierBonus(getActiveModifiers()) : 0;
     let reqEarned = MISSION_REWARD_BASE
       + (difficulty * MISSION_REWARD_PER_DIFFICULTY)
-      + (this.objectivesCompleted * MISSION_REWARD_PER_OBJECTIVE);
+      + (this.objectivesCompleted * MISSION_REWARD_PER_OBJECTIVE)
+      + modifierBonus;
     if (!this.victory) {
       reqEarned = Math.floor(reqEarned * DEFEAT_REWARD_FRACTION);
     }
     addRequisitionPoints(reqEarned);
+
+    // Clear modifiers after mission
+    clearModifiers();
 
     // Save after all rewards applied
     savePlayerState();
@@ -95,6 +101,7 @@ export class GameOverScene implements GameSceneInterface {
           <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;color:#c8982a;line-height:1;">
             +${reqEarned}</div>
           <div style="font-size:11px;color:rgba(200,152,42,0.6);letter-spacing:1px;">REQ POINTS</div>
+          ${modifierBonus > 0 ? `<div style="font-size:10px;color:#4a9e4a;letter-spacing:1px;">(+${modifierBonus} skull bonus)</div>` : ''}
         </div>
         <div style="font-size:10px;color:rgba(200,191,160,0.3);margin-top:4px;padding-left:12px;">
           Total: ${state.requisitionPoints} RP</div>

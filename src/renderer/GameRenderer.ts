@@ -159,6 +159,9 @@ export class GameRenderer {
       // Sync entity meshes
       this.entityRenderer.syncAll(this.currentEntities);
 
+      // Update entity VFX (hit flash, shakes, attack anims)
+      this.entityRenderer.updateEffects(deltaMs);
+
       // Sync HP bars
       this.vfxRenderer.syncHpBars(this.currentEntities);
 

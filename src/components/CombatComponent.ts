@@ -2,6 +2,7 @@ import { Component, Entity } from '../entities/Entity';
 import { HealthComponent } from './HealthComponent';
 import { IsoHelper } from '../map/IsoHelper';
 import { Projectile } from '../entities/Projectile';
+import { EventBus } from '../EventBus';
 
 export class CombatComponent implements Component {
   private entity: Entity;
@@ -74,6 +75,16 @@ export class CombatComponent implements Component {
   private attack(target: Entity): void {
     const health = target.getComponent<HealthComponent>('health');
     if (!health) return;
+
+    EventBus.emit('attack-fired', {
+      attackerId: this.entity.entityId,
+      targetId: target.entityId,
+      isRanged: this.isRanged,
+      fromX: this.entity.tileX,
+      fromY: this.entity.tileY,
+      toX: target.tileX,
+      toY: target.tileY,
+    });
 
     if (this.isRanged) {
       new Projectile(

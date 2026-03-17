@@ -25,6 +25,7 @@ export interface PlayerStateData {
   unitXp: Record<string, UnitXpData>;
   unlockedNodes: Set<string>;
   requisitionPoints: number;
+  activeModifiers: string[];            // difficulty modifier IDs for next mission
   version: number;
 }
 
@@ -39,6 +40,7 @@ const state: PlayerStateData = {
   unitXp: {},
   unlockedNodes: new Set(),
   requisitionPoints: 0,
+  activeModifiers: [],
   version: 1,
 };
 
@@ -92,6 +94,7 @@ function initStarterCollection(): void {
   };
   state.unlockedNodes = new Set();
   state.requisitionPoints = 0;
+  state.activeModifiers = [];
   state.version = 1;
 }
 
@@ -105,6 +108,7 @@ export function savePlayerState(): void {
     unitXp: state.unitXp,
     unlockedNodes: Array.from(state.unlockedNodes),
     requisitionPoints: state.requisitionPoints,
+    activeModifiers: state.activeModifiers,
     version: state.version,
   };
   try {
@@ -129,6 +133,7 @@ export function loadPlayerState(): boolean {
     state.unitXp = data.unitXp || {};
     state.unlockedNodes = new Set(data.unlockedNodes || []);
     state.requisitionPoints = data.requisitionPoints ?? 0;
+    state.activeModifiers = data.activeModifiers || [];
     state.version = data.version ?? 1;
     return true;
   } catch (e) {
@@ -197,4 +202,21 @@ export function addUnitXp(unitType: string, amount: number): void {
 export function spendUnitXp(unitType: string, amount: number): void {
   if (!state.unitXp[unitType]) return;
   state.unitXp[unitType].spent += amount;
+}
+
+export function getActiveModifiers(): string[] {
+  return state.activeModifiers;
+}
+
+export function toggleModifier(id: string): void {
+  const idx = state.activeModifiers.indexOf(id);
+  if (idx >= 0) {
+    state.activeModifiers.splice(idx, 1);
+  } else {
+    state.activeModifiers.push(id);
+  }
+}
+
+export function clearModifiers(): void {
+  state.activeModifiers = [];
 }

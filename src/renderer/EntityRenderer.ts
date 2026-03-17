@@ -4,6 +4,30 @@ import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
 import { EntityMeshFactory } from './EntityMeshFactory';
 import { TileMapMesh } from './TileMapMesh';
+import { EventBus } from '../EventBus';
+import { HealthComponent } from '../components/HealthComponent';
+
+interface FlashState {
+  timer: number;
+  originals: Map<THREE.Mesh, { color: THREE.Color; intensity: number }>;
+}
+
+interface ShakeState {
+  timer: number;
+  intensity: number;
+  baseX: number;
+  baseZ: number;
+}
+
+interface AttackAnimState {
+  timer: number;
+  duration: number;
+  phase: 'lunge' | 'return';
+  offsetX: number;
+  offsetZ: number;
+  baseX: number;
+  baseZ: number;
+}
 
 /**
  * Bridges Entity objects to 3D meshes.
@@ -18,9 +42,19 @@ export class EntityRenderer {
   /** Set of entity IDs that are currently selected (rendered with highlight) */
   private selectedIds = new Set<string>();
 
+  // VFX state
+  private activeFlashes = new Map<string, FlashState>();
+  private selectionRings = new Map<string, THREE.Mesh>();
+  private shakes = new Map<string, ShakeState>();
+  private attackAnims = new Map<string, AttackAnimState>();
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.factory = new EntityMeshFactory();
+
+    // Listen for combat events
+    EventBus.on('damage-dealt', this.onDamageDealt, this);
+    EventBus.on('attack-fired', this.onAttackFired, this);
   }
 
   /** Set the tile map reference for height-aware positioning */
@@ -78,7 +112,25 @@ export class EntityRenderer {
         }
 
         const py = this.tileMap ? this.tileMap.getHeightAt(px, pz) : 0;
-        mesh.position.set(px, py, pz);
+
+        // Apply shake offset if active
+        const shake = this.shakes.get(entity.entityId);
+        if (shake) {
+          mesh.position.set(px + Math.sin(shake.timer * 30) * shake.intensity, py, pz);
+        } else {
+          mesh.position.set(px, py, pz);
+        }
+
+        // Apply attack anim offset
+        const anim = this.attackAnims.get(entity.entityId);
+        if (anim) {
+          const progress = anim.phase === 'lunge'
+            ? 1 - (anim.timer / anim.duration)
+            : anim.timer / anim.duration;
+          const t = anim.phase === 'lunge' ? progress : (1 - progress);
+          mesh.position.x += anim.offsetX * t;
+          mesh.position.z += anim.offsetZ * t;
+        }
       }
 
       // Visibility (fog of war controlled via entity.visible)
@@ -88,6 +140,13 @@ export class EntityRenderer {
       if (entity instanceof Unit && mesh.userData.squadSize > 1) {
         this.updateSquadCasualties(entity, mesh);
       }
+
+      // Sync selection ring position
+      const ring = this.selectionRings.get(entity.entityId);
+      if (ring) {
+        ring.position.set(mesh.position.x, (this.tileMap ? this.tileMap.getHeightAt(entity.tileX, entity.tileY) : 0) + 0.02, mesh.position.z);
+        ring.visible = entity.visible;
+      }
     }
 
     // Remove meshes for dead/despawned entities
@@ -95,24 +154,68 @@ export class EntityRenderer {
       if (!activeIds.has(id)) {
         this.scene.remove(mesh);
         this.meshes.delete(id);
+        // Clean up selection ring
+        const ring = this.selectionRings.get(id);
+        if (ring) {
+          this.scene.remove(ring);
+          ring.geometry.dispose();
+          (ring.material as THREE.Material).dispose();
+          this.selectionRings.delete(id);
+        }
+        // Clean up VFX state
+        this.activeFlashes.delete(id);
+        this.shakes.delete(id);
+        this.attackAnims.delete(id);
       }
     }
   }
 
-  /** Set which entities are selected (for highlight rendering). */
+  /** Set which entities are selected (for highlight rendering + selection rings). */
   setSelected(entityIds: string[]): void {
     // Reset previously selected
     for (const id of this.selectedIds) {
       const mesh = this.meshes.get(id);
       if (mesh) this.setHighlight(mesh, false);
+      // Remove ring
+      const ring = this.selectionRings.get(id);
+      if (ring) {
+        this.scene.remove(ring);
+        ring.geometry.dispose();
+        (ring.material as THREE.Material).dispose();
+        this.selectionRings.delete(id);
+      }
     }
     this.selectedIds.clear();
 
     for (const id of entityIds) {
       this.selectedIds.add(id);
       const mesh = this.meshes.get(id);
-      if (mesh) this.setHighlight(mesh, true);
+      if (mesh) {
+        this.setHighlight(mesh, true);
+        // Add selection ring
+        this.addSelectionRing(id, mesh);
+      }
     }
+  }
+
+  private addSelectionRing(entityId: string, parentMesh: THREE.Object3D): void {
+    const team = parentMesh.userData.team as string;
+    const color = team === 'player' ? 0x44ff88 : 0xff4444;
+
+    const geometry = new THREE.RingGeometry(0.35, 0.45, 24);
+    geometry.rotateX(-Math.PI / 2); // Lay flat on ground
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(geometry, material);
+    ring.position.copy(parentMesh.position);
+    ring.position.y += 0.02; // Slightly above ground
+    this.scene.add(ring);
+    this.selectionRings.set(entityId, ring);
   }
 
   private setHighlight(obj: THREE.Object3D, on: boolean): void {
@@ -122,6 +225,112 @@ export class EntityRenderer {
         child.material.emissiveIntensity = on ? 0.4 : 0;
       }
     });
+  }
+
+  // ── VFX: Hit Flash ──────────────────────────────────────────
+
+  private onDamageDealt = (data: { attacker: Entity; target: Entity; amount: number }): void => {
+    const targetId = data.target.entityId;
+    this.flashEntity(targetId, 0xff4444, 120);
+
+    // Heavy hit shake: >20% of max HP
+    const health = data.target.getComponent<HealthComponent>('health');
+    if (health && data.amount / health.maxHp > 0.2) {
+      this.shakes.set(targetId, { timer: 200, intensity: 0.08, baseX: 0, baseZ: 0 });
+    }
+  };
+
+  flashEntity(entityId: string, color: number = 0xff4444, duration: number = 120): void {
+    const mesh = this.meshes.get(entityId);
+    if (!mesh) return;
+
+    const originals = new Map<THREE.Mesh, { color: THREE.Color; intensity: number }>();
+    mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+        originals.set(child, {
+          color: child.material.emissive.clone(),
+          intensity: child.material.emissiveIntensity,
+        });
+        child.material.emissive.set(color);
+        child.material.emissiveIntensity = 0.8;
+      }
+    });
+
+    this.activeFlashes.set(entityId, { timer: duration, originals });
+  }
+
+  // ── VFX: Attack Animation ───────────────────────────────────
+
+  private onAttackFired = (data: {
+    attackerId: string; targetId: string; isRanged: boolean;
+    fromX: number; fromY: number; toX: number; toY: number;
+  }): void => {
+    const dx = data.toX - data.fromX;
+    const dz = data.toY - data.fromY;
+    const len = Math.sqrt(dx * dx + dz * dz) || 1;
+
+    if (data.isRanged) {
+      // Recoil: offset away from target
+      const dist = 0.05;
+      this.attackAnims.set(data.attackerId, {
+        timer: 60, duration: 60,
+        phase: 'lunge',
+        offsetX: -(dx / len) * dist,
+        offsetZ: -(dz / len) * dist,
+        baseX: 0, baseZ: 0,
+      });
+    } else {
+      // Lunge: offset toward target
+      const dist = 0.15;
+      this.attackAnims.set(data.attackerId, {
+        timer: 80, duration: 80,
+        phase: 'lunge',
+        offsetX: (dx / len) * dist,
+        offsetZ: (dz / len) * dist,
+        baseX: 0, baseZ: 0,
+      });
+    }
+  };
+
+  // ── VFX Update (called from GameRenderer) ───────────────────
+
+  updateEffects(deltaMs: number): void {
+    // Flashes
+    for (const [id, flash] of this.activeFlashes) {
+      flash.timer -= deltaMs;
+      if (flash.timer <= 0) {
+        // Restore originals
+        for (const [child, orig] of flash.originals) {
+          if (child.material instanceof THREE.MeshStandardMaterial) {
+            child.material.emissive.copy(orig.color);
+            child.material.emissiveIntensity = orig.intensity;
+          }
+        }
+        this.activeFlashes.delete(id);
+      }
+    }
+
+    // Shakes
+    for (const [id, shake] of this.shakes) {
+      shake.timer -= deltaMs;
+      if (shake.timer <= 0) {
+        this.shakes.delete(id);
+      }
+    }
+
+    // Attack anims
+    for (const [id, anim] of this.attackAnims) {
+      anim.timer -= deltaMs;
+      if (anim.timer <= 0) {
+        if (anim.phase === 'lunge') {
+          // Switch to return phase
+          anim.phase = 'return';
+          anim.timer = anim.duration;
+        } else {
+          this.attackAnims.delete(id);
+        }
+      }
+    }
   }
 
   /** Get mesh for an entity (used by InputBridge for raycasting). */
@@ -186,7 +395,7 @@ export class EntityRenderer {
 
   /** Hide squad models as HP drops — models disappear from last to first. */
   private updateSquadCasualties(unit: Unit, mesh: THREE.Object3D): void {
-    const health = unit.getComponent<import('../components/HealthComponent').HealthComponent>('health');
+    const health = unit.getComponent<HealthComponent>('health');
     if (!health) return;
 
     const squadSize = unit.stats.squadSize || 1;
@@ -203,6 +412,17 @@ export class EntityRenderer {
   }
 
   dispose(): void {
+    EventBus.off('damage-dealt', this.onDamageDealt, this);
+    EventBus.off('attack-fired', this.onAttackFired, this);
+
+    // Clean up selection rings
+    for (const ring of this.selectionRings.values()) {
+      this.scene.remove(ring);
+      ring.geometry.dispose();
+      (ring.material as THREE.Material).dispose();
+    }
+    this.selectionRings.clear();
+
     for (const mesh of this.meshes.values()) {
       this.scene.remove(mesh);
     }

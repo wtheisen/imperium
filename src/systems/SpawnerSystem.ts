@@ -2,6 +2,8 @@ import { EventBus } from '../EventBus';
 import { EntityManager } from './EntityManager';
 import { EnemyCampDefinition } from '../missions/MissionDefinition';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
+import { getActiveModifiers } from '../state/PlayerState';
+import { getMergedEffects } from '../state/DifficultyModifiers';
 import {
   ROAM_PATROL_INTERVAL,
   ROAM_PATROL_SIZE,
@@ -95,7 +97,9 @@ export class SpawnerSystem {
         continue;
       }
 
-      const effectiveInterval = spawner.config.spawnInterval / this.pressureMultiplier;
+      const effects = getMergedEffects(getActiveModifiers());
+      const spawnRateMult = effects.spawnRateMult ?? 1;
+      const effectiveInterval = (spawner.config.spawnInterval * spawnRateMult) / this.pressureMultiplier;
       spawner.timer += delta;
       if (spawner.timer >= effectiveInterval && spawner.activeUnits.size < spawner.config.maxActiveUnits) {
         spawner.timer = 0;

@@ -11,6 +11,8 @@ import { EventBus } from '../EventBus';
 import { PlacementValidator } from '../map/PlacementValidator';
 import { applyTechTreeBonuses } from '../state/TechTreeEffects';
 import { LevelBadgeComponent } from '../components/LevelBadgeComponent';
+import { getActiveModifiers } from '../state/PlayerState';
+import { getMergedEffects } from '../state/DifficultyModifiers';
 
 export class EntityManager {
   private entities: Map<string, Entity> = new Map();
@@ -31,15 +33,27 @@ export class EntityManager {
     stats: UnitStats,
     team: EntityTeam = 'player'
   ): Unit {
-    const unit = new Unit(tileX, tileY, unitType, stats, team);
+    // Apply difficulty modifiers to enemy stats
+    let effectiveStats = stats;
+    if (team === 'enemy') {
+      const effects = getMergedEffects(getActiveModifiers());
+      if (effects.enemyHpMult || effects.enemyDamageMult || effects.enemySpeedMult) {
+        effectiveStats = { ...stats };
+        if (effects.enemyHpMult) effectiveStats.maxHp = Math.round(stats.maxHp * effects.enemyHpMult);
+        if (effects.enemyDamageMult) effectiveStats.attackDamage = Math.round(stats.attackDamage * effects.enemyDamageMult);
+        if (effects.enemySpeedMult) effectiveStats.speed = stats.speed * effects.enemySpeedMult;
+      }
+    }
 
-    unit.addComponent('health', new HealthComponent(unit, stats.maxHp));
-    unit.addComponent('mover', new MoverComponent(unit, stats.speed));
+    const unit = new Unit(tileX, tileY, unitType, effectiveStats, team);
 
-    if (stats.attackDamage > 0) {
+    unit.addComponent('health', new HealthComponent(unit, effectiveStats.maxHp));
+    unit.addComponent('mover', new MoverComponent(unit, effectiveStats.speed));
+
+    if (effectiveStats.attackDamage > 0) {
       unit.addComponent(
         'combat',
-        new CombatComponent(unit, stats.attackDamage, stats.attackRange, stats.attackCooldown, stats.isRanged)
+        new CombatComponent(unit, effectiveStats.attackDamage, effectiveStats.attackRange, effectiveStats.attackCooldown, effectiveStats.isRanged)
       );
     }
 

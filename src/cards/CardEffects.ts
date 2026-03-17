@@ -13,6 +13,8 @@ import { LevelBadgeComponent } from '../components/LevelBadgeComponent';
 import { EquipmentComponent } from '../components/EquipmentComponent';
 import { EventBus } from '../EventBus';
 import { TimerManager } from '../utils/TimerManager';
+import { getActiveModifiers } from '../state/PlayerState';
+import { getMergedEffects } from '../state/DifficultyModifiers';
 
 /** Per-model stats. Total HP/damage = per-model × squadSize. */
 const UNIT_STATS: Record<string, UnitStats> = {
@@ -91,9 +93,11 @@ export class CardEffects {
 
     // Scale total HP and damage by squad size
     const sq = baseStats.squadSize || 1;
+    const effects = getMergedEffects(getActiveModifiers());
+    const hpMult = effects.playerHpMult ?? 1;
     const stats: UnitStats = {
       ...baseStats,
-      maxHp: baseStats.maxHp * sq,
+      maxHp: Math.round(baseStats.maxHp * sq * hpMult),
       attackDamage: baseStats.attackDamage * sq,
     };
 

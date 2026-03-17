@@ -1,6 +1,7 @@
 import { MISSIONS } from '../missions/MissionDatabase';
 import { MissionDefinition } from '../missions/MissionDefinition';
-import { getPlayerState } from '../state/PlayerState';
+import { getPlayerState, toggleModifier, savePlayerState } from '../state/PlayerState';
+import { MODIFIERS, getModifierBonus } from '../state/DifficultyModifiers';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 
 // Inject Google Fonts once
@@ -251,6 +252,9 @@ export class MissionSelectScene implements GameSceneInterface {
             </div>
           </div>
 
+          <!-- Skull Modifiers (only for completed missions) -->
+          ${completed ? this.buildSkullModifiers(state) : ''}
+
           <!-- Deploy bar -->
           <div style="padding:20px 40px 28px;border-top:1px solid rgba(200,152,42,0.08);
             display:flex;align-items:center;justify-content:space-between;
@@ -347,6 +351,39 @@ export class MissionSelectScene implements GameSceneInterface {
     }).join('');
   }
 
+  private buildSkullModifiers(state: ReturnType<typeof getPlayerState>): string {
+    const activeIds = state.activeModifiers;
+    const bonus = getModifierBonus(activeIds);
+    return `
+      <div style="padding:16px 40px;border-top:1px solid rgba(200,152,42,0.08);
+        background:rgba(200,152,42,0.015);">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+          <div style="font-size:10px;letter-spacing:3px;color:rgba(200,152,42,0.4);">SKULL MODIFIERS</div>
+          ${bonus > 0 ? `<div style="font-size:10px;color:#c8982a;letter-spacing:1px;">+${bonus} BONUS RP</div>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${MODIFIERS.map(mod => {
+            const active = activeIds.includes(mod.id);
+            return `<button class="ms-skull-btn" data-mod="${mod.id}" title="${mod.description}" style="
+              display:flex;align-items:center;gap:6px;
+              padding:6px 12px;
+              background:${active ? 'rgba(200,152,42,0.12)' : 'rgba(200,191,160,0.02)'};
+              border:1px solid ${active ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.08)'};
+              color:${active ? '#c8982a' : '#5a5a4a'};
+              font-family:'Share Tech Mono',monospace;font-size:11px;
+              cursor:pointer;transition:all 0.2s;letter-spacing:1px;
+              ${active ? 'box-shadow:0 0 8px rgba(200,152,42,0.15);' : ''}
+            ">
+              <span style="font-size:14px;">${mod.icon}</span>
+              <span>${mod.name}</span>
+              <span style="font-size:9px;color:${active ? '#4a9e4a' : 'rgba(200,191,160,0.2)'};">+${mod.reqPointsBonus}</span>
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   private buildStatBox(label: string, value: string, color: string): string {
     return `
       <div style="padding:10px 12px;background:rgba(200,191,160,0.02);
@@ -422,6 +459,17 @@ export class MissionSelectScene implements GameSceneInterface {
     });
     this.container.querySelector('#ms-supply-depot')?.addEventListener('click', () => {
       getSceneManager().start('ShopScene');
+    });
+
+    // Skull modifier toggles
+    this.container.querySelectorAll('.ms-skull-btn').forEach(el => {
+      const modId = (el as HTMLElement).dataset.mod || '';
+      el.addEventListener('click', () => {
+        toggleModifier(modId);
+        savePlayerState();
+        this.shutdown();
+        this.create();
+      });
     });
 
     // Hover effects on utility buttons
