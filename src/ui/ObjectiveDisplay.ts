@@ -2,17 +2,23 @@ import { EventBus } from '../EventBus';
 import { MissionDefinition, ObjectiveDefinition } from '../missions/MissionDefinition';
 
 const TYPE_BADGES: Record<string, { label: string; color: string }> = {
-  destroy: { label: 'DESTROY', color: '#c43030' },
-  recover: { label: 'RECOVER', color: '#c8982a' },
-  purge:   { label: 'PURGE',   color: '#a070cc' },
+  destroy:  { label: 'DESTROY',  color: '#c43030' },
+  recover:  { label: 'RECOVER',  color: '#c8982a' },
+  purge:    { label: 'PURGE',    color: '#a070cc' },
+  survive:  { label: 'SURVIVE',  color: '#50b0b0' },
+  activate: { label: 'ACTIVATE', color: '#60a0e0' },
+  collect:  { label: 'COLLECT',  color: '#d0a040' },
 };
 
 export class ObjectiveDisplay {
   private container: HTMLDivElement;
   private objectiveRows: Map<string, HTMLDivElement> = new Map();
+  private progressBars: Map<string, HTMLDivElement> = new Map();
   private completedIds: Set<string> = new Set();
   private mission: MissionDefinition;
+  private extractionEl: HTMLDivElement | null = null;
   private boundOnComplete: (data: { objectiveId: string }) => void;
+  private boundOnMissionUpdate: (data: any) => void;
 
   constructor(mission: MissionDefinition) {
     this.mission = mission;
@@ -49,19 +55,88 @@ export class ObjectiveDisplay {
     header.textContent = 'TACTICAL OBJECTIVES';
     this.container.appendChild(header);
 
+    // Environment modifiers display
+    if (mission.environmentModifiers && mission.environmentModifiers.length > 0) {
+      const modBar = document.createElement('div');
+      Object.assign(modBar.style, {
+        display: 'flex', gap: '4px', flexWrap: 'wrap',
+        marginBottom: '8px', paddingBottom: '6px',
+        borderBottom: '1px solid rgba(200,152,42,0.06)',
+      });
+      const modLabels: Record<string, string> = {
+        dense_fog: 'DENSE FOG', ork_frenzy: 'ORK FRENZY',
+        supply_shortage: 'NO SUPPLY', armored_advance: 'ARMORED',
+        night_raid: 'NIGHT OPS',
+      };
+      const modColors: Record<string, string> = {
+        dense_fog: '#6080a0', ork_frenzy: '#c43030',
+        supply_shortage: '#c8982a', armored_advance: '#808080',
+        night_raid: '#4060a0',
+      };
+      for (const mod of mission.environmentModifiers) {
+        const tag = document.createElement('span');
+        const color = modColors[mod] || '#888';
+        Object.assign(tag.style, {
+          fontSize: '7px', letterSpacing: '1px', color,
+          background: `${color}15`, padding: '2px 5px',
+          border: `1px solid ${color}30`,
+        });
+        tag.textContent = modLabels[mod] || mod.toUpperCase();
+        modBar.appendChild(tag);
+      }
+      this.container.appendChild(modBar);
+    }
+
+    // Required objectives
     for (const obj of mission.objectives) {
-      const row = this.createRow(obj);
+      const row = this.createRow(obj, false);
       this.container.appendChild(row);
       this.objectiveRows.set(obj.id, row);
     }
+
+    // Optional objectives
+    if (mission.optionalObjectives && mission.optionalObjectives.length > 0) {
+      const optHeader = document.createElement('div');
+      Object.assign(optHeader.style, {
+        fontSize: '8px', letterSpacing: '2px', color: 'rgba(200,152,42,0.3)',
+        marginTop: '8px', marginBottom: '6px', paddingTop: '6px',
+        borderTop: '1px solid rgba(200,152,42,0.06)',
+      });
+      optHeader.textContent = 'BONUS OBJECTIVES';
+      this.container.appendChild(optHeader);
+
+      for (const obj of mission.optionalObjectives) {
+        const row = this.createRow(obj, true);
+        this.container.appendChild(row);
+        this.objectiveRows.set(obj.id, row);
+      }
+    }
+
+    // Extraction countdown (hidden initially)
+    this.extractionEl = document.createElement('div');
+    Object.assign(this.extractionEl.style, {
+      display: 'none',
+      marginTop: '10px', paddingTop: '8px',
+      borderTop: '2px solid rgba(74,158,74,0.3)',
+      textAlign: 'center',
+    });
+    this.extractionEl.innerHTML = `
+      <div style="font-size:9px;letter-spacing:2px;color:#4a9e4a;margin-bottom:4px;">EXTRACTION</div>
+      <div class="extraction-timer" style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;color:#4a9e4a;line-height:1;"></div>
+      <div style="font-size:8px;color:rgba(200,191,160,0.3);margin-top:2px;">RETURN TO DROP SHIP</div>
+    `;
+    this.container.appendChild(this.extractionEl);
 
     document.body.appendChild(this.container);
 
     this.boundOnComplete = (data) => this.markComplete(data.objectiveId);
     EventBus.on('objective-completed', this.boundOnComplete);
+
+    this.boundOnMissionUpdate = (data) => this.onMissionUpdate(data);
+    EventBus.on('mission-update', this.boundOnMissionUpdate);
   }
 
-  private createRow(obj: ObjectiveDefinition): HTMLDivElement {
+  private createRow(obj: ObjectiveDefinition, optional: boolean): HTMLDivElement {
     const row = document.createElement('div');
     const badge = TYPE_BADGES[obj.type] || TYPE_BADGES.destroy;
     Object.assign(row.style, {
@@ -74,6 +149,7 @@ export class ObjectiveDisplay {
       transition: 'background 0.15s',
       borderLeft: `2px solid ${badge.color}30`,
       paddingLeft: '8px',
+      opacity: optional ? '0.7' : '1',
     });
 
     row.addEventListener('mouseenter', () => {
@@ -104,6 +180,16 @@ export class ObjectiveDisplay {
     });
     typeBadge.textContent = badge.label;
     topRow.appendChild(typeBadge);
+
+    if (optional) {
+      const bonusBadge = document.createElement('span');
+      Object.assign(bonusBadge.style, {
+        fontSize: '7px', letterSpacing: '1px', color: '#50b0b0',
+        background: 'rgba(80,176,176,0.1)', padding: '1px 4px',
+      });
+      bonusBadge.textContent = 'BONUS';
+      topRow.appendChild(bonusBadge);
+    }
 
     const rewardEl = document.createElement('span');
     Object.assign(rewardEl.style, {
@@ -137,6 +223,26 @@ export class ObjectiveDisplay {
     });
     descEl.textContent = obj.description;
     textBlock.appendChild(descEl);
+
+    // Progress bar for survive/activate/collect
+    if (obj.type === 'survive' || obj.type === 'activate' || obj.type === 'collect') {
+      const progressContainer = document.createElement('div');
+      Object.assign(progressContainer.style, {
+        marginTop: '4px', height: '3px',
+        background: 'rgba(200,191,160,0.08)',
+        borderRadius: '2px', overflow: 'hidden',
+      });
+      const progressFill = document.createElement('div');
+      progressFill.className = 'progress-fill';
+      Object.assign(progressFill.style, {
+        height: '100%', width: '0%',
+        background: badge.color, borderRadius: '2px',
+        transition: 'width 0.3s ease',
+      });
+      progressContainer.appendChild(progressFill);
+      textBlock.appendChild(progressContainer);
+      this.progressBars.set(obj.id, progressFill);
+    }
 
     row.appendChild(textBlock);
 
@@ -177,6 +283,13 @@ export class ObjectiveDisplay {
       descEl.style.opacity = '0.4';
     }
 
+    // Fill progress bar to 100%
+    const progressFill = this.progressBars.get(objectiveId);
+    if (progressFill) {
+      progressFill.style.width = '100%';
+      progressFill.style.background = '#4a9e4a';
+    }
+
     const status = row.querySelector('.obj-status') as HTMLElement | null;
     if (status) {
       status.textContent = '\u2713';
@@ -186,12 +299,42 @@ export class ObjectiveDisplay {
     }
   }
 
+  private onMissionUpdate(data: any): void {
+    // Update progress bars
+    const allObjectives = [...(data.objectives || []), ...(data.optionalObjectives || [])];
+    for (const obj of allObjectives) {
+      if (obj.completed) continue;
+      const progressFill = this.progressBars.get(obj.id);
+      if (progressFill && obj.progressMax > 0) {
+        const pct = Math.min(100, (obj.progress / obj.progressMax) * 100);
+        progressFill.style.width = `${pct}%`;
+      }
+    }
+
+    // Extraction display
+    if (data.isExtracting && this.extractionEl) {
+      this.extractionEl.style.display = 'block';
+      const remaining = Math.max(0, data.extractionTimerMax - data.extractionTimer);
+      const seconds = Math.ceil(remaining / 1000);
+      const timerEl = this.extractionEl.querySelector('.extraction-timer') as HTMLElement;
+      if (timerEl) {
+        timerEl.textContent = `${seconds}s`;
+        // Pulse when low
+        if (seconds <= 10) {
+          timerEl.style.color = seconds % 2 === 0 ? '#4a9e4a' : '#e8dcc0';
+        }
+      }
+    }
+  }
+
   update(): void {}
 
   destroy(): void {
     EventBus.off('objective-completed', this.boundOnComplete);
+    EventBus.off('mission-update', this.boundOnMissionUpdate);
     this.container.remove();
     this.objectiveRows.clear();
+    this.progressBars.clear();
     this.completedIds.clear();
   }
 }

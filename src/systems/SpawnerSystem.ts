@@ -11,6 +11,8 @@ import {
   REINFORCEMENT_SIZE_BASE,
   PRESSURE_ESCALATION_INTERVAL,
   PRESSURE_MAX,
+  EXTRACTION_WAVE_INTERVAL_MS,
+  EXTRACTION_WAVE_SIZE_BASE,
 } from '../config';
 import { ENEMY_GRUNT, ENEMY_ARCHER } from '../ai/EnemyStats';
 
@@ -41,6 +43,9 @@ export class SpawnerSystem {
   private totalElapsed: number = 0;
   private destroyed: boolean = false;
   private pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
+  private extracting: boolean = false;
+  private extractionTarget: { x: number; y: number } = { x: 0, y: 0 };
+  private extractionWaveTimer: number = 0;
 
   constructor(entityManager: EntityManager, camps: EnemyCampDefinition[]) {
     this.entityManager = entityManager;
@@ -73,6 +78,9 @@ export class SpawnerSystem {
 
     EventBus.on('entity-died', this.onEntityDied, this);
     EventBus.on('objective-completed', this.onObjectiveCompleted, this);
+    EventBus.on('extraction-started', this.onExtractionStarted, this);
+    EventBus.on('survive-wave-spawn', this.onSurviveWaveSpawn, this);
+    EventBus.on('extraction-wave-spawn', this.onExtractionWaveSpawn, this);
   }
 
   update(delta: number): void {
@@ -243,11 +251,63 @@ export class SpawnerSystem {
     }
   };
 
-  private onObjectiveCompleted = ({ objective }: { objective: any }): void => {
-    if (objective?.tileX !== undefined && objective?.tileY !== undefined) {
-      this.spawnReinforcement(objective.tileX, objective.tileY);
+  private onObjectiveCompleted = ({ tileX, tileY }: { tileX?: number; tileY?: number }): void => {
+    if (tileX !== undefined && tileY !== undefined) {
+      this.spawnReinforcement(tileX, tileY);
     }
   };
+
+  private onExtractionStarted = ({ tileX, tileY }: { tileX: number; tileY: number }): void => {
+    this.extracting = true;
+    this.extractionTarget = { x: tileX, y: tileY };
+    this.extractionWaveTimer = 0;
+    EventBus.emit('reinforcements-incoming', { tileX, tileY });
+  };
+
+  private onSurviveWaveSpawn = ({ tileX, tileY, size }: { tileX: number; tileY: number; size: number }): void => {
+    this.spawnTargetedWave(tileX, tileY, Math.floor(size * this.pressureMultiplier));
+  };
+
+  private onExtractionWaveSpawn = ({ tileX, tileY }: { tileX: number; tileY: number }): void => {
+    const size = Math.floor(EXTRACTION_WAVE_SIZE_BASE * this.pressureMultiplier);
+    this.spawnTargetedWave(tileX, tileY, size);
+    EventBus.emit('reinforcements-incoming', { tileX, tileY });
+  };
+
+  /** Spawn a wave from a random map edge targeting a specific location */
+  private spawnTargetedWave(targetX: number, targetY: number, size: number): void {
+    const edges = [
+      { x: 0, y: targetY },
+      { x: MAP_WIDTH - 1, y: targetY },
+      { x: targetX, y: 0 },
+      { x: targetX, y: MAP_HEIGHT - 1 },
+    ];
+    const edge = edges[Math.floor(Math.random() * edges.length)];
+
+    const gruntCount = Math.ceil(size * 0.7);
+    const archerCount = size - gruntCount;
+
+    for (let i = 0; i < gruntCount; i++) {
+      const unit = this.entityManager.spawnUnit(
+        Math.max(0, Math.min(MAP_WIDTH - 1, edge.x + Math.floor(Math.random() * 3) - 1)),
+        Math.max(0, Math.min(MAP_HEIGHT - 1, edge.y + Math.floor(Math.random() * 3) - 1)),
+        'unit-enemy', 'enemy_grunt', ENEMY_GRUNT, 'enemy'
+      );
+      unit.homeX = targetX;
+      unit.homeY = targetY;
+      unit.aggroRadius = 8;
+    }
+    for (let i = 0; i < archerCount; i++) {
+      const unit = this.entityManager.spawnUnit(
+        Math.max(0, Math.min(MAP_WIDTH - 1, edge.x + Math.floor(Math.random() * 3) - 1)),
+        Math.max(0, Math.min(MAP_HEIGHT - 1, edge.y + Math.floor(Math.random() * 3) - 1)),
+        'unit-enemy-ranged', 'enemy_archer', ENEMY_ARCHER, 'enemy'
+      );
+      unit.homeX = targetX;
+      unit.homeY = targetY;
+      unit.aggroRadius = 8;
+    }
+  }
 
   destroy(): void {
     this.destroyed = true;
@@ -257,5 +317,8 @@ export class SpawnerSystem {
     this.pendingTimeouts = [];
     EventBus.off('entity-died', this.onEntityDied, this);
     EventBus.off('objective-completed', this.onObjectiveCompleted, this);
+    EventBus.off('extraction-started', this.onExtractionStarted, this);
+    EventBus.off('survive-wave-spawn', this.onSurviveWaveSpawn, this);
+    EventBus.off('extraction-wave-spawn', this.onExtractionWaveSpawn, this);
   }
 }

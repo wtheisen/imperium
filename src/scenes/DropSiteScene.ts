@@ -1,7 +1,11 @@
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { MissionDefinition } from '../missions/MissionDefinition';
 import { MapManager, TerrainType } from '../map/MapManager';
-import { MAP_WIDTH, MAP_HEIGHT } from '../config';
+import { MAP_WIDTH, MAP_HEIGHT, HAND_SIZE } from '../config';
+import { Card } from '../cards/Card';
+import { Deck } from '../cards/Deck';
+import { getSelectedDeckCards } from '../state/PlayerState';
+import { getCardArtRenderer } from '../renderer/CardArtRenderer';
 
 const TILE_PX = 12;
 
@@ -68,6 +72,29 @@ function injectDropStyles(): void {
       background: rgba(200,152,42,0.08) !important;
       color: #c8982a !important;
     }
+    .ds-mulligan-card {
+      position: relative;
+      width: 130px;
+      height: 182px;
+      border-radius: 6px;
+      overflow: hidden;
+      cursor: pointer;
+      user-select: none;
+      background: linear-gradient(170deg, #1e1c18 0%, #141210 40%, #0e0c0a 100%);
+      border: 2px solid #3a3228;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04);
+      display: flex;
+      flex-direction: column;
+      transition: all 0.2s;
+    }
+    .ds-mulligan-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+    }
+    @keyframes ds-card-in {
+      0% { transform: translateY(40px) scale(0.8); opacity: 0; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -95,6 +122,9 @@ export class DropSiteScene implements GameSceneInterface {
   private hoverX: number = -1;
   private hoverY: number = -1;
   private validZones: { x: number; y: number; label: string }[] = [];
+  private deck: Deck | null = null;
+  private mulliganCount: number = 0;
+  private mulliganCardEls: HTMLElement[] = [];
 
   create(data?: { mission?: MissionDefinition }): void {
     ensureFonts();
@@ -113,6 +143,11 @@ export class DropSiteScene implements GameSceneInterface {
     // No selection yet — marker follows cursor until first click
     this.selectedX = -1;
     this.selectedY = -1;
+
+    // Build deck for mulligan preview
+    const startingCards: Card[] = getSelectedDeckCards();
+    this.deck = new Deck(startingCards);
+    this.mulliganCount = 0;
 
     this.buildUI();
     this.drawMap();
@@ -284,6 +319,29 @@ export class DropSiteScene implements GameSceneInterface {
           ">ABORT</button>
         </div>
       </div>
+
+      <!-- Bottom: Opening Hand / Mulligan -->
+      <div style="position:relative;flex-shrink:0;padding:10px 28px 16px;
+        border-top:1px solid rgba(200,152,42,0.1);
+        background:linear-gradient(0deg,rgba(10,10,14,0.95) 0%,rgba(10,10,14,0.7) 100%);">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;">
+          <div style="width:2px;height:14px;background:#c8982a;"></div>
+          <div id="mulligan-header" style="font-family:'Teko',sans-serif;font-size:13px;font-weight:500;
+            color:rgba(200,152,42,0.45);letter-spacing:3px;">OPENING HAND</div>
+          <div style="flex:1;"></div>
+          <div id="mulligan-status" style="font-family:'Share Tech Mono',monospace;font-size:10px;
+            color:rgba(200,191,160,0.3);letter-spacing:1px;"></div>
+          <button id="mulligan-btn" style="
+            padding:5px 16px;
+            background:linear-gradient(180deg,rgba(196,48,48,0.08) 0%,rgba(196,48,48,0.03) 100%);
+            border:1px solid rgba(196,48,48,0.25);
+            color:#c43030;
+            font-family:'Teko',sans-serif;font-size:14px;font-weight:600;
+            letter-spacing:3px;cursor:pointer;transition:all 0.2s;
+          ">MULLIGAN</button>
+        </div>
+        <div id="mulligan-hand" style="display:flex;align-items:center;justify-content:center;gap:10px;"></div>
+      </div>
     `;
 
     document.getElementById('game-container')!.appendChild(this.container);
@@ -325,6 +383,21 @@ export class DropSiteScene implements GameSceneInterface {
       });
       zoneList.appendChild(btn);
     }
+
+    // Build mulligan hand and wire button
+    this.buildMulliganHand();
+    this.updateMulliganStatus();
+
+    const mulliganBtn = this.container.querySelector('#mulligan-btn') as HTMLElement;
+    mulliganBtn.addEventListener('click', () => this.doMulligan());
+    mulliganBtn.addEventListener('mouseenter', () => {
+      mulliganBtn.style.background = 'linear-gradient(180deg,rgba(196,48,48,0.15) 0%,rgba(196,48,48,0.06) 100%)';
+      mulliganBtn.style.borderColor = 'rgba(196,48,48,0.4)';
+    });
+    mulliganBtn.addEventListener('mouseleave', () => {
+      mulliganBtn.style.background = 'linear-gradient(180deg,rgba(196,48,48,0.08) 0%,rgba(196,48,48,0.03) 100%)';
+      mulliganBtn.style.borderColor = 'rgba(196,48,48,0.25)';
+    });
 
     // Canvas click
     this.canvas.addEventListener('click', (e) => {
@@ -606,15 +679,189 @@ export class DropSiteScene implements GameSceneInterface {
     }
   }
 
+  private static readonly TYPE_COLORS: Record<string, string> = {
+    unit: '#4488ff', building: '#44aa44', ordnance: '#8844cc',
+    doctrine: '#ffaa00', equipment: '#44dddd',
+  };
+
+  private static readonly TYPE_ICONS: Record<string, string> = {
+    unit: '\u2694', building: '\u2302', ordnance: '\u2737',
+    doctrine: '\u2620', equipment: '\u2692',
+  };
+
+  private buildMulliganHand(): void {
+    if (!this.container || !this.deck) return;
+    const handEl = this.container.querySelector('#mulligan-hand');
+    if (!handEl) return;
+    handEl.innerHTML = '';
+    this.mulliganCardEls = [];
+
+    const artRenderer = getCardArtRenderer();
+    const hand = this.deck.hand;
+    let cardIdx = 0;
+
+    for (let i = 0; i < hand.length; i++) {
+      const card = hand[i];
+
+      if (!card) {
+        // Empty slot — show ghost for mulliganed-away slots
+        const ghost = document.createElement('div');
+        ghost.className = 'ds-mulligan-card';
+        Object.assign(ghost.style, {
+          opacity: '0.12', border: '2px dashed #3a3228',
+          background: 'transparent', boxShadow: 'none',
+        });
+        const ghostLabel = document.createElement('div');
+        Object.assign(ghostLabel.style, {
+          position: 'absolute', inset: '0',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: "'Teko', sans-serif", fontSize: '14px', color: '#3a3228',
+          letterSpacing: '2px',
+        });
+        ghostLabel.textContent = 'LOST';
+        ghost.appendChild(ghostLabel);
+        handEl.appendChild(ghost);
+        continue;
+      }
+
+      const color = DropSiteScene.TYPE_COLORS[card.type] || '#666';
+      const icon = DropSiteScene.TYPE_ICONS[card.type] || '';
+
+      const cardEl = document.createElement('div');
+      cardEl.className = 'ds-mulligan-card';
+      cardEl.style.animation = `ds-card-in 0.35s ease-out ${cardIdx * 0.08}s both`;
+      cardIdx++;
+
+      // Title bar
+      const titleBar = document.createElement('div');
+      Object.assign(titleBar.style, {
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '3px 5px 2px 7px',
+        background: 'linear-gradient(180deg, rgba(40,36,28,0.9), rgba(28,24,18,0.9))',
+        borderBottom: '1px solid #3a3228', minHeight: '18px',
+      });
+      const titleEl = document.createElement('span');
+      Object.assign(titleEl.style, {
+        fontFamily: "'Cinzel', Georgia, serif", fontSize: '9.5px', fontWeight: '700',
+        color: '#e8d8b0', lineHeight: '1.1', flex: '1', overflow: 'hidden',
+        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+      });
+      titleEl.textContent = card.name;
+      const manaEl = document.createElement('span');
+      Object.assign(manaEl.style, {
+        width: '20px', height: '20px', borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: "'Cinzel', serif", fontSize: '11px', fontWeight: '700',
+        color: '#1a1200',
+        background: 'radial-gradient(circle at 35% 35%, #ffe080, #daa520 50%, #a07010 100%)',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.3)',
+        border: '1px solid #8a6a10', flexShrink: '0', marginLeft: '3px',
+      });
+      manaEl.textContent = `${card.cost}`;
+      titleBar.appendChild(titleEl);
+      titleBar.appendChild(manaEl);
+      cardEl.appendChild(titleBar);
+
+      // Art
+      const artBox = document.createElement('div');
+      Object.assign(artBox.style, {
+        margin: '3px 5px 2px', height: '64px', borderRadius: '2px',
+        border: '1px solid #2a2418', overflow: 'hidden',
+        background: '#0a0a0e', position: 'relative',
+      });
+      const artImg = document.createElement('img');
+      artImg.src = artRenderer.getArt(card.texture, card.type);
+      Object.assign(artImg.style, { width: '100%', height: '100%', objectFit: 'cover', display: 'block' });
+      artBox.appendChild(artImg);
+      cardEl.appendChild(artBox);
+
+      // Type line
+      const typeLine = document.createElement('div');
+      Object.assign(typeLine.style, {
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+        padding: '2px 5px',
+        background: 'linear-gradient(180deg, rgba(40,36,28,0.7), rgba(28,24,18,0.7))',
+        borderTop: '1px solid #2a2418', borderBottom: '1px solid #2a2418',
+        fontFamily: "'Cinzel', Georgia, serif", fontSize: '7.5px', fontWeight: '700',
+        letterSpacing: '1px', textTransform: 'uppercase', color,
+      });
+      typeLine.innerHTML = `<span style="font-size:10px">${icon}</span> ${card.type}`;
+      cardEl.appendChild(typeLine);
+
+      // Text box
+      const textBox = document.createElement('div');
+      Object.assign(textBox.style, {
+        flex: '1', margin: '2px 5px', padding: '4px 5px',
+        background: 'linear-gradient(180deg, #d4c8a8 0%, #c4b890 30%, #b8a878 100%)',
+        borderRadius: '2px', overflow: 'hidden',
+      });
+      const textEl = document.createElement('div');
+      Object.assign(textEl.style, {
+        fontFamily: "'Alegreya', Georgia, serif", fontSize: '8px',
+        color: '#2a2018', lineHeight: '1.35', textAlign: 'center',
+      });
+      textEl.textContent = card.description;
+      textBox.appendChild(textEl);
+      cardEl.appendChild(textBox);
+
+      this.mulliganCardEls.push(cardEl);
+      handEl.appendChild(cardEl);
+    }
+  }
+
+  private doMulligan(): void {
+    if (!this.deck) return;
+    const maxHand = HAND_SIZE;
+    const nextDrawCount = maxHand - (this.mulliganCount + 1);
+    if (nextDrawCount < 1) return; // Can't mulligan below 1 card
+
+    this.mulliganCount++;
+    this.deck.mulliganFull(nextDrawCount);
+    this.buildMulliganHand();
+    this.updateMulliganStatus();
+  }
+
+  private updateMulliganStatus(): void {
+    if (!this.container) return;
+    const statusEl = this.container.querySelector('#mulligan-status') as HTMLElement;
+    const headerEl = this.container.querySelector('#mulligan-header') as HTMLElement;
+    const btn = this.container.querySelector('#mulligan-btn') as HTMLElement;
+    const maxHand = HAND_SIZE;
+    const currentCards = maxHand - this.mulliganCount;
+    const nextCards = currentCards - 1;
+
+    if (this.mulliganCount === 0) {
+      if (headerEl) headerEl.textContent = 'OPENING HAND';
+      if (statusEl) statusEl.textContent = `${currentCards} CARDS`;
+    } else {
+      if (headerEl) headerEl.textContent = `MULLIGAN ${this.mulliganCount}`;
+      if (statusEl) statusEl.textContent = `${currentCards} CARDS`;
+    }
+
+    if (btn) {
+      if (nextCards < 1) {
+        btn.textContent = 'NO MORE';
+        btn.style.cursor = 'not-allowed';
+        btn.style.opacity = '0.3';
+      } else {
+        btn.textContent = `MULLIGAN → ${nextCards}`;
+        btn.style.cursor = 'pointer';
+        btn.style.opacity = '1';
+      }
+    }
+  }
+
   private deploy(): void {
     const startX = this.selectedX >= 0 ? this.selectedX : this.mission.playerStartX;
     const startY = this.selectedY >= 0 ? this.selectedY : this.mission.playerStartY;
+
     const modifiedMission: MissionDefinition = {
       ...this.mission,
       playerStartX: startX,
       playerStartY: startY,
     };
-    getSceneManager().start('GameScene', { mission: modifiedMission });
+    getSceneManager().start('GameScene', { mission: modifiedMission, deck: this.deck });
   }
 
   shutdown(): void {
@@ -623,5 +870,7 @@ export class DropSiteScene implements GameSceneInterface {
       this.container = null;
       this.canvas = null;
     }
+    this.mulliganCardEls = [];
+    this.mulliganCount = 0;
   }
 }

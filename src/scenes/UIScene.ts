@@ -46,17 +46,39 @@ export class UIScene implements GameSceneInterface {
   /** Per-slot DOM elements for incremental updates. Index 0 = deck pile. */
   private slotEls: HTMLElement[] = [];
   private deckPileEl: HTMLElement | null = null;
+  private discardPileEl: HTMLElement | null = null;
   private mission: MissionDefinition | null = null;
 
-  create(data?: { mission?: MissionDefinition }): void {
+  // Card stats tracking (Feature 4)
+  private cardPlayCounts: Record<string, number> = {};
+  private cardsDrawn: number = 0;
+  private cardsDiscarded: number = 0;
+  private reshuffleCount: number = 0;
+
+  // Affordability tracking (Feature 2)
+  private lastAffordabilityGold: number = -1;
+
+  // Scry/peek discard state (Feature 5)
+  private scryState: { slotIndex: number; timeout: ReturnType<typeof setTimeout> | null; previewEl: HTMLElement | null } = {
+    slotIndex: -1, timeout: null, previewEl: null,
+  };
+
+  // Deck gauge element (Feature 3)
+  private deckGaugeEl: HTMLElement | null = null;
+
+  create(data?: { mission?: MissionDefinition; deck?: Deck }): void {
     this.mission = data?.mission || null;
     if (data?.mission) {
       this.currentGold = data.mission.startingGold;
     }
 
-    // Build starting deck
-    const startingCards: Card[] = getSelectedDeckCards();
-    this.deck = new Deck(startingCards);
+    // Use pre-built deck from drop site (with mulligan applied) or build a new one
+    if (data?.deck) {
+      this.deck = data.deck;
+    } else {
+      const startingCards: Card[] = getSelectedDeckCards();
+      this.deck = new Deck(startingCards);
+    }
 
     // Create HTML UI overlay
     this.createUIOverlay();
@@ -98,8 +120,20 @@ export class UIScene implements GameSceneInterface {
     // Keyboard shortcuts for card selection (1-5)
     document.addEventListener('keydown', this.onKeyDown);
 
+    // Cancel scry on any left-click elsewhere
+    this.boundScryCancel = (e: MouseEvent) => {
+      if (this.scryState.slotIndex >= 0 && e.button === 0) {
+        this.cancelScry();
+      }
+    };
+    document.addEventListener('click', this.boundScryCancel);
+
     // Initial hand draw
     this.refreshHandUI();
+
+    // Initial affordability + tension
+    this.updateAffordability();
+    this.updateDeckTension();
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -152,6 +186,7 @@ export class UIScene implements GameSceneInterface {
   };
   private boundMouseMove: ((e: MouseEvent) => void) | null = null;
   private boundMouseUp: ((e: MouseEvent) => void) | null = null;
+  private boundScryCancel: ((e: MouseEvent) => void) | null = null;
 
   private createUIOverlay(): void {
     this.container = document.createElement('div');
@@ -189,8 +224,11 @@ export class UIScene implements GameSceneInterface {
 
         <!-- Armoury info -->
         <div style="padding:8px 14px;">
-          <div style="font-size:7px;letter-spacing:2px;color:rgba(200,152,42,0.35);">ARMOURY</div>
+          <div style="font-size:7px;letter-spacing:2px;color:rgba(200,152,42,0.35);" id="armoury-label">ARMOURY</div>
           <span id="deck-info" style="color:rgba(200,191,160,0.4);font-size:11px;letter-spacing:1px;"></span>
+          <div id="deck-gauge" style="margin-top:3px;width:60px;height:3px;background:rgba(200,191,160,0.1);border-radius:2px;overflow:hidden;">
+            <div id="deck-gauge-fill" style="height:100%;width:100%;background:#c8982a;border-radius:2px;transition:width 0.3s ease,background 0.3s ease;"></div>
+          </div>
         </div>
 
         <!-- Divider -->
@@ -267,6 +305,7 @@ export class UIScene implements GameSceneInterface {
     this.deckInfoEl = this.container.querySelector('#deck-info');
     this.supplyTimerEl = this.container.querySelector('#supply-timer');
     this.handEl = this.container.querySelector('#hud-section-hand');
+    this.deckGaugeEl = this.container.querySelector('#deck-gauge-fill');
 
     // Mute button
     const muteBtn = this.container.querySelector('#mute-btn') as HTMLButtonElement;
@@ -320,23 +359,32 @@ export class UIScene implements GameSceneInterface {
     EventBus.on('card-play-failed', this.onCardPlayFailedVFX, this);
   }
 
-  private onCardPlayedVFX = (): void => {
-    // Flash the hand tray green briefly
-    if (this.handEl) {
-      this.handEl.style.boxShadow = '0 0 20px rgba(68, 255, 68, 0.6)';
-      setTimeout(() => {
-        if (this.handEl) this.handEl.style.boxShadow = '';
-      }, 300);
+  private playingSlot: number = -1;
+
+  private onCardPlayedVFX = ({ cardIndex }: { card: Card; cardIndex: number }): void => {
+    const slotEl = this.slotEls[cardIndex];
+    if (slotEl) {
+      slotEl.style.animation = 'card-play-out 0.35s ease-in forwards';
     }
   };
 
-  private onCardPlayFailedVFX = (): void => {
-    // Shake the hand tray on fail
-    if (this.handEl) {
-      this.handEl.style.animation = 'hand-shake 0.3s ease';
-      setTimeout(() => {
-        if (this.handEl) this.handEl.style.animation = '';
-      }, 300);
+  private onCardPlayFailedVFX = ({ cardIndex }: { cardIndex?: number }): void => {
+    if (cardIndex !== undefined && cardIndex >= 0 && cardIndex < this.slotEls.length) {
+      const slotEl = this.slotEls[cardIndex];
+      if (slotEl) {
+        slotEl.style.animation = 'card-shake 0.35s ease';
+        setTimeout(() => {
+          if (slotEl) slotEl.style.animation = '';
+        }, 350);
+      }
+    } else {
+      // Fallback: shake the whole hand
+      if (this.handEl) {
+        this.handEl.style.animation = 'hand-shake 0.3s ease';
+        setTimeout(() => {
+          if (this.handEl) this.handEl.style.animation = '';
+        }, 300);
+      }
     }
   };
 
@@ -548,6 +596,49 @@ export class UIScene implements GameSceneInterface {
           bottom: 1px; right: 1px;
           border-left: none; border-top: none;
           border-radius: 0 0 3px 0;
+        }
+
+        @keyframes card-play-out {
+          0% { transform: translateY(0) scale(1); opacity: 1; }
+          100% { transform: translateY(-80px) scale(0.4); opacity: 0; }
+        }
+        @keyframes card-shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-6px) rotate(-2deg); }
+          40% { transform: translateX(5px) rotate(1deg); }
+          60% { transform: translateX(-4px) rotate(-1deg); }
+          80% { transform: translateX(3px); }
+        }
+        @keyframes hand-shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-4px); }
+          75% { transform: translateX(4px); }
+        }
+        @keyframes card-draw-reveal {
+          0% { transform: translateY(60px) rotateY(180deg) scale(0.7); opacity: 0; }
+          50% { transform: translateY(-4px) rotateY(90deg) scale(1.02); opacity: 0.8; }
+          100% { transform: translateY(0) rotateY(0deg) scale(1); opacity: 1; }
+        }
+
+        .card-slot.unaffordable .card-frame {
+          opacity: 0.5;
+          filter: saturate(0.3);
+        }
+        .card-slot.unaffordable .card-mana {
+          background: radial-gradient(circle at 35% 35%, #ff6060, #c43030 50%, #802020 100%) !important;
+          border-color: #601010 !important;
+          color: #fff !important;
+        }
+
+        @keyframes deck-low-pulse {
+          0%, 100% { border-color: #c43030; box-shadow: 0 0 8px rgba(196,48,48,0.3); }
+          50% { border-color: #ff4040; box-shadow: 0 0 16px rgba(196,48,48,0.6); }
+        }
+
+        @keyframes deck-reshuffle {
+          0% { transform: scale(1); box-shadow: 0 0 0 rgba(200,152,42,0); }
+          50% { transform: scale(1.1); box-shadow: 0 0 20px rgba(200,152,42,0.5); }
+          100% { transform: scale(1); box-shadow: 0 0 0 rgba(200,152,42,0); }
         }
 
         /* Bottom bar scrollbar */
@@ -813,9 +904,193 @@ export class UIScene implements GameSceneInterface {
         this.startCardDrag(card, i, slot, e.clientX, e.clientY, color);
       });
 
+      // Right-click to discard
+      slot.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.handleRightClickDiscard(i);
+      });
+
       this.handEl.appendChild(slot);
     }
 
+    // ── Discard pile visual ──
+    this.buildDiscardPile();
+  }
+
+  private buildDiscardPile(): void {
+    if (!this.handEl) return;
+
+    // Spacer before discard pile
+    const spacer2 = document.createElement('div');
+    spacer2.style.width = '6px';
+    spacer2.style.flexShrink = '0';
+    this.handEl.appendChild(spacer2);
+
+    const discardSlot = document.createElement('div');
+    discardSlot.className = 'card-slot';
+    discardSlot.style.animationDelay = '0ms';
+
+    const discardFrame = document.createElement('div');
+    discardFrame.className = 'card-frame';
+    discardFrame.style.position = 'relative';
+    const discardSize = this.deck.getDiscardSize();
+    if (discardSize === 0) discardFrame.style.opacity = '0.3';
+
+    const discardBack = document.createElement('div');
+    Object.assign(discardBack.style, {
+      position: 'absolute', inset: '0',
+      background: 'linear-gradient(135deg, #1a1210 0%, #12100c 50%, #1a1210 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '4px',
+    });
+
+    const spentIcon = document.createElement('div');
+    Object.assign(spentIcon.style, {
+      width: '50px', height: '50px', borderRadius: '50%',
+      border: '2px solid #3a2020',
+      background: 'radial-gradient(circle, #1e1414 0%, #141010 100%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: 'inset 0 0 10px rgba(200,80,42,0.08)',
+    });
+    const spentInner = document.createElement('div');
+    Object.assign(spentInner.style, {
+      fontFamily: "'Cinzel', serif", fontSize: '14px', color: '#6b3a2e',
+      textShadow: '0 0 6px rgba(107,58,46,0.3)',
+    });
+    spentInner.textContent = '\u2620'; // ☠
+    spentIcon.appendChild(spentInner);
+    discardBack.appendChild(spentIcon);
+
+    const countLabel = document.createElement('div');
+    Object.assign(countLabel.style, {
+      fontFamily: "'Cinzel', serif", fontSize: '10px', fontWeight: '700',
+      color: '#6b3a2e', textAlign: 'center', lineHeight: '1.3',
+    });
+    countLabel.setAttribute('data-spent-count', '');
+    countLabel.innerHTML = `${discardSize}<br><span style="font-size:7px;color:#4a2a20;letter-spacing:1px;">SPENT</span>`;
+    discardBack.appendChild(countLabel);
+
+    const swapsLabel = document.createElement('div');
+    Object.assign(swapsLabel.style, {
+      fontFamily: "'Alegreya', serif", fontSize: '8px', fontStyle: 'italic',
+      color: '#8a6a4e', marginTop: '2px',
+    });
+    swapsLabel.setAttribute('data-swaps-label', '');
+    swapsLabel.textContent = `${this.deck.getDiscardsRemaining()} swaps`;
+    discardBack.appendChild(swapsLabel);
+
+    discardFrame.appendChild(discardBack);
+    discardSlot.appendChild(discardFrame);
+    discardSlot.style.cursor = 'default';
+
+    this.discardPileEl = discardSlot;
+    this.handEl.appendChild(discardSlot);
+  }
+
+  private updateDiscardPile(): void {
+    if (!this.discardPileEl) return;
+    const countEl = this.discardPileEl.querySelector('[data-spent-count]') as HTMLElement;
+    const swapsEl = this.discardPileEl.querySelector('[data-swaps-label]') as HTMLElement;
+    const frame = this.discardPileEl.querySelector('.card-frame') as HTMLElement;
+    const discardSize = this.deck.getDiscardSize();
+    if (countEl) countEl.innerHTML = `${discardSize}<br><span style="font-size:7px;color:#4a2a20;letter-spacing:1px;">SPENT</span>`;
+    if (swapsEl) swapsEl.textContent = `${this.deck.getDiscardsRemaining()} swaps`;
+    if (frame) frame.style.opacity = discardSize === 0 ? '0.3' : '1';
+  }
+
+  private handleRightClickDiscard(index: number): void {
+    if (this.deck.getDiscardsRemaining() <= 0) {
+      this.cancelScry();
+      this.showNoSwapsFlash();
+      return;
+    }
+
+    // Two-step scry: first right-click shows preview, second confirms
+    if (this.scryState.slotIndex === index) {
+      // Second right-click on same card — commit the discard
+      this.cancelScry();
+      this.performDiscard(index);
+    } else {
+      // First right-click (or different card) — show scry preview
+      this.cancelScry();
+      this.showScryPreview(index);
+    }
+  }
+
+  private performDiscard(index: number): void {
+    const card = this.deck.hand[index];
+    const success = this.deck.discardCard(index);
+    if (success) {
+      this.cardsDiscarded++;
+      if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
+      const slotEl = this.slotEls[index];
+      if (slotEl) {
+        slotEl.style.animation = 'card-play-out 0.3s ease-in forwards';
+        setTimeout(() => {
+          this.updateSlot(index);
+          this.updateDeckPile();
+          this.updateDiscardPile();
+          this.updateDeckTension();
+          this.updateAffordability();
+          if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
+        }, 300);
+      } else {
+        this.updateSlot(index);
+        this.updateDeckPile();
+        this.updateDiscardPile();
+        this.updateDeckTension();
+        this.updateAffordability();
+        if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
+      }
+    }
+  }
+
+  private showReshuffleAnimation(): void {
+    if (!this.deckPileEl) return;
+    this.deckPileEl.style.animation = 'deck-reshuffle 0.6s ease-in-out';
+    setTimeout(() => {
+      if (this.deckPileEl) this.deckPileEl.style.animation = '';
+    }, 600);
+
+    // Floating "RESHUFFLE" text above deck pile
+    const label = document.createElement('div');
+    Object.assign(label.style, {
+      position: 'fixed', pointerEvents: 'none', zIndex: '300',
+      fontFamily: "'Teko', sans-serif", fontSize: '18px', fontWeight: '600',
+      color: '#c8982a', letterSpacing: '3px',
+      transition: 'transform 1s ease-out, opacity 1s ease-out',
+      transform: 'translateY(0)', opacity: '1',
+    });
+    label.textContent = 'RESHUFFLE';
+    const rect = this.deckPileEl.getBoundingClientRect();
+    label.style.left = `${rect.left + rect.width / 2 - 40}px`;
+    label.style.top = `${rect.top - 20}px`;
+    document.body.appendChild(label);
+    requestAnimationFrame(() => {
+      label.style.transform = 'translateY(-30px)';
+      label.style.opacity = '0';
+    });
+    setTimeout(() => label.remove(), 1000);
+  }
+
+  private showNoSwapsFlash(): void {
+    const target = this.discardPileEl || this.deckPileEl;
+    if (!target) return;
+    const label = document.createElement('div');
+    Object.assign(label.style, {
+      position: 'fixed', pointerEvents: 'none', zIndex: '300',
+      fontFamily: "'Teko', sans-serif", fontSize: '14px', fontWeight: '600',
+      color: '#c43030', letterSpacing: '2px',
+      transition: 'opacity 0.8s ease-out',
+      opacity: '1',
+    });
+    label.textContent = 'NO SWAPS LEFT';
+    const rect = target.getBoundingClientRect();
+    label.style.left = `${rect.left + rect.width / 2 - 50}px`;
+    label.style.top = `${rect.top - 16}px`;
+    document.body.appendChild(label);
+    setTimeout(() => { label.style.opacity = '0'; }, 100);
+    setTimeout(() => label.remove(), 900);
   }
 
   /** Update a single hand slot without rebuilding the whole hand. */
@@ -934,10 +1209,26 @@ export class UIScene implements GameSceneInterface {
         this.cardTooltip?.hide();
         this.startCardDrag(card, index, newSlot, e.clientX, e.clientY, color);
       });
+
+      // Right-click to discard
+      newSlot.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.handleRightClickDiscard(index);
+      });
+    }
+
+    // Apply draw-reveal animation when a card appears in a previously empty slot
+    const wasEmpty = !oldEl.querySelector('.card-title-bar');
+    if (card && wasEmpty) {
+      newSlot.style.animation = 'card-draw-reveal 0.5s ease-out both';
+      newSlot.style.transformStyle = 'preserve-3d';
     }
 
     oldEl.replaceWith(newSlot);
     this.slotEls[index] = newSlot;
+
+    // Update affordability for the new slot
+    this.updateAffordabilityForSlot(index);
   }
 
   /** Update just the deck pile counts without rebuilding. */
@@ -969,11 +1260,20 @@ export class UIScene implements GameSceneInterface {
 
   // ── Event Handlers ──────────────────────────────────
 
-  private onCardPlayed({ cardIndex }: { card: Card; cardIndex: number }): void {
+  private onCardPlayed({ card, cardIndex }: { card: Card; cardIndex: number }): void {
     this.clearCardHighlight();
+    this.cancelScry();
+    // Track stats
+    this.cardPlayCounts[card.id] = (this.cardPlayCounts[card.id] || 0) + 1;
     this.deck.playCard(cardIndex);
-    this.updateSlot(cardIndex);
-    this.updateDeckPile();
+    // Delay slot update to let play-out animation finish
+    setTimeout(() => {
+      this.updateSlot(cardIndex);
+      this.updateDeckPile();
+      this.updateDiscardPile();
+      this.updateDeckTension();
+      this.updateAffordability();
+    }, 350);
   }
 
   private onCardPlayFailed(_data: any): void {
@@ -988,6 +1288,7 @@ export class UIScene implements GameSceneInterface {
   private onGoldChanged({ amount, total }: { amount: number; total: number }): void {
     this.currentGold = total;
     this.updateGoldDisplay();
+    this.updateAffordability();
     if (amount > 0) {
       this.showFloatingGoldText(amount);
     }
@@ -1007,14 +1308,28 @@ export class UIScene implements GameSceneInterface {
   }
 
   private onObjectiveCompleted({ cardDraws }: { objectiveId: string; goldReward: number; cardDraws: number }): void {
+    let drawIndex = 0;
     for (let i = 0; i < cardDraws; i++) {
       const drawn = this.deck.drawCard();
       if (drawn) {
+        this.cardsDrawn++;
+        if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
         const slot = this.deck.hand.indexOf(drawn);
-        if (slot >= 0) this.updateSlot(slot);
+        if (slot >= 0) {
+          // Stagger multi-draw reveal animations
+          const staggerDelay = drawIndex * 200;
+          setTimeout(() => {
+            this.updateSlot(slot);
+          }, staggerDelay);
+          drawIndex++;
+        }
+        if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
       }
     }
     this.updateDeckPile();
+    this.updateDiscardPile();
+    this.updateDeckTension();
+    this.updateAffordability();
     const allCards = getAllCards();
     const randomCard = allCards[Math.floor(Math.random() * allCards.length)];
     addPendingReward(randomCard.id);
@@ -1046,14 +1361,27 @@ export class UIScene implements GameSceneInterface {
   }
 
   private onBonusDraws({ count }: { count: number }): void {
+    let drawIndex = 0;
     for (let i = 0; i < count; i++) {
       const drawn = this.deck.drawCard();
       if (drawn) {
+        this.cardsDrawn++;
+        if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
         const slot = this.deck.hand.indexOf(drawn);
-        if (slot >= 0) this.updateSlot(slot);
+        if (slot >= 0) {
+          const staggerDelay = drawIndex * 200;
+          setTimeout(() => {
+            this.updateSlot(slot);
+          }, staggerDelay);
+          drawIndex++;
+        }
+        if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
       }
     }
     this.updateDeckPile();
+    this.updateDiscardPile();
+    this.updateDeckTension();
+    this.updateAffordability();
   }
 
   private onTrainUnit({ unit, building }: { unit: TrainableUnit; building: Building }): void {
@@ -1079,22 +1407,32 @@ export class UIScene implements GameSceneInterface {
     if (this.currentGold < cost) return;
     const drawn = this.deck.drawCard();
     if (!drawn) return;
+    this.cardsDrawn++;
+    if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
     this.currentGold -= cost;
     EventBus.emit('gold-changed', { amount: -cost, total: this.currentGold });
     const slot = this.deck.hand.indexOf(drawn);
     if (slot >= 0) this.updateSlot(slot);
     this.updateDeckPile();
+    this.updateDiscardPile();
+    this.updateDeckTension();
+    if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
   }
 
   private onRequisitionCard({ cost }: { cost: number }): void {
     if (this.currentGold < cost) return;
     const drawn = this.deck.drawCard();
     if (!drawn) return;
+    this.cardsDrawn++;
+    if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
     this.currentGold -= cost;
     EventBus.emit('gold-changed', { amount: -cost, total: this.currentGold });
     const slot = this.deck.hand.indexOf(drawn);
     if (slot >= 0) this.updateSlot(slot);
     this.updateDeckPile();
+    this.updateDiscardPile();
+    this.updateDeckTension();
+    if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
   }
 
   private onWargearReturnToHand({ card }: { card: Card }): void {
@@ -1236,6 +1574,134 @@ export class UIScene implements GameSceneInterface {
     }, duration);
   }
 
+  // ── Feature 2: Affordability Dimming ──
+
+  private updateAffordability(): void {
+    if (this.lastAffordabilityGold === this.currentGold) return;
+    this.lastAffordabilityGold = this.currentGold;
+    for (let i = 0; i < this.slotEls.length; i++) {
+      this.updateAffordabilityForSlot(i);
+    }
+  }
+
+  private updateAffordabilityForSlot(index: number): void {
+    const slotEl = this.slotEls[index];
+    if (!slotEl) return;
+    const card = this.deck.hand[index];
+    if (!card) {
+      slotEl.classList.remove('unaffordable');
+      return;
+    }
+    if (card.cost > this.currentGold) {
+      slotEl.classList.add('unaffordable');
+    } else {
+      slotEl.classList.remove('unaffordable');
+    }
+  }
+
+  // ── Feature 3: Deck Tension Indicator ──
+
+  private updateDeckTension(): void {
+    const deckSize = this.deck.getDeckSize();
+    const discardSize = this.deck.getDiscardSize();
+    const handCount = this.deck.getHandSize();
+    const total = deckSize + discardSize + handCount;
+
+    // Update gauge bar
+    if (this.deckGaugeEl) {
+      const ratio = total > 0 ? deckSize / total : 0;
+      this.deckGaugeEl.style.width = `${Math.round(ratio * 100)}%`;
+      if (ratio > 0.4) {
+        this.deckGaugeEl.style.background = '#c8982a'; // brass
+      } else if (ratio > 0.15) {
+        this.deckGaugeEl.style.background = '#d4a020'; // amber
+      } else {
+        this.deckGaugeEl.style.background = '#c43030'; // red
+      }
+    }
+
+    // Update ARMOURY label color and deck pile pulse
+    const armouryLabel = this.container?.querySelector('#armoury-label') as HTMLElement | null;
+    const deckFrame = this.deckPileEl?.querySelector('.card-frame') as HTMLElement | null;
+
+    if (deckSize <= 3 && deckSize > 0) {
+      if (armouryLabel) armouryLabel.style.color = '#c43030';
+      if (deckFrame) deckFrame.style.animation = 'deck-low-pulse 1s ease-in-out infinite';
+    } else {
+      if (armouryLabel) armouryLabel.style.color = '';
+      if (deckFrame && deckFrame.style.animation === 'deck-low-pulse 1s ease-in-out infinite') {
+        deckFrame.style.animation = '';
+      }
+    }
+
+    // Update deck count label text for empty states
+    const countEl = this.deckPileEl?.querySelector('[data-deck-count]') as HTMLElement | null;
+    if (countEl) {
+      if (deckSize === 0 && discardSize > 0) {
+        countEl.innerHTML = `<span style="font-size:8px;color:#c8982a;letter-spacing:1px;">RESHUFFLING...</span>`;
+      } else if (deckSize === 0 && discardSize === 0) {
+        countEl.innerHTML = `<span style="font-size:9px;color:#c43030;font-weight:700;">EMPTY</span>`;
+      }
+    }
+  }
+
+  // ── Feature 5: Scry Preview on Discard ──
+
+  private cancelScry(): void {
+    if (this.scryState.timeout) {
+      clearTimeout(this.scryState.timeout);
+      this.scryState.timeout = null;
+    }
+    if (this.scryState.previewEl) {
+      this.scryState.previewEl.remove();
+      this.scryState.previewEl = null;
+    }
+    // Restore dimmed card
+    if (this.scryState.slotIndex >= 0 && this.scryState.slotIndex < this.slotEls.length) {
+      const slotEl = this.slotEls[this.scryState.slotIndex];
+      if (slotEl) slotEl.style.opacity = '';
+    }
+    this.scryState.slotIndex = -1;
+  }
+
+  private showScryPreview(index: number): void {
+    const targetEl = this.discardPileEl || this.deckPileEl;
+    if (!targetEl) return;
+
+    const peeked = this.deck.peekTop();
+    const rect = targetEl.getBoundingClientRect();
+
+    const preview = document.createElement('div');
+    Object.assign(preview.style, {
+      position: 'fixed', zIndex: '300', pointerEvents: 'none',
+      left: `${rect.left + rect.width / 2}px`,
+      top: `${rect.top - 36}px`,
+      transform: 'translateX(-50%)',
+      fontFamily: "'Teko', sans-serif", fontSize: '14px', fontWeight: '600',
+      letterSpacing: '2px', textAlign: 'center',
+      padding: '4px 12px', borderRadius: '4px',
+      background: 'rgba(10,10,14,0.9)', border: '1px solid rgba(200,152,42,0.3)',
+      transition: 'opacity 0.2s',
+    });
+
+    if (peeked) {
+      preview.innerHTML = `<span style="color:rgba(200,152,42,0.5);font-size:10px;">NEXT:</span> <span style="color:#e8dcc0;">${peeked.name}</span>`;
+    } else {
+      preview.innerHTML = `<span style="color:#c43030;">RESHUFFLE?</span>`;
+    }
+
+    document.body.appendChild(preview);
+    this.scryState.previewEl = preview;
+
+    // Dim the right-clicked card
+    const slotEl = this.slotEls[index];
+    if (slotEl) slotEl.style.opacity = '0.5';
+    this.scryState.slotIndex = index;
+
+    // Auto-cancel after 2s
+    this.scryState.timeout = setTimeout(() => this.cancelScry(), 2000);
+  }
+
   update(): void {
     if (this.deckInfoEl) {
       this.deckInfoEl.textContent = `Armoury: ${this.deck.getDeckSize()} | Spent: ${this.deck.getDiscardSize()}`;
@@ -1244,6 +1710,17 @@ export class UIScene implements GameSceneInterface {
   }
 
   shutdown(): void {
+    // Emit card stats for GameOverScene
+    EventBus.emit('card-stats', {
+      cardPlayCounts: { ...this.cardPlayCounts },
+      cardsDrawn: this.cardsDrawn,
+      cardsDiscarded: this.cardsDiscarded,
+      reshuffleCount: this.reshuffleCount,
+    });
+
+    this.cancelScry();
+    if (this.boundScryCancel) document.removeEventListener('click', this.boundScryCancel);
+
     EventBus.off('card-played', this.onCardPlayed, this);
     EventBus.off('card-play-failed', this.onCardPlayFailed, this);
     EventBus.off('gold-changed', this.onGoldChanged, this);

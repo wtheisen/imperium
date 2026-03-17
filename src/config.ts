@@ -25,7 +25,7 @@ export const DEFAULT_MINE_GOLD = 200;
 export const FAR_MINE_GOLD = 350;
 
 export const MIN_DECK_SIZE = 8;
-export const MAX_DECK_SIZE = 15;
+export const MAX_DECK_SIZE = 30;
 
 export const CAMERA_ZOOM_MIN = 0.5;
 export const CAMERA_ZOOM_MAX = 2.0;
@@ -67,3 +67,15 @@ export const REINFORCEMENT_DELAY = 5000;
 export const REINFORCEMENT_SIZE_BASE = 4;
 export const PRESSURE_ESCALATION_INTERVAL = 60000;
 export const PRESSURE_MAX = 2.0;
+
+// Extraction phase
+export const EXTRACTION_DEFAULT_TIMER_MS = 45000;
+export const EXTRACTION_WAVE_INTERVAL_MS = 10000;
+export const EXTRACTION_WAVE_SIZE_BASE = 6;
+export const EXTRACTION_ZONE_RADIUS = 4;
+
+// New objective types
+export const SURVIVE_WAVE_INTERVAL_MS = 15000;
+export const SURVIVE_WAVE_SIZE_BASE = 4;
+export const ACTIVATE_CHANNEL_AGGRO_RADIUS = 12;
+export const POI_PICKUP_RADIUS = 2;

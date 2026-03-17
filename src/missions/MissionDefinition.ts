@@ -1,6 +1,8 @@
 import { UnitStats } from '../entities/Unit';
 
-export type ObjectiveType = 'destroy' | 'recover' | 'purge';
+export type ObjectiveType = 'destroy' | 'recover' | 'purge' | 'survive' | 'activate' | 'collect';
+
+export type EnvironmentModifier = 'dense_fog' | 'ork_frenzy' | 'supply_shortage' | 'armored_advance' | 'night_raid';
 
 export interface ObjectiveDefinition {
   id: string;
@@ -13,8 +15,26 @@ export interface ObjectiveDefinition {
   targetCampId?: string;
   /** For 'purge' objectives — radius in tiles to clear of enemies */
   purgeRadius?: number;
+  /** For 'survive' objectives — hold position for this many ms */
+  surviveDurationMs?: number;
+  /** For 'survive' objectives — radius around objective to defend */
+  surviveRadius?: number;
+  /** For 'activate' objectives — channel (hold position) for this many ms */
+  channelDurationMs?: number;
+  /** For 'collect' objectives — how many items to gather */
+  collectTotal?: number;
+  /** For 'collect' objectives — positions of items to collect */
+  collectPositions?: { tileX: number; tileY: number }[];
   goldReward: number;
   cardDraws: number;
+}
+
+export interface POIDefinition {
+  id: string;
+  type: 'gold_cache' | 'ammo_dump' | 'med_station' | 'intel';
+  tileX: number;
+  tileY: number;
+  reward: { gold?: number; cardDraws?: number };
 }
 
 export interface CampUnitDef {
@@ -63,6 +83,8 @@ export interface MissionDefinition {
   description: string;
   difficulty: number;
   objectives: ObjectiveDefinition[];
+  /** Optional bonus objectives — not required for victory */
+  optionalObjectives?: ObjectiveDefinition[];
   enemyCamps: EnemyCampDefinition[];
   playerStartX: number;
   playerStartY: number;
@@ -72,4 +94,10 @@ export interface MissionDefinition {
   goldMines?: { tileX: number; tileY: number; goldAmount: number }[];
   /** Procedural terrain generation parameters */
   terrain?: TerrainParams;
+  /** Time in ms for extraction phase after objectives complete. 0 or omitted = instant victory. */
+  extractionTimerMs?: number;
+  /** Per-mission environment modifiers that change gameplay rules */
+  environmentModifiers?: EnvironmentModifier[];
+  /** Points of interest — bonus pickups scattered on map */
+  pointsOfInterest?: POIDefinition[];
 }

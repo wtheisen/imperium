@@ -64,6 +64,7 @@ const DIFF_THEMES: Record<number, { color: string; label: string; symbol: string
   1: { color: '#4a9e4a', label: 'STANDARD', symbol: 'I' },
   2: { color: '#c8982a', label: 'HAZARDOUS', symbol: 'II' },
   3: { color: '#c43030', label: 'EXTREMIS', symbol: 'III' },
+  4: { color: '#8020c0', label: 'HELLDIVE', symbol: 'IV' },
 };
 
 const MAP_TYPE_LABELS: Record<string, string> = {
@@ -283,12 +284,14 @@ export class MissionSelectScene implements GameSceneInterface {
     const completedCount = state.completedMissions.size;
     if (mission.difficulty === 2 && completedCount < 1) return true;
     if (mission.difficulty === 3 && completedCount < 2) return true;
+    if (mission.difficulty >= 4 && completedCount < 4) return true;
     return false;
   }
 
   private getLockRequirement(mission: MissionDefinition): string {
     if (mission.difficulty === 2) return 'COMPLETE 1 MISSION TO UNLOCK';
     if (mission.difficulty === 3) return 'COMPLETE 2 MISSIONS TO UNLOCK';
+    if (mission.difficulty >= 4) return 'COMPLETE 4 MISSIONS TO UNLOCK';
     return '';
   }
 

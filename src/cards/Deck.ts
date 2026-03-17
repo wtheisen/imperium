@@ -31,8 +31,11 @@ export class Deck {
     }
   }
 
+  public lastDrawReshuffled = false;
+
   /** Draw a card into the first empty slot. Returns the card or null. */
   drawCard(): Card | null {
+    this.lastDrawReshuffled = false;
     const emptySlot = this.hand.indexOf(null);
     if (emptySlot === -1) return null;
 
@@ -40,6 +43,7 @@ export class Deck {
       if (this.discardPile.length === 0) return null;
       this.drawPile = MathUtils.shuffleArray(this.discardPile);
       this.discardPile = [];
+      this.lastDrawReshuffled = true;
     }
 
     const card = this.drawPile.pop()!;
@@ -74,6 +78,7 @@ export class Deck {
 
   /** Discard a card from a slot and draw a replacement into that same slot. */
   discardCard(index: number): boolean {
+    this.lastDrawReshuffled = false;
     if (this.discardsRemaining <= 0) return false;
     if (index < 0 || index >= this.hand.length) return false;
     const card = this.hand[index];
@@ -87,12 +92,47 @@ export class Deck {
     if (this.drawPile.length === 0 && this.discardPile.length > 0) {
       this.drawPile = MathUtils.shuffleArray(this.discardPile);
       this.discardPile = [];
+      this.lastDrawReshuffled = true;
     }
     if (this.drawPile.length > 0) {
       this.hand[index] = this.drawPile.pop()!;
     }
 
     return true;
+  }
+
+  /** Mulligan: return marked cards to draw pile, reshuffle, redraw into those slots. */
+  mulliganCards(indices: number[]): void {
+    for (const idx of indices) {
+      const card = this.hand[idx];
+      if (card) {
+        this.drawPile.push(card);
+        this.hand[idx] = null;
+      }
+    }
+    this.drawPile = MathUtils.shuffleArray(this.drawPile);
+    for (const idx of indices) {
+      if (this.drawPile.length > 0) {
+        this.hand[idx] = this.drawPile.pop()!;
+      }
+    }
+  }
+
+  /** MTG-style mulligan: shuffle entire hand back, redraw drawCount cards. */
+  mulliganFull(drawCount: number): void {
+    for (let i = 0; i < this.hand.length; i++) {
+      const card = this.hand[i];
+      if (card) {
+        this.drawPile.push(card);
+        this.hand[i] = null;
+      }
+    }
+    this.drawPile = MathUtils.shuffleArray(this.drawPile);
+    for (let drawn = 0; drawn < drawCount; drawn++) {
+      const emptySlot = this.hand.indexOf(null);
+      if (emptySlot === -1 || this.drawPile.length === 0) break;
+      this.hand[emptySlot] = this.drawPile.pop()!;
+    }
   }
 
   getDiscardsRemaining(): number {
@@ -126,5 +166,11 @@ export class Deck {
 
   getDiscardSize(): number {
     return this.discardPile.length;
+  }
+
+  /** Peek at the top card of the draw pile without removing it. */
+  peekTop(): Card | null {
+    if (this.drawPile.length === 0) return null;
+    return this.drawPile[this.drawPile.length - 1];
   }
 }

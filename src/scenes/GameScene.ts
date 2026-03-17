@@ -31,6 +31,8 @@ import { InputEvent } from '../renderer/InputBridge';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { getActiveModifiers } from '../state/PlayerState';
 import { getMergedEffects } from '../state/DifficultyModifiers';
+import { POIManager } from '../systems/POIManager';
+import { resolveEnvironmentModifiers, EnvironmentEffects } from '../systems/EnvironmentModifierSystem';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -61,6 +63,8 @@ export class GameScene implements GameSceneInterface {
   private tutorialSystem!: TutorialSystem;
   private paused: boolean = false;
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
+  private poiManager: POIManager | null = null;
+  private envEffects: EnvironmentEffects | null = null;
 
   create(data?: { mission?: MissionDefinition }): void {
     this.mission = data?.mission || MISSIONS[0];
@@ -129,12 +133,35 @@ export class GameScene implements GameSceneInterface {
     // Place enemy camps from mission definition
     EnemyPlacement.populate(this.mission, this.entityManager);
 
+    // Resolve environment modifiers
+    this.envEffects = resolveEnvironmentModifiers(this.mission.environmentModifiers);
+
     // Setup spawner system for continuous enemy production
     this.spawnerSystem = new SpawnerSystem(this.entityManager, this.mission.enemyCamps);
 
-    // Create objective markers
+    // Setup POI manager
+    this.poiManager = new POIManager(this.entityManager, this.mission.pointsOfInterest);
+
+    // Create objective markers for required + optional objectives
     for (const obj of this.mission.objectives) {
       this.objectiveMarkers.push(new ObjectiveMarker(obj));
+    }
+    if (this.mission.optionalObjectives) {
+      for (const obj of this.mission.optionalObjectives) {
+        this.objectiveMarkers.push(new ObjectiveMarker(obj));
+      }
+    }
+    // Emit collect item markers for collect objectives
+    for (const obj of [...this.mission.objectives, ...(this.mission.optionalObjectives ?? [])]) {
+      if (obj.type === 'collect' && obj.collectPositions) {
+        for (let i = 0; i < obj.collectPositions.length; i++) {
+          const pos = obj.collectPositions[i];
+          EventBus.emit('collect-marker-3d', {
+            objectiveId: obj.id, posIndex: i,
+            tileX: pos.tileX, tileY: pos.tileY,
+          });
+        }
+      }
     }
 
     // Setup XP tracking
@@ -170,8 +197,8 @@ export class GameScene implements GameSceneInterface {
     // Audio
     this.audioManager = new AudioManager();
 
-    // Launch UI scene
-    getSceneManager().launch('UIScene', { mission: this.mission });
+    // Launch UI scene (pass pre-built deck from drop site if available)
+    getSceneManager().launch('UIScene', { mission: this.mission, deck: (data as any)?.deck });
 
     // Tutorial system (only active on first mission)
     this.tutorialSystem = new TutorialSystem();
@@ -186,10 +213,11 @@ export class GameScene implements GameSceneInterface {
     // Escape key
     this.escHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.pendingFromKeyboard) {
+        const ci = this.pendingCard?.cardIndex ?? -1;
         this.pendingCard = null;
         this.pendingFromKeyboard = false;
         EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
-        EventBus.emit('card-play-failed', { reason: 'cancelled' });
+        EventBus.emit('card-play-failed', { reason: 'cancelled', cardIndex: ci });
       }
       if (e.key === 'p' || e.key === 'P') {
         this.paused = !this.paused;
@@ -254,18 +282,19 @@ export class GameScene implements GameSceneInterface {
     EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
 
     if (evt.tileX < 0 || !IsoHelper.isInBounds(evt.tileX, evt.tileY)) {
-      EventBus.emit('card-play-failed', { reason: 'out-of-bounds' });
+      EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: this.pendingCard?.cardIndex ?? -1 });
       this.pendingCard = null;
       this.pendingFromKeyboard = false;
       return;
     }
 
     const card = this.pendingCard.card;
+    const ci = this.pendingCard.cardIndex;
     const success = this.cardEffects.execute(card, evt.tileX, evt.tileY);
     if (success) {
-      EventBus.emit('card-played', { card, cardIndex: this.pendingCard.cardIndex, tileX: evt.tileX, tileY: evt.tileY });
+      EventBus.emit('card-played', { card, cardIndex: ci, tileX: evt.tileX, tileY: evt.tileY });
     } else {
-      EventBus.emit('card-play-failed', { reason: 'cannot-place' });
+      EventBus.emit('card-play-failed', { reason: 'cannot-place', cardIndex: ci });
     }
 
     this.pendingCard = null;
@@ -298,13 +327,13 @@ export class GameScene implements GameSceneInterface {
     const gameRenderer = (window as any).__gameRenderer;
     const tile = gameRenderer?.inputBridge?.screenToTile(data.screenX, data.screenY);
     if (!tile) {
-      EventBus.emit('card-play-failed', { reason: 'out-of-bounds' });
+      EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: data.cardIndex });
       this.pendingCard = null;
       return;
     }
 
     if (!IsoHelper.isInBounds(tile.tileX, tile.tileY)) {
-      EventBus.emit('card-play-failed', { reason: 'out-of-bounds' });
+      EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: data.cardIndex });
       this.pendingCard = null;
       return;
     }
@@ -313,7 +342,7 @@ export class GameScene implements GameSceneInterface {
     if (success) {
       EventBus.emit('card-played', { card: data.card, cardIndex: data.cardIndex, tileX: tile.tileX, tileY: tile.tileY });
     } else {
-      EventBus.emit('card-play-failed', { reason: 'cannot-place' });
+      EventBus.emit('card-play-failed', { reason: 'cannot-place', cardIndex: data.cardIndex });
     }
     this.pendingCard = null;
   }
@@ -381,7 +410,7 @@ export class GameScene implements GameSceneInterface {
     }
   }
 
-  private onMissionComplete(_data: any): void {
+  private onMissionComplete(data: any): void {
     this.xpTracker.commitToPlayerState();
     const sm = getSceneManager();
     sm.stop('UIScene');
@@ -393,14 +422,17 @@ export class GameScene implements GameSceneInterface {
       missionName: this.mission.name,
       objectivesCompleted: this.missionSystem.objectiveStatuses.length,
       totalObjectives: this.missionSystem.objectiveStatuses.length,
+      optionalCompleted: data?.optionalCompleted ?? 0,
+      optionalTotal: data?.optionalTotal ?? 0,
       sessionXp: this.xpTracker.getSessionXp(),
     });
   }
 
   private onSupplyPodIncoming(data: { tileX: number; tileY: number; gold: number; cardDraws: number }): void {
-    // Block supply drops if modifier is active
+    // Block supply drops if modifier is active (player skulls or environment)
     const effects = getMergedEffects(getActiveModifiers());
     if (effects.noSupplyDrops) return;
+    if (this.envEffects?.noSupplyDrops) return;
     const podId = `pod-${++this.supplyPodIdCounter}`;
     EventBus.emit('supply-pod-3d', { id: podId, tileX: data.tileX, tileY: data.tileY });
     const pod = new SupplyPod(data.tileX, data.tileY, data.gold, data.cardDraws);
@@ -515,6 +547,7 @@ export class GameScene implements GameSceneInterface {
     this.spawnerSystem.update(delta);
     this.pathfinding.update();
     this.selectionSystem.update(delta);
+    if (this.poiManager) this.poiManager.update();
 
     // Sync entities to 3D renderer
     EventBus.emit('entities-sync', this.entityManager.getAllEntities());
@@ -581,6 +614,7 @@ export class GameScene implements GameSceneInterface {
     for (const pod of this.supplyPods) pod.destroy();
     this.supplyPods = [];
 
+    this.poiManager?.destroy();
     this.tutorialSystem?.destroy();
     this.audioManager?.destroy();
     this.xpTracker?.destroy();

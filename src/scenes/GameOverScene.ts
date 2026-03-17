@@ -3,12 +3,20 @@ import { CARD_DATABASE } from '../cards/CardDatabase';
 import { MissionDefinition } from '../missions/MissionDefinition';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { getModifierBonus } from '../state/DifficultyModifiers';
+import { EventBus } from '../EventBus';
 import {
   MISSION_REWARD_BASE,
   MISSION_REWARD_PER_DIFFICULTY,
   MISSION_REWARD_PER_OBJECTIVE,
   DEFEAT_REWARD_FRACTION,
 } from '../config';
+
+interface CardStats {
+  cardPlayCounts: Record<string, number>;
+  cardsDrawn: number;
+  cardsDiscarded: number;
+  reshuffleCount: number;
+}
 
 export class GameOverScene implements GameSceneInterface {
   id = 'GameOverScene';
@@ -20,7 +28,10 @@ export class GameOverScene implements GameSceneInterface {
   private missionName = '';
   private objectivesCompleted = 0;
   private totalObjectives = 0;
+  private optionalCompleted = 0;
+  private optionalTotal = 0;
   private sessionXp: Record<string, number> = {};
+  private cardStats: CardStats | null = null;
 
   create(data?: any): void {
     this.victory = data?.victory ?? false;
@@ -29,7 +40,13 @@ export class GameOverScene implements GameSceneInterface {
     this.missionName = data?.missionName ?? 'Unknown Mission';
     this.objectivesCompleted = data?.objectivesCompleted ?? 0;
     this.totalObjectives = data?.totalObjectives ?? 0;
+    this.optionalCompleted = data?.optionalCompleted ?? 0;
+    this.optionalTotal = data?.optionalTotal ?? 0;
     this.sessionXp = data?.sessionXp ?? {};
+    this.cardStats = data?.cardStats ?? null;
+
+    // Listen for card-stats emitted by UIScene during its shutdown
+    EventBus.on('card-stats', this.onCardStats, this);
 
     const state = getPlayerState();
     if (this.victory && this.missionId) {
@@ -153,13 +170,15 @@ export class GameOverScene implements GameSceneInterface {
             <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.3);">OBJECTIVES</div>
             <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
               color:${this.objectivesCompleted === this.totalObjectives ? '#4a9e4a' : '#c8982a'};
-              margin-top:2px;">${this.objectivesCompleted}/${this.totalObjectives}</div>
+              margin-top:2px;">${this.objectivesCompleted}/${this.totalObjectives}${this.optionalTotal > 0 ? `<span style="font-size:16px;color:#50b0b0;margin-left:6px;">+${this.optionalCompleted}/${this.optionalTotal}</span>` : ''}</div>
           </div>
         </div>
 
         ${rewardsHtml}
         ${reqHtml}
         ${xpHtml}
+
+        <div id="card-stats-section"></div>
 
         <div id="game-over-buttons" style="display:flex;gap:16px;margin-top:32px;justify-content:center;"></div>
       </div>
@@ -188,6 +207,56 @@ export class GameOverScene implements GameSceneInterface {
       getSceneManager().start('MissionSelectScene');
     });
     btnsDiv.appendChild(returnBtn);
+
+    // Render card stats if already available
+    if (this.cardStats) this.renderCardStats(this.cardStats);
+  }
+
+  private onCardStats = (stats: CardStats): void => {
+    this.cardStats = stats;
+    this.renderCardStats(stats);
+  };
+
+  private renderCardStats(stats: CardStats): void {
+    const section = this.container?.querySelector('#card-stats-section');
+    if (!section) return;
+
+    const totalPlayed = Object.values(stats.cardPlayCounts).reduce((a, b) => a + b, 0);
+
+    // Find MVP (most played)
+    let mvpName = '—';
+    let mvpCount = 0;
+    for (const [id, count] of Object.entries(stats.cardPlayCounts)) {
+      if (count > mvpCount) {
+        mvpCount = count;
+        const card = CARD_DATABASE[id];
+        mvpName = card ? `${card.name} (${count}x)` : id;
+      }
+    }
+
+    // Build stats lines
+    const lines = [
+      { label: 'Cards Played', value: `${totalPlayed}`, color: '#c8982a' },
+      { label: 'Cards Drawn', value: `${stats.cardsDrawn}`, color: '#6090cc' },
+      { label: 'Cards Discarded', value: `${stats.cardsDiscarded}`, color: '#8a6a4e' },
+      { label: 'Reshuffles', value: `${stats.reshuffleCount}`, color: '#c8982a' },
+      { label: 'MVP Card', value: mvpName, color: '#4a9e4a' },
+    ];
+
+    const linesHtml = lines.map(l =>
+      `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+        <span style="color:rgba(200,191,160,0.4);">${l.label}</span>
+        <span style="color:${l.color};">${l.value}</span>
+      </div>`
+    ).join('');
+
+    section.innerHTML = `
+      <div style="margin-top:16px;text-align:left;width:300px;">
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">DECK PERFORMANCE</div>
+        <div style="font-size:11px;border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">
+          ${linesHtml}
+        </div>
+      </div>`;
   }
 
   private makeButton(text: string, color: string): HTMLButtonElement {
@@ -219,6 +288,7 @@ export class GameOverScene implements GameSceneInterface {
   }
 
   shutdown(): void {
+    EventBus.off('card-stats', this.onCardStats, this);
     if (this.container) {
       this.container.remove();
       this.container = null;
