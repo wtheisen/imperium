@@ -8,12 +8,16 @@ import { InputEvent } from '../renderer/InputBridge';
 export class SelectionSystem {
   private entityManager: EntityManager;
   public selectedUnits: Unit[] = [];
-  private selectedBuilding: Building | null = null;
+  public selectedBuilding: Building | null = null;
   private dragStart: { screenX: number; screenY: number; tileX: number; tileY: number } | null = null;
   private isDragging: boolean = false;
 
   // Control groups: Ctrl+1-9 to save, Shift+1-9 to recall
   private controlGroups: Map<number, string[]> = new Map();
+
+  // Double-click detection
+  private lastClickTime: number = 0;
+  private lastClickUnit: Unit | null = null;
 
   // CSS overlay selection box
   private selectionBoxDiv: HTMLDivElement | null = null;
@@ -126,65 +130,91 @@ export class SelectionSystem {
 
     if (evt.tileX < 0) return;
 
-    // Use 3D raycast for precise entity selection
+    // Find the clicked unit (raycast first, then tile-distance fallback)
+    let clickedUnit: Unit | null = null;
+    let clickedBuilding: Building | null = null;
+
     const gameRenderer = (window as any).__gameRenderer;
     const hitIds: string[] = gameRenderer?.inputBridge?.raycastEntities(evt.screenX, evt.screenY) || [];
 
-    // Find first player entity hit by raycast
     if (hitIds.length > 0) {
       const allEntities = this.entityManager.getAllEntities();
       for (const id of hitIds) {
         const entity = allEntities.find((e) => e.entityId === id && e.team === 'player');
-        if (entity instanceof Unit) {
-          this.selectedUnits = [entity];
-          this.highlightUnit(entity, true);
-          EventBus.emit('selection-changed', { entities: this.selectedUnits });
-          return;
-        }
-        if (entity instanceof Building) {
-          this.selectedBuilding = entity;
-          this.highlightBuilding(entity, true);
-          EventBus.emit('selection-changed', { entities: [], building: entity });
-          return;
-        }
+        if (entity instanceof Unit) { clickedUnit = entity; break; }
+        if (entity instanceof Building) { clickedBuilding = entity; break; }
       }
     }
 
-    // Fallback: tile-distance check for cases where raycast misses small meshes
-    const units = this.entityManager.getUnits('player');
-    let foundUnit: Unit | null = null;
-    let minDist = 1.5;
-    for (const unit of units) {
-      const dist = Math.abs(unit.tileX - evt.tileX) + Math.abs(unit.tileY - evt.tileY);
-      if (dist < minDist) {
-        minDist = dist;
-        foundUnit = unit;
+    // Fallback: tile-distance check
+    if (!clickedUnit && !clickedBuilding) {
+      const units = this.entityManager.getUnits('player');
+      let minDist = 1.5;
+      for (const unit of units) {
+        const dist = Math.abs(unit.tileX - evt.tileX) + Math.abs(unit.tileY - evt.tileY);
+        if (dist < minDist) { minDist = dist; clickedUnit = unit; }
       }
     }
-
-    if (foundUnit) {
-      this.selectedUnits = [foundUnit];
-      this.highlightUnit(foundUnit, true);
-      EventBus.emit('selection-changed', { entities: this.selectedUnits });
-    } else {
+    if (!clickedUnit && !clickedBuilding) {
       const buildings = this.entityManager.getBuildings('player');
-      let foundBuilding: Building | null = null;
       let minBuildDist = 2;
       for (const b of buildings) {
         const dist = Math.abs(b.tileX - evt.tileX) + Math.abs(b.tileY - evt.tileY);
-        if (dist < minBuildDist) {
-          minBuildDist = dist;
-          foundBuilding = b;
-        }
-      }
-      if (foundBuilding) {
-        this.selectedBuilding = foundBuilding;
-        this.highlightBuilding(foundBuilding, true);
-        EventBus.emit('selection-changed', { entities: [], building: foundBuilding });
-      } else {
-        EventBus.emit('selection-changed', { entities: this.selectedUnits });
+        if (dist < minBuildDist) { minBuildDist = dist; clickedBuilding = b; }
       }
     }
+
+    // Double-click detection: select all visible units of same type
+    const now = performance.now();
+    if (clickedUnit && this.lastClickUnit && clickedUnit.unitType === this.lastClickUnit.unitType
+        && now - this.lastClickTime < 400) {
+      this.selectAllOfTypeOnScreen(clickedUnit.unitType);
+      this.lastClickUnit = null;
+      this.lastClickTime = 0;
+      return;
+    }
+
+    // Track for next potential double-click
+    this.lastClickTime = now;
+    this.lastClickUnit = clickedUnit;
+
+    if (clickedUnit) {
+      this.selectedUnits = [clickedUnit];
+      this.highlightUnit(clickedUnit, true);
+      EventBus.emit('selection-changed', { entities: this.selectedUnits });
+    } else if (clickedBuilding) {
+      this.selectedBuilding = clickedBuilding;
+      this.highlightBuilding(clickedBuilding, true);
+      EventBus.emit('selection-changed', { entities: [], building: clickedBuilding });
+    } else {
+      EventBus.emit('selection-changed', { entities: this.selectedUnits });
+    }
+  }
+
+  /** Select all player units of the given type visible on screen */
+  private selectAllOfTypeOnScreen(unitType: string): void {
+    const gameRenderer = (window as any).__gameRenderer;
+    if (!gameRenderer) return;
+
+    const camera = gameRenderer.cameraController.camera;
+    const canvas = gameRenderer.renderer.domElement;
+    const rect = canvas.getBoundingClientRect();
+    const tempVec = new THREE.Vector3();
+
+    const units = this.entityManager.getUnits('player');
+    this.selectedUnits = units.filter((u) => {
+      if (!u.active || u.unitType !== unitType) return false;
+      tempVec.set(u.tileX, 0.3, u.tileY);
+      tempVec.project(camera);
+      const sx = (tempVec.x * 0.5 + 0.5) * rect.width + rect.left;
+      const sy = (-tempVec.y * 0.5 + 0.5) * rect.height + rect.top;
+      return sx >= rect.left && sx <= rect.right && sy >= rect.top && sy <= rect.bottom;
+    });
+
+    for (const unit of this.selectedUnits) {
+      this.highlightUnit(unit, true);
+    }
+    EventBus.emit('selection-changed', { entities: this.selectedUnits });
   }
 
   private selectInBox3D(start: { screenX: number; screenY: number }, end: InputEvent): void {

@@ -13,6 +13,8 @@ export class MoverComponent implements Component {
   public attackMoving: boolean = false;
   /** Stored attack-move destination for resuming after combat */
   public attackMoveDestination: { x: number; y: number } | null = null;
+  /** When true, unit stays in place and only attacks enemies in range */
+  public holdPosition: boolean = false;
 
   /** Fractional tile position for smooth 3D interpolation */
   public fracTileX: number;
@@ -29,6 +31,7 @@ export class MoverComponent implements Component {
     this.path = path;
     this.pathIndex = 0;
     this.moving = path.length > 0;
+    this.holdPosition = false; // new move command cancels hold
   }
 
   isMoving(): boolean {

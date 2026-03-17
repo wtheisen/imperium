@@ -1,4 +1,5 @@
 import { Component, Entity } from '../entities/Entity';
+import { Building } from '../entities/Building';
 import { EventBus } from '../EventBus';
 import { IsoHelper } from '../map/IsoHelper';
 import { UnitStats } from '../entities/Unit';
@@ -107,12 +108,16 @@ export class ProductionComponent implements Component {
       }
     }
 
+    const rallyPoint = (this.entity instanceof Building) ? this.entity.rallyPoint : null;
+
     EventBus.emit('unit-trained', {
       unitType: trainable.unitType,
       texture: trainable.texture,
       stats: trainable.stats,
       tileX: spawnX,
       tileY: spawnY,
+      rallyX: rallyPoint?.x,
+      rallyY: rallyPoint?.y,
     });
 
     EventBus.emit('card-played-3d-vfx', { tileX: spawnX, tileY: spawnY, cardType: 'unit' });

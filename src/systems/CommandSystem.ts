@@ -5,6 +5,7 @@ import { MapManager } from '../map/MapManager';
 import { MoverComponent } from '../components/MoverComponent';
 import { CombatComponent } from '../components/CombatComponent';
 import { GathererComponent } from '../components/GathererComponent';
+import { ProductionComponent } from '../components/ProductionComponent';
 import { Unit } from '../entities/Unit';
 import { EventBus } from '../EventBus';
 import { InputEvent } from '../renderer/InputBridge';
@@ -33,19 +34,41 @@ export class CommandSystem {
     EventBus.on('request-path', this.handlePathRequest, this);
     EventBus.on('command-stop', this.handleStopCommand, this);
 
-    // Attack-move keyboard handler
+    // Command keyboard handler
     this.keyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'a' || e.key === 'A') {
-        if (!e.ctrlKey && !e.shiftKey && !e.metaKey && this.selection.selectedUnits.length > 0) {
-          this.attackMoveMode = true;
-          EventBus.emit('attack-move-cursor', { active: true });
-        }
+      if (e.ctrlKey || e.shiftKey || e.metaKey) return;
+
+      if ((e.key === 'a' || e.key === 'A') && this.selection.selectedUnits.length > 0) {
+        this.attackMoveMode = true;
+        EventBus.emit('attack-move-cursor', { active: true });
       }
-      if (e.key === 'Escape') {
-        if (this.attackMoveMode) {
-          this.attackMoveMode = false;
-          EventBus.emit('attack-move-cursor', { active: false });
+      if (e.key === 'Escape' && this.attackMoveMode) {
+        this.attackMoveMode = false;
+        EventBus.emit('attack-move-cursor', { active: false });
+      }
+      // Stop command (S key)
+      if ((e.key === 's' || e.key === 'S') && this.selection.selectedUnits.length > 0) {
+        EventBus.emit('command-stop', { units: [...this.selection.selectedUnits] });
+      }
+      // Hold position (H key)
+      if ((e.key === 'h' || e.key === 'H') && this.selection.selectedUnits.length > 0) {
+        for (const unit of this.selection.selectedUnits) {
+          const mover = unit.getComponent<MoverComponent>('mover');
+          if (mover) {
+            mover.stop();
+            mover.holdPosition = true;
+          }
+          const combat = unit.getComponent<CombatComponent>('combat');
+          if (combat) combat.setTarget(null);
+          const gatherer = unit.getComponent<GathererComponent>('gatherer');
+          if (gatherer) gatherer.state = 'idle' as any;
         }
+        this.showCommandIndicator(
+          this.selection.selectedUnits[0].tileX,
+          this.selection.selectedUnits[0].tileY,
+          'move'
+        );
+        EventBus.emit('command-issued', { type: 'hold', tileX: this.selection.selectedUnits[0].tileX, tileY: this.selection.selectedUnits[0].tileY });
       }
     };
     document.addEventListener('keydown', this.keyHandler);
@@ -56,8 +79,21 @@ export class CommandSystem {
   private onInputUp3D(evt: InputEvent & { wasDrag?: boolean }): void {
     if (evt.button !== 2) return; // right-click only
     if (evt.wasDrag) return; // ignore camera panning drags
-    if (this.selection.selectedUnits.length === 0) return;
     if (evt.tileX < 0) return;
+
+    // Rally point: right-click with a producing building selected (no units)
+    if (this.selection.selectedUnits.length === 0 && this.selection.selectedBuilding) {
+      const building = this.selection.selectedBuilding;
+      const prod = building.getComponent<ProductionComponent>('production');
+      if (prod && building.team === 'player') {
+        building.rallyPoint = { x: evt.tileX, y: evt.tileY };
+        this.showCommandIndicator(evt.tileX, evt.tileY, 'move');
+        EventBus.emit('rally-point-set', { buildingId: building.entityId, tileX: evt.tileX, tileY: evt.tileY });
+        return;
+      }
+    }
+
+    if (this.selection.selectedUnits.length === 0) return;
 
     this.handleCommand(evt.tileX, evt.tileY);
   }

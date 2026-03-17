@@ -14,6 +14,8 @@ export class Building extends Entity {
   public buildingType: string;
   public tileWidth: number;
   public tileHeight: number;
+  /** Rally point: newly trained units will move here after spawning */
+  public rallyPoint: { x: number; y: number } | null = null;
 
   constructor(
     tileX: number,

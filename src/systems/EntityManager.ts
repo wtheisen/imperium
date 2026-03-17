@@ -131,12 +131,15 @@ export class EntityManager {
     return tiles;
   }
 
-  private handleUnitTrained({ unitType, texture, stats, tileX, tileY }: {
+  private handleUnitTrained({ unitType, texture, stats, tileX, tileY, rallyX, rallyY }: {
     unitType: string; texture: string; stats: UnitStats;
-    tileX: number; tileY: number;
+    tileX: number; tileY: number; rallyX?: number; rallyY?: number;
   }): void {
-    this.spawnUnit(tileX, tileY, texture, unitType, stats, 'player');
-    // No tech bonuses, no level badge — vanilla trained unit
+    const unit = this.spawnUnit(tileX, tileY, texture, unitType, stats, 'player');
+    // Move to rally point if set
+    if (rallyX != null && rallyY != null) {
+      EventBus.emit('request-path', { unit, targetX: rallyX, targetY: rallyY });
+    }
   }
 
   private handleEntityDeath({ entity }: { entity: Entity }): void {
