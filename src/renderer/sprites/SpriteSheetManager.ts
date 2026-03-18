@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SpriteSheetConfig, SPRITE_UNIT_TYPES } from './SpriteSheetConfig';
+import { SpriteSheetConfig, SPRITE_UNIT_TYPES, SPRITE_BUILDING_TYPES } from './SpriteSheetConfig';
 import { generatePlaceholderSheet } from './PlaceholderSpriteGenerator';
 
 /**
@@ -59,6 +59,54 @@ export class SpriteSheetManager {
     });
   }
 
+  /** Load the building sprite sheet and register configs for each building type. */
+  loadBuildingSheets(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const loader = new THREE.TextureLoader();
+      loader.load(
+        'sprites/buildings.png',
+        (texture) => {
+          texture.magFilter = THREE.NearestFilter;
+          texture.minFilter = THREE.NearestFilter;
+          texture.colorSpace = THREE.SRGBColorSpace;
+
+          // 1456×720 sheet: 8 columns × 4 rows, frame = 182×180
+          // Row order: drop_ship, barracks, tarantula, aegis
+          const buildingTypes = ['drop_ship', 'barracks', 'tarantula', 'aegis'];
+          const worldHeights: Record<string, number> = {
+            drop_ship: 1.4,
+            barracks: 1.2,
+            tarantula: 0.8,
+            aegis: 0.7,
+          };
+
+          for (const bt of buildingTypes) {
+            const config: SpriteSheetConfig = {
+              unitType: bt,
+              texture,
+              columns: 8,
+              rows: 4,
+              frameWidth: 182,
+              frameHeight: 180,
+              animations: {
+                // Buildings only use idle — 1 frame, no animation
+                idle:   { startCol: 0, frameCount: 1, frameDuration: 9999, loop: true },
+                walk:   { startCol: 0, frameCount: 1, frameDuration: 9999, loop: true },
+                attack: { startCol: 0, frameCount: 1, frameDuration: 9999, loop: true },
+                death:  { startCol: 0, frameCount: 1, frameDuration: 9999, loop: false },
+              },
+              worldHeight: worldHeights[bt] ?? 1.0,
+            };
+            this.configs.set(bt, config);
+          }
+          resolve();
+        },
+        undefined,
+        reject
+      );
+    });
+  }
+
   /** Load all real sprite sheets that exist in public/sprites/. */
   async loadRealSheets(): Promise<void> {
     // Map of unit types that have real sprite sheets available
@@ -69,6 +117,13 @@ export class SpriteSheetManager {
     const promises = realSheets.map(({ unitType, url, frameWidth, frameHeight }) =>
       this.loadSheet(unitType, url, { frameWidth, frameHeight }).catch((err) => {
         console.warn(`Failed to load sprite sheet for ${unitType}:`, err);
+      })
+    );
+
+    // Also load building sprites
+    promises.push(
+      this.loadBuildingSheets().catch((err) => {
+        console.warn('Failed to load building sprite sheet:', err);
       })
     );
 

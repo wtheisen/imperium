@@ -163,7 +163,7 @@ export class UIScene implements GameSceneInterface {
         EventBus.emit('card-drag-start', { card: hand[idx], cardIndex: idx });
       }
     }
-    if (e.key === '0') {
+    if (e.key === '`') {
       EventBus.emit('deck-draw', { cost: 3 });
     }
   };

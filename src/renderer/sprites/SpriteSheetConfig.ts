@@ -43,6 +43,14 @@ export const SPRITE_UNIT_TYPES = new Set<string>([
   'techmarine',
 ]);
 
+/** Building types that use sprites instead of 3D meshes. */
+export const SPRITE_BUILDING_TYPES = new Set<string>([
+  'drop_ship',
+  'barracks',
+  'tarantula',
+  'aegis',
+]);
+
 /**
  * Convert an entity's facing (radians) and the camera's azimuth (radians)
  * into one of 8 direction indices.

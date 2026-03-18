@@ -16,7 +16,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     event: 'gold-gathered',
-    message: 'PLAY CARDS FROM YOUR HAND USING KEYS 1-9. KEY 0 DRAWS A CARD (COSTS 3G).',
+    message: 'PLAY CARDS FROM YOUR HAND USING KEYS 1-9. PRESS ~ TO DRAW A CARD (COSTS 3G).',
   },
   {
     event: 'card-played',

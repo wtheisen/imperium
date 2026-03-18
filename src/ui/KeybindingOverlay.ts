@@ -5,7 +5,7 @@ const SECTIONS: { title: string; bindings: [string, string][] }[] = [
     title: 'Cards',
     bindings: [
       ['1-9', 'Select card from hand'],
-      ['0', 'Draw card (3g)'],
+      ['~', 'Draw card (3g)'],
       ['Click / Drag', 'Play selected card'],
     ],
   },

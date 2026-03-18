@@ -9,7 +9,7 @@ import { HealthComponent } from '../components/HealthComponent';
 import { MoverComponent } from '../components/MoverComponent';
 import { CombatComponent } from '../components/CombatComponent';
 import { CameraController } from './CameraController';
-import { SPRITE_UNIT_TYPES, facingToDirection8 } from './sprites/SpriteSheetConfig';
+import { SPRITE_UNIT_TYPES, SPRITE_BUILDING_TYPES, facingToDirection8 } from './sprites/SpriteSheetConfig';
 import { SpriteSheetManager } from './sprites/SpriteSheetManager';
 import { SpriteBillboard } from './sprites/SpriteBillboard';
 import { SpriteAnimator } from './sprites/SpriteAnimator';
@@ -175,8 +175,12 @@ export class EntityRenderer {
       mesh.visible = entity.visible;
 
       // Update sprites per frame (animation, billboarding, direction)
-      if (this.spriteEntities.has(entity.entityId) && entity instanceof Unit) {
-        this.updateSpriteEntity(entity, mesh, cameraPos, cameraAzimuth);
+      if (this.spriteEntities.has(entity.entityId)) {
+        if (entity instanceof Unit) {
+          this.updateSpriteEntity(entity, mesh, cameraPos, cameraAzimuth);
+        } else if (entity instanceof Building) {
+          this.updateBuildingSprite(entity, mesh, cameraPos, cameraAzimuth);
+        }
       }
 
       // Squad casualty visuals — hide models as HP drops
@@ -225,34 +229,49 @@ export class EntityRenderer {
 
   /** Determine if an entity should use sprite rendering. */
   private shouldUseSprite(entity: Entity): boolean {
-    if (!(entity instanceof Unit)) return false;
-    return this.spriteSheetManager != null && SPRITE_UNIT_TYPES.has(entity.unitType);
+    if (!this.spriteSheetManager) return false;
+    if (entity instanceof Unit && SPRITE_UNIT_TYPES.has(entity.unitType)) return true;
+    if (entity instanceof Building && SPRITE_BUILDING_TYPES.has(entity.buildingType)) {
+      // Only use sprites if the building sheet has been loaded
+      return this.spriteSheetManager.getConfig(entity.buildingType) != null;
+    }
+    return false;
   }
 
   /** Create a sprite entity (single or squad). Returns the root Object3D. */
   private createSpriteEntity(entity: Entity): THREE.Object3D {
-    const unit = entity as Unit;
-    const config = this.spriteSheetManager!.getConfig(unit.unitType);
+    // Resolve sprite config for either unit or building
+    const spriteType = (entity instanceof Unit) ? entity.unitType
+      : (entity instanceof Building) ? entity.buildingType
+      : null;
+    const config = spriteType ? this.spriteSheetManager!.getConfig(spriteType) : undefined;
     if (!config) {
-      // Fallback to 3D mesh
       return this.factory.create(this.getMeshType(entity));
     }
 
-    const squadSize = unit.stats.squadSize || 1;
     this.spriteEntities.add(entity.entityId);
 
+    // Buildings and single units — no squad for buildings
+    const squadSize = (entity instanceof Unit) ? (entity.stats.squadSize || 1) : 1;
     if (squadSize > 1) {
       return this.createSpriteSquad(entity, config, squadSize);
     }
 
-    // Single sprite
     const billboard = new SpriteBillboard(config);
     const animator = new SpriteAnimator();
+
+    // For building sprites, set the correct row offset immediately
+    if (entity instanceof Building) {
+      const buildingOrder = ['drop_ship', 'barracks', 'tarantula', 'aegis'];
+      const rowIndex = buildingOrder.indexOf(entity.buildingType);
+      if (rowIndex >= 0) {
+        billboard.mesh.userData.buildingRow = rowIndex;
+      }
+    }
 
     this.sprites.set(entity.entityId, [billboard]);
     this.animators.set(entity.entityId, [animator]);
 
-    // Add shadow blob
     this.addShadowBlob(billboard.mesh);
 
     return billboard.mesh;
@@ -362,6 +381,44 @@ export class EntityRenderer {
       if (cameraPos) {
         billboard.faceCamera(cameraPos);
       }
+    }
+  }
+
+  /** Update a building sprite — direction from camera, no animation. */
+  private updateBuildingSprite(
+    building: Building,
+    mesh: THREE.Object3D,
+    cameraPos: THREE.Vector3 | undefined,
+    cameraAzimuth: number
+  ): void {
+    const billboards = this.sprites.get(building.entityId);
+    if (!billboards || billboards.length === 0) return;
+
+    const config = this.spriteSheetManager?.getConfig(building.buildingType);
+    if (!config) return;
+
+    // Buildings don't rotate — direction is purely camera-relative.
+    // Always show direction 0 (south/front) relative to camera.
+    // As camera orbits, the direction index changes to show different sides.
+    const direction = facingToDirection8(0, cameraAzimuth);
+
+    // The building sheet has all 4 buildings sharing one texture.
+    // Each building is on a different row. The SpriteAnimator maps direction → row,
+    // but we need: column = direction (0-7), row = building type (0-3).
+    // So we set the UV directly instead of using the animator.
+    const buildingOrder = ['drop_ship', 'barracks', 'tarantula', 'aegis'];
+    const buildingRow = buildingOrder.indexOf(building.buildingType);
+    if (buildingRow < 0) return;
+
+    const billboard = billboards[0];
+
+    // UV: column = direction, row = building type
+    const offsetX = direction / config.columns;
+    const offsetY = 1 - (buildingRow + 1) / config.rows;
+    billboard.setFrame(offsetX, offsetY);
+
+    if (cameraPos) {
+      billboard.faceCamera(cameraPos);
     }
   }
 
