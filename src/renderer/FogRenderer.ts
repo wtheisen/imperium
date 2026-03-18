@@ -179,6 +179,10 @@ export class FogRenderer {
   }
 
   private applyTileDarkening(): void {
+    // Reset vertex colors before the pass — setTileColor uses max-brightness
+    // on shared vertices, so we need a clean slate each time.
+    this.tileMap.resetVertexColors();
+
     for (let y = 0; y < MAP_HEIGHT; y++) {
       for (let x = 0; x < MAP_WIDTH; x++) {
         const state = this.fogGrid[y]?.[x] ?? FogLevel.HIDDEN;

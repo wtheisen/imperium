@@ -12,14 +12,14 @@ export class CameraController {
   readonly camera: THREE.PerspectiveCamera;
 
   // Spherical coordinates around the look-at target
-  private distance = 22;
+  private distance = 15;
   private theta = Math.PI / 4;   // horizontal angle (starts NE-ish)
   private phi = Math.PI / 4;     // vertical angle (45° from zenith — more top-down)
   private target = new THREE.Vector3(0, 0, 0);
 
   // Limits
   private minDistance = 10;
-  private maxDistance = 100;
+  private maxDistance = 22;
   private minPhi = 0.3;
   private maxPhi = Math.PI / 2 - 0.05;
 

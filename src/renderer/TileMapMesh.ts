@@ -1,11 +1,9 @@
 import * as THREE from 'three';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { TerrainType } from '../map/MapManager';
-import { TerrainTextures } from './TerrainTextures';
+import { TerrainTextures, generateBlendedMapTexture, loadTerrainTileset } from './TerrainTextures';
 
-const TILE_3D_SIZE = 1;
 const TILE_3D_HEIGHT = 0.15;
-const FOREST_HEIGHT = TILE_3D_HEIGHT * 3;
 
 /** Simple seeded pseudo-random */
 function seededRandom(seed: number): () => number {
@@ -51,60 +49,69 @@ function fbm(x: number, y: number, octaves: number, seed: number): number {
   return value / total;
 }
 
-/** Per-terrain-type material properties */
-const TERRAIN_MATERIALS: Record<number, { roughness: number; metalness: number; transparent?: boolean; opacity?: number }> = {
-  [TerrainType.GRASS]:     { roughness: 0.92, metalness: 0.0 },
-  [TerrainType.WATER]:     { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 },
-  [TerrainType.GOLD_MINE]: { roughness: 0.6,  metalness: 0.35 },
-  [TerrainType.STONE]:     { roughness: 0.8,  metalness: 0.05 },
-  [TerrainType.DIRT]:      { roughness: 0.95, metalness: 0.0 },
-  [TerrainType.FOREST]:      { roughness: 0.88, metalness: 0.0 },
-  [TerrainType.METAL_FLOOR]: { roughness: 0.4,  metalness: 0.6 },
-  [TerrainType.HULL_WALL]:   { roughness: 0.5,  metalness: 0.5 },
-};
-
 /** Height ranges per terrain type: [min, max] */
 const HEIGHT_RANGES: Record<number, [number, number]> = {
-  [TerrainType.GRASS]:     [0.0,   0.12],
-  [TerrainType.STONE]:     [0.05,  0.2],
-  [TerrainType.DIRT]:      [0.0,   0.08],
-  [TerrainType.GOLD_MINE]: [0.05,  0.12],
-  [TerrainType.FOREST]:    [0.0,   0.1],
+  [TerrainType.GRASS]:       [0.0,   0.12],
+  [TerrainType.STONE]:       [0.05,  0.2],
+  [TerrainType.DIRT]:        [0.0,   0.08],
+  [TerrainType.GOLD_MINE]:   [0.05,  0.12],
+  [TerrainType.FOREST]:      [0.0,   0.1],
   [TerrainType.WATER]:       [-0.12, -0.08],
-  [TerrainType.METAL_FLOOR]: [0.0, 0.0],
-  [TerrainType.HULL_WALL]:   [0.3, 0.4],
+  [TerrainType.METAL_FLOOR]: [0.0,   0.0],
+  [TerrainType.HULL_WALL]:   [0.3,   0.4],
 };
 
 /**
- * Builds a 3D tile grid using merged geometry for performance.
- * Tiles are batched by terrain type + texture variant into a small
- * number of merged meshes (draw calls), not one mesh per tile.
- *
- * Individual tile references are kept for fog color tinting.
+ * Builds a seamless 3D terrain mesh using a single continuous plane
+ * with per-vertex height displacement and a blended terrain texture.
+ * No visible tile seams — terrain types blend organically at borders.
  */
 export class TileMapMesh {
   readonly group = new THREE.Group();
-  /** Per-tile data for fog tinting: [y][x] = { mesh, vertexStart, vertexCount } */
-  private tileRefs: (TileRef | null)[][] = [];
+
   private terrainTextures: TerrainTextures;
-  private mergedMeshes: THREE.Mesh[] = [];
+  private terrainMesh: THREE.Mesh | null = null;
+  private mapTexture: THREE.CanvasTexture | null = null;
+
+  /** Water overlay mesh for UV-scroll animation */
+  private waterMesh: THREE.Mesh | null = null;
+  private waterTexture: THREE.Texture | null = null;
 
   /** Height map: [y][x] = elevation Y offset */
   private heightMap: number[][] = [];
   private terrainGrid: TerrainType[][] = [];
 
-  /** Water materials tracked separately for animation */
-  private waterMaterials: THREE.MeshStandardMaterial[] = [];
-  private waterTextures: THREE.Texture[] = [];
+  /** Vertex stride for the plane: MAP_WIDTH + 1 vertices per row */
+  private readonly stride = MAP_WIDTH + 1;
 
   constructor(terrainGrid: TerrainType[][]) {
     this.terrainGrid = terrainGrid;
     this.terrainTextures = new TerrainTextures();
     this.buildHeightMap(terrainGrid);
-    this.buildGrid(terrainGrid);
+    this.buildTerrainMesh(terrainGrid);
+    this.buildWaterOverlay(terrainGrid);
+
+    // Load LPC tile images async, then regenerate the map texture
+    loadTerrainTileset().then(() => {
+      this.regenerateMapTexture();
+    }).catch(() => {
+      // Procedural fallback already applied — no action needed
+    });
   }
 
-  /** Compute elevation noise for rolling hills */
+  /** Regenerate the blended map texture (called after tile images load). */
+  private regenerateMapTexture(): void {
+    if (!this.terrainMesh) return;
+    const oldTexture = this.mapTexture;
+    this.mapTexture = generateBlendedMapTexture(this.terrainGrid, MAP_WIDTH, MAP_HEIGHT, 32);
+    const mat = this.terrainMesh.material as THREE.MeshStandardMaterial;
+    mat.map = this.mapTexture;
+    mat.needsUpdate = true;
+    if (oldTexture) oldTexture.dispose();
+  }
+
+  // ── Height map ──────────────────────────────────────────────────────
+
   private buildHeightMap(terrain: TerrainType[][]): void {
     const seed = 42;
     for (let y = 0; y < MAP_HEIGHT; y++) {
@@ -112,8 +119,6 @@ export class TileMapMesh {
       for (let x = 0; x < MAP_WIDTH; x++) {
         const terrainType = terrain[y]?.[x] ?? TerrainType.GRASS;
         const range = HEIGHT_RANGES[terrainType] ?? [0, 0.1];
-
-        // Low-frequency fbm for smooth rolling hills
         const n = fbm(x / 4, y / 4, 3, seed);
         this.heightMap[y][x] = range[0] + n * (range[1] - range[0]);
       }
@@ -138,189 +143,257 @@ export class TileMapMesh {
     const h01 = this.getHeightAtTile(ix, iy + 1);
     const h11 = this.getHeightAtTile(ix + 1, iy + 1);
 
-    // Bilinear interpolation
     const hx0 = h00 + (h10 - h00) * fx;
     const hx1 = h01 + (h11 - h01) * fx;
     return hx0 + (hx1 - hx0) * fy;
   }
 
-  /** Expose height map for decorations */
-  getHeightMap(): number[][] {
-    return this.heightMap;
+  getHeightMap(): number[][] { return this.heightMap; }
+  getTerrainGrid(): TerrainType[][] { return this.terrainGrid; }
+
+  // ── Continuous terrain mesh ─────────────────────────────────────────
+
+  /**
+   * Get the height at a vertex corner position.
+   * Vertex (ix, iy) is the corner where up to 4 tiles meet.
+   * We average the heights of adjacent tiles for smooth transitions.
+   */
+  private getCornerHeight(ix: number, iy: number): number {
+    let sum = 0, count = 0;
+    // The 4 tiles that share this corner vertex
+    for (const [tx, ty] of [[ix - 1, iy - 1], [ix, iy - 1], [ix - 1, iy], [ix, iy]]) {
+      if (tx >= 0 && tx < MAP_WIDTH && ty >= 0 && ty < MAP_HEIGHT) {
+        sum += this.heightMap[ty][tx];
+        count++;
+      }
+    }
+    return count > 0 ? sum / count : 0;
   }
 
-  /** Expose terrain grid for decorations */
-  getTerrainGrid(): TerrainType[][] {
-    return this.terrainGrid;
+  private buildTerrainMesh(terrain: TerrainType[][]): void {
+    const numVerts = this.stride * (MAP_HEIGHT + 1);
+    const positions = new Float32Array(numVerts * 3);
+    const uvs = new Float32Array(numVerts * 2);
+    const colors = new Float32Array(numVerts * 3);
+    const normals = new Float32Array(numVerts * 3);
+
+    // Set vertex positions with height displacement
+    for (let iy = 0; iy <= MAP_HEIGHT; iy++) {
+      for (let ix = 0; ix <= MAP_WIDTH; ix++) {
+        const vi = iy * this.stride + ix;
+        const worldX = ix - 0.5; // vertex at tile edge
+        const worldZ = iy - 0.5;
+        const height = this.getCornerHeight(ix, iy);
+
+        positions[vi * 3] = worldX;
+        positions[vi * 3 + 1] = height;
+        positions[vi * 3 + 2] = worldZ;
+
+        uvs[vi * 2] = ix / MAP_WIDTH;
+        uvs[vi * 2 + 1] = iy / MAP_HEIGHT;
+
+        // Default vertex color: white (no fog tint)
+        colors[vi * 3] = 1;
+        colors[vi * 3 + 1] = 1;
+        colors[vi * 3 + 2] = 1;
+      }
+    }
+
+    // Build index buffer for tile quads (2 triangles each)
+    const indices: number[] = [];
+    for (let iy = 0; iy < MAP_HEIGHT; iy++) {
+      for (let ix = 0; ix < MAP_WIDTH; ix++) {
+        const a = iy * this.stride + ix;
+        const b = a + 1;
+        const c = (iy + 1) * this.stride + ix;
+        const d = c + 1;
+        indices.push(a, c, b);
+        indices.push(b, c, d);
+      }
+    }
+
+    // Compute normals
+    // Initialize normals to zero
+    normals.fill(0);
+    const indexArr = indices;
+    for (let i = 0; i < indexArr.length; i += 3) {
+      const ia = indexArr[i], ib = indexArr[i + 1], ic = indexArr[i + 2];
+      const ax = positions[ia * 3], ay = positions[ia * 3 + 1], az = positions[ia * 3 + 2];
+      const bx = positions[ib * 3], by = positions[ib * 3 + 1], bz = positions[ib * 3 + 2];
+      const cx = positions[ic * 3], cy = positions[ic * 3 + 1], cz = positions[ic * 3 + 2];
+
+      const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+      const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+      const nx = e1y * e2z - e1z * e2y;
+      const ny = e1z * e2x - e1x * e2z;
+      const nz = e1x * e2y - e1y * e2x;
+
+      for (const vi of [ia, ib, ic]) {
+        normals[vi * 3] += nx;
+        normals[vi * 3 + 1] += ny;
+        normals[vi * 3 + 2] += nz;
+      }
+    }
+    // Normalize
+    for (let i = 0; i < numVerts; i++) {
+      const si = i * 3;
+      const len = Math.sqrt(normals[si] ** 2 + normals[si + 1] ** 2 + normals[si + 2] ** 2);
+      if (len > 0) {
+        normals[si] /= len;
+        normals[si + 1] /= len;
+        normals[si + 2] /= len;
+      } else {
+        normals[si + 1] = 1; // default up
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setIndex(indices);
+
+    // Generate the blended map texture
+    this.mapTexture = generateBlendedMapTexture(terrain, MAP_WIDTH, MAP_HEIGHT, 32);
+
+    const material = new THREE.MeshStandardMaterial({
+      map: this.mapTexture,
+      roughness: 0.85,
+      metalness: 0.02,
+      vertexColors: true,
+    });
+
+    this.terrainMesh = new THREE.Mesh(geometry, material);
+    this.terrainMesh.frustumCulled = false;
+    this.group.add(this.terrainMesh);
   }
 
-  private buildGrid(terrain: TerrainType[][]): void {
-    // Group tiles by material key (terrainType + variant)
-    const buckets = new Map<string, { terrainType: number; positions: { x: number; y: number; yOff: number; h: number }[] }>();
+  // ── Water overlay ───────────────────────────────────────────────────
 
+  private buildWaterOverlay(terrain: TerrainType[][]): void {
+    // Collect water tile positions
+    const waterTiles: { x: number; y: number }[] = [];
     for (let y = 0; y < MAP_HEIGHT; y++) {
       for (let x = 0; x < MAP_WIDTH; x++) {
-        const terrainType = terrain[y]?.[x] ?? TerrainType.GRASS;
-        const variant = ((x * 7 + y * 13) & 0x7fffffff) % 8;
-        const key = `${terrainType}-${variant}`;
-
-        if (!buckets.has(key)) {
-          buckets.set(key, { terrainType, positions: [] });
+        if (terrain[y]?.[x] === TerrainType.WATER) {
+          waterTiles.push({ x, y });
         }
-
-        // Use height map for Y offset
-        const heightY = this.heightMap[y][x];
-        let yOff = heightY;
-        let h = TILE_3D_HEIGHT;
-        if (terrainType === TerrainType.FOREST) {
-          h = FOREST_HEIGHT;
-        }
-
-        buckets.get(key)!.positions.push({ x, y, yOff, h });
       }
     }
+    if (waterTiles.length === 0) return;
 
-    // Init tileRefs grid
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      this.tileRefs[y] = new Array(MAP_WIDTH).fill(null);
+    // Build a single merged plane for all water tiles
+    const vertsPerTile = 4;
+    const totalVerts = waterTiles.length * vertsPerTile;
+    const positions = new Float32Array(totalVerts * 3);
+    const uvs = new Float32Array(totalVerts * 2);
+    const indices: number[] = [];
+
+    const waterY = -0.06; // just above the depressed terrain
+
+    for (let i = 0; i < waterTiles.length; i++) {
+      const { x, y } = waterTiles[i];
+      const vi = i * 4;
+
+      // Quad corners matching tile bounds
+      positions[vi * 3]     = x - 0.5; positions[vi * 3 + 1] = waterY; positions[vi * 3 + 2] = y - 0.5;
+      positions[(vi+1) * 3] = x + 0.5; positions[(vi+1) * 3 + 1] = waterY; positions[(vi+1) * 3 + 2] = y - 0.5;
+      positions[(vi+2) * 3] = x - 0.5; positions[(vi+2) * 3 + 1] = waterY; positions[(vi+2) * 3 + 2] = y + 0.5;
+      positions[(vi+3) * 3] = x + 0.5; positions[(vi+3) * 3 + 1] = waterY; positions[(vi+3) * 3 + 2] = y + 0.5;
+
+      uvs[vi * 2]     = 0; uvs[vi * 2 + 1] = 0;
+      uvs[(vi+1) * 2] = 1; uvs[(vi+1) * 2 + 1] = 0;
+      uvs[(vi+2) * 2] = 0; uvs[(vi+2) * 2 + 1] = 1;
+      uvs[(vi+3) * 2] = 1; uvs[(vi+3) * 2 + 1] = 1;
+
+      indices.push(vi, vi + 2, vi + 1);
+      indices.push(vi + 1, vi + 2, vi + 3);
     }
 
-    // Build one merged mesh per bucket
-    for (const [key, bucket] of buckets) {
-      const { terrainType, positions } = bucket;
-      const variant = parseInt(key.split('-')[1]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
 
-      const texture = this.terrainTextures.getTexture(terrainType, variant * 7, variant * 13);
-      const matProps = TERRAIN_MATERIALS[terrainType] ?? { roughness: 0.85, metalness: 0.05 };
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        roughness: matProps.roughness,
-        metalness: matProps.metalness,
-        vertexColors: true,
-        transparent: matProps.transparent ?? false,
-        opacity: matProps.opacity ?? 1.0,
-      });
+    this.waterTexture = this.terrainTextures.getWaterTexture();
+    const material = new THREE.MeshStandardMaterial({
+      map: this.waterTexture,
+      roughness: 0.15,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.7,
+    });
 
-      // Track water materials for animation
-      if (terrainType === TerrainType.WATER) {
-        this.waterMaterials.push(material);
-        this.waterTextures.push(texture);
-      }
-
-      // Build merged BufferGeometry from box tiles
-      const tileCount = positions.length;
-      const w = TILE_3D_SIZE * 0.97;
-
-      const verticesPerTile = 36; // non-indexed box
-      const totalVerts = tileCount * verticesPerTile;
-      const posArr = new Float32Array(totalVerts * 3);
-      const normArr = new Float32Array(totalVerts * 3);
-      const uvArr = new Float32Array(totalVerts * 2);
-      const colArr = new Float32Array(totalVerts * 3); // vertex colors for fog tinting
-
-      // Reference box geometry to extract face data
-      const refGeo = new THREE.BoxGeometry(w, TILE_3D_HEIGHT, w);
-      const refNonIndexed = refGeo.toNonIndexed();
-      const refPos = refNonIndexed.getAttribute('position').array as Float32Array;
-      const refNorm = refNonIndexed.getAttribute('normal').array as Float32Array;
-      const refUv = refNonIndexed.getAttribute('uv').array as Float32Array;
-      refGeo.dispose();
-      refNonIndexed.dispose();
-
-      // For forest tiles, we need a taller box
-      let refForestPos: Float32Array | null = null;
-      if (terrainType === TerrainType.FOREST) {
-        const fGeo = new THREE.BoxGeometry(w, FOREST_HEIGHT, w).toNonIndexed();
-        refForestPos = fGeo.getAttribute('position').array as Float32Array;
-        fGeo.dispose();
-      }
-
-      for (let i = 0; i < tileCount; i++) {
-        const { x, y, yOff } = positions[i];
-        const vStart = i * verticesPerTile;
-        const usePos = (terrainType === TerrainType.FOREST && refForestPos) ? refForestPos : refPos;
-
-        for (let v = 0; v < verticesPerTile; v++) {
-          const si = v * 3;
-          const di = (vStart + v) * 3;
-          posArr[di]     = usePos[si]     + x;
-          posArr[di + 1] = usePos[si + 1] + yOff;
-          posArr[di + 2] = usePos[si + 2] + y;
-
-          normArr[di]     = refNorm[si];
-          normArr[di + 1] = refNorm[si + 1];
-          normArr[di + 2] = refNorm[si + 2];
-
-          // Vertex colors default to white (no tint)
-          colArr[di]     = 1;
-          colArr[di + 1] = 1;
-          colArr[di + 2] = 1;
-
-          const ui = v * 2;
-          const dui = (vStart + v) * 2;
-          uvArr[dui]     = refUv[ui];
-          uvArr[dui + 1] = refUv[ui + 1];
-        }
-
-        // Store tile ref
-        this.tileRefs[y][x] = { meshIndex: this.mergedMeshes.length, vertexStart: vStart, vertexCount: verticesPerTile };
-      }
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-      geometry.setAttribute('normal', new THREE.BufferAttribute(normArr, 3));
-      geometry.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
-      geometry.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.frustumCulled = false;
-      this.group.add(mesh);
-      this.mergedMeshes.push(mesh);
-    }
+    this.waterMesh = new THREE.Mesh(geometry, material);
+    this.waterMesh.frustumCulled = false;
+    this.group.add(this.waterMesh);
   }
 
-  /** Animate water UV scrolling */
+  // ── Water animation ─────────────────────────────────────────────────
+
   animateWater(deltaMs: number): void {
+    if (!this.waterTexture) return;
     const dt = deltaMs / 1000;
-    for (const tex of this.waterTextures) {
-      tex.offset.x += 0.0003 * dt;
-      tex.offset.y += 0.0002 * dt;
-    }
+    this.waterTexture.offset.x += 0.02 * dt;
+    this.waterTexture.offset.y += 0.015 * dt;
   }
 
-  /** Set the vertex color tint for a tile (used by FogRenderer). */
+  // ── Fog vertex coloring ─────────────────────────────────────────────
+
+  /**
+   * Set the vertex color tint for a tile (used by FogRenderer).
+   * Updates the 4 corner vertices of the tile. Shared vertices between
+   * adjacent tiles create smooth fog gradients automatically.
+   */
   setTileColor(tileX: number, tileY: number, r: number, g: number, b: number): void {
-    const ref = this.tileRefs[tileY]?.[tileX];
-    if (!ref) return;
-    const mesh = this.mergedMeshes[ref.meshIndex];
-    const colorAttr = mesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    if (!this.terrainMesh) return;
+    const colorAttr = this.terrainMesh.geometry.getAttribute('color') as THREE.BufferAttribute;
     const arr = colorAttr.array as Float32Array;
 
-    for (let v = 0; v < ref.vertexCount; v++) {
-      const idx = (ref.vertexStart + v) * 3;
-      arr[idx] = r;
-      arr[idx + 1] = g;
-      arr[idx + 2] = b;
+    // Tile (tileX, tileY) has corners at vertices (tileX, tileY), (tileX+1, tileY),
+    // (tileX, tileY+1), (tileX+1, tileY+1)
+    const corners = [
+      tileY * this.stride + tileX,
+      tileY * this.stride + tileX + 1,
+      (tileY + 1) * this.stride + tileX,
+      (tileY + 1) * this.stride + tileX + 1,
+    ];
+
+    for (const vi of corners) {
+      const ci = vi * 3;
+      // Use max brightness so fog transitions are smooth across shared vertices
+      if (arr[ci] < r) arr[ci] = r;
+      if (arr[ci + 1] < g) arr[ci + 1] = g;
+      if (arr[ci + 2] < b) arr[ci + 2] = b;
     }
+
     colorAttr.needsUpdate = true;
   }
 
-  /** Legacy compat — returns null since tiles are merged. */
+  /** Reset all vertex colors before a fog pass (call before setTileColor loop) */
+  resetVertexColors(): void {
+    if (!this.terrainMesh) return;
+    const colorAttr = this.terrainMesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    (colorAttr.array as Float32Array).fill(0);
+  }
+
+  /** Legacy compat — returns null since terrain is a continuous mesh. */
   getTileMesh(_tileX: number, _tileY: number): THREE.Mesh | null {
     return null;
   }
 
   dispose(): void {
-    for (const mesh of this.mergedMeshes) {
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
+    if (this.terrainMesh) {
+      this.terrainMesh.geometry.dispose();
+      (this.terrainMesh.material as THREE.Material).dispose();
     }
+    if (this.waterMesh) {
+      this.waterMesh.geometry.dispose();
+      (this.waterMesh.material as THREE.Material).dispose();
+    }
+    if (this.mapTexture) this.mapTexture.dispose();
     this.terrainTextures.dispose();
   }
-}
-
-interface TileRef {
-  meshIndex: number;
-  vertexStart: number;
-  vertexCount: number;
 }
