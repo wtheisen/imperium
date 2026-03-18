@@ -172,6 +172,11 @@ export class CameraController {
     this.updateCameraPosition();
   };
 
+  /** Current horizontal camera angle (radians). Used by sprite system for direction. */
+  get azimuth(): number {
+    return this.theta;
+  }
+
   /** Trigger camera shake (e.g. on ordnance impact). */
   shake(intensity: number, durationMs: number): void {
     // Only override if stronger than current shake

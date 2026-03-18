@@ -16,6 +16,12 @@ export class MoverComponent implements Component {
   /** When true, unit stays in place and only attacks enemies in range */
   public holdPosition: boolean = false;
 
+  /** Behavior mode for standing orders */
+  public behaviorMode: 'none' | 'patrol' | 'explore' = 'none';
+  /** Patrol waypoints — unit walks back and forth between these */
+  public patrolPoints: { x: number; y: number }[] = [];
+  public patrolIndex: number = 0;
+
   /** Fractional tile position for smooth 3D interpolation */
   public fracTileX: number;
   public fracTileY: number;
@@ -31,7 +37,9 @@ export class MoverComponent implements Component {
     this.path = path;
     this.pathIndex = 0;
     this.moving = path.length > 0;
-    this.holdPosition = false; // new move command cancels hold
+    this.holdPosition = false;
+    // A direct setPath from patrol/explore keeps the behavior;
+    // explicit user move commands call stop() which clears behavior
   }
 
   isMoving(): boolean {
@@ -52,6 +60,9 @@ export class MoverComponent implements Component {
     this.pathIndex = 0;
     this.attackMoving = false;
     this.attackMoveDestination = null;
+    this.behaviorMode = 'none';
+    this.patrolPoints = [];
+    this.patrolIndex = 0;
   }
 
   /** Stop movement but preserve attack-move destination for resuming */
@@ -98,6 +109,9 @@ export class MoverComponent implements Component {
       const ny = dy / dist;
       this.fracTileX += nx * step;
       this.fracTileY += ny * step;
+
+      // Update facing direction toward movement target
+      this.unit.facing = Math.atan2(nx, ny);
 
       // Update integer tile position for game logic (combat range, etc.)
       this.unit.tileX = Math.round(this.fracTileX);

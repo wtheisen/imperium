@@ -16,6 +16,8 @@ export class Entity {
   public team: EntityTeam;
   public active: boolean = true;
   public visible: boolean = true;
+  /** Facing direction in radians (0 = +Z / south, increases clockwise) */
+  public facing: number = 0;
   /** Screen-space position (used by EntityRenderer for smooth interpolation) */
   public screenX: number;
   public screenY: number;

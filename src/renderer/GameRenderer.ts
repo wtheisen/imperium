@@ -10,6 +10,7 @@ import { TerrainType } from '../map/MapManager';
 import { Entity } from '../entities/Entity';
 import { EventBus } from '../EventBus';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
+import { SpriteSheetManager } from './sprites/SpriteSheetManager';
 
 /**
  * Top-level three.js renderer. Owns the WebGL canvas, scene, camera controller,
@@ -22,6 +23,7 @@ export class GameRenderer {
   readonly entityRenderer: EntityRenderer;
   readonly inputBridge: InputBridge;
   readonly vfxRenderer: VFXRenderer;
+  readonly spriteSheetManager: SpriteSheetManager;
 
   private tileMap: TileMapMesh | null = null;
   private fogRenderer: FogRenderer | null = null;
@@ -65,8 +67,15 @@ export class GameRenderer {
     const aspect = container.clientWidth / container.clientHeight;
     this.cameraController = new CameraController(canvas, aspect);
 
-    // Entity renderer
-    this.entityRenderer = new EntityRenderer(this.scene);
+    // Sprite sheet manager — generate placeholder sprite sheets, then load real ones async
+    this.spriteSheetManager = new SpriteSheetManager();
+    this.spriteSheetManager.generatePlaceholders();
+    // Load real sprite sheets in background — they'll replace placeholders once loaded
+    this.spriteSheetManager.loadRealSheets();
+
+    // Entity renderer — pass camera controller and sprite sheet manager
+    this.entityRenderer = new EntityRenderer(this.scene, this.cameraController);
+    this.entityRenderer.setSpriteSheetManager(this.spriteSheetManager);
 
     // VFX renderer
     this.vfxRenderer = new VFXRenderer(this.scene);
@@ -220,6 +229,7 @@ export class GameRenderer {
     this.cameraController.dispose();
     this.inputBridge.dispose();
     this.entityRenderer.dispose();
+    this.spriteSheetManager.dispose();
     this.vfxRenderer.dispose();
     if (this.decorations) {
       this.scene.remove(this.decorations.group);

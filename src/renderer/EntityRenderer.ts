@@ -6,10 +6,19 @@ import { EntityMeshFactory } from './EntityMeshFactory';
 import { TileMapMesh } from './TileMapMesh';
 import { EventBus } from '../EventBus';
 import { HealthComponent } from '../components/HealthComponent';
+import { MoverComponent } from '../components/MoverComponent';
+import { CombatComponent } from '../components/CombatComponent';
+import { CameraController } from './CameraController';
+import { SPRITE_UNIT_TYPES, facingToDirection8 } from './sprites/SpriteSheetConfig';
+import { SpriteSheetManager } from './sprites/SpriteSheetManager';
+import { SpriteBillboard } from './sprites/SpriteBillboard';
+import { SpriteAnimator } from './sprites/SpriteAnimator';
 
 interface FlashState {
   timer: number;
   originals: Map<THREE.Mesh, { color: THREE.Color; intensity: number }>;
+  /** For sprite flashes, store original tint color */
+  spriteOrigColor?: THREE.Color;
 }
 
 interface ShakeState {
@@ -30,17 +39,25 @@ interface AttackAnimState {
 }
 
 /**
- * Bridges Entity objects to 3D meshes.
- * Maintains a map of entityId → THREE.Object3D and syncs positions each frame.
+ * Bridges Entity objects to 3D meshes or 2D sprite billboards.
+ * Infantry units use billboarded sprites; buildings and vehicles use 3D meshes.
  */
 export class EntityRenderer {
   private meshes = new Map<string, THREE.Object3D>();
   private factory: EntityMeshFactory;
   private scene: THREE.Scene;
   private tileMap: TileMapMesh | null = null;
+  private cameraController: CameraController | null = null;
 
   /** Set of entity IDs that are currently selected (rendered with highlight) */
   private selectedIds = new Set<string>();
+
+  // Sprite state
+  private spriteSheetManager: SpriteSheetManager | null = null;
+  private sprites = new Map<string, SpriteBillboard[]>();
+  private animators = new Map<string, SpriteAnimator[]>();
+  /** Track which entities use sprites vs 3D meshes */
+  private spriteEntities = new Set<string>();
 
   // VFX state
   private activeFlashes = new Map<string, FlashState>();
@@ -48,13 +65,24 @@ export class EntityRenderer {
   private shakes = new Map<string, ShakeState>();
   private attackAnims = new Map<string, AttackAnimState>();
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, cameraController?: CameraController) {
     this.scene = scene;
     this.factory = new EntityMeshFactory();
+    this.cameraController = cameraController ?? null;
 
     // Listen for combat events
     EventBus.on('damage-dealt', this.onDamageDealt, this);
     EventBus.on('attack-fired', this.onAttackFired, this);
+  }
+
+  /** Set the camera controller reference for sprite billboarding. */
+  setCameraController(cc: CameraController): void {
+    this.cameraController = cc;
+  }
+
+  /** Set the sprite sheet manager for sprite rendering. */
+  setSpriteSheetManager(manager: SpriteSheetManager): void {
+    this.spriteSheetManager = manager;
   }
 
   /** Set the tile map reference for height-aware positioning */
@@ -62,9 +90,11 @@ export class EntityRenderer {
     this.tileMap = tileMap;
   }
 
-  /** Called each frame — syncs all entities to 3D meshes. */
+  /** Called each frame — syncs all entities to 3D meshes or sprite billboards. */
   syncAll(entities: Entity[]): void {
     const activeIds = new Set<string>();
+    const cameraPos = this.cameraController?.camera.position;
+    const cameraAzimuth = this.cameraController?.azimuth ?? 0;
 
     for (const entity of entities) {
       if (!entity.active) continue;
@@ -74,25 +104,31 @@ export class EntityRenderer {
 
       // Create mesh if missing
       if (!mesh) {
-        const meshType = this.getMeshType(entity);
-        const squadSize = (entity instanceof Unit) ? (entity.stats.squadSize || 1) : 1;
+        const isSprite = this.shouldUseSprite(entity);
 
-        if (squadSize > 1) {
-          // Squad: create a group with multiple model clones arranged in formation
-          mesh = this.createSquadMesh(meshType, squadSize);
+        if (isSprite) {
+          mesh = this.createSpriteEntity(entity);
         } else {
-          mesh = this.factory.create(meshType);
+          const meshType = this.getMeshType(entity);
+          const squadSize = (entity instanceof Unit) ? (entity.stats.squadSize || 1) : 1;
+
+          if (squadSize > 1) {
+            mesh = this.createSquadMesh(meshType, squadSize);
+          } else {
+            mesh = this.factory.create(meshType);
+          }
+
+          // Deep-clone materials so each entity has independent emissive/highlight state
+          mesh.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+              child.material = (child.material as THREE.Material).clone();
+            }
+          });
         }
 
-        // Deep-clone materials so each entity has independent emissive/highlight state
-        mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.material) {
-            child.material = (child.material as THREE.Material).clone();
-          }
-        });
         mesh.userData.entityId = entity.entityId;
         mesh.userData.team = entity.team;
-        mesh.userData.squadSize = squadSize;
+        mesh.userData.squadSize = (entity instanceof Unit) ? (entity.stats.squadSize || 1) : 1;
         this.scene.add(mesh);
         this.meshes.set(entity.entityId, mesh);
       }
@@ -104,7 +140,7 @@ export class EntityRenderer {
 
         // For units with Mover, use fractional tile position for smooth movement
         if (entity instanceof Unit) {
-          const mover = entity.getComponent<import('../components/MoverComponent').MoverComponent>('mover');
+          const mover = entity.getComponent<MoverComponent>('mover');
           if (mover) {
             px = mover.fracTileX;
             pz = mover.fracTileY;
@@ -121,20 +157,27 @@ export class EntityRenderer {
           mesh.position.set(px, py, pz);
         }
 
-        // Apply attack anim offset
-        const anim = this.attackAnims.get(entity.entityId);
-        if (anim) {
-          const progress = anim.phase === 'lunge'
-            ? 1 - (anim.timer / anim.duration)
-            : anim.timer / anim.duration;
-          const t = anim.phase === 'lunge' ? progress : (1 - progress);
-          mesh.position.x += anim.offsetX * t;
-          mesh.position.z += anim.offsetZ * t;
+        // Apply attack anim offset (only for 3D entities, sprites handle attack via anim frames)
+        if (!this.spriteEntities.has(entity.entityId)) {
+          const anim = this.attackAnims.get(entity.entityId);
+          if (anim) {
+            const progress = anim.phase === 'lunge'
+              ? 1 - (anim.timer / anim.duration)
+              : anim.timer / anim.duration;
+            const t = anim.phase === 'lunge' ? progress : (1 - progress);
+            mesh.position.x += anim.offsetX * t;
+            mesh.position.z += anim.offsetZ * t;
+          }
         }
       }
 
       // Visibility (fog of war controlled via entity.visible)
       mesh.visible = entity.visible;
+
+      // Update sprites per frame (animation, billboarding, direction)
+      if (this.spriteEntities.has(entity.entityId) && entity instanceof Unit) {
+        this.updateSpriteEntity(entity, mesh, cameraPos, cameraAzimuth);
+      }
 
       // Squad casualty visuals — hide models as HP drops
       if (entity instanceof Unit && mesh.userData.squadSize > 1) {
@@ -154,6 +197,16 @@ export class EntityRenderer {
       if (!activeIds.has(id)) {
         this.scene.remove(mesh);
         this.meshes.delete(id);
+        // Clean up sprite state
+        if (this.spriteEntities.has(id)) {
+          const spriteBillboards = this.sprites.get(id);
+          if (spriteBillboards) {
+            for (const sb of spriteBillboards) sb.dispose();
+          }
+          this.sprites.delete(id);
+          this.animators.delete(id);
+          this.spriteEntities.delete(id);
+        }
         // Clean up selection ring
         const ring = this.selectionRings.get(id);
         if (ring) {
@@ -170,12 +223,154 @@ export class EntityRenderer {
     }
   }
 
+  /** Determine if an entity should use sprite rendering. */
+  private shouldUseSprite(entity: Entity): boolean {
+    if (!(entity instanceof Unit)) return false;
+    return this.spriteSheetManager != null && SPRITE_UNIT_TYPES.has(entity.unitType);
+  }
+
+  /** Create a sprite entity (single or squad). Returns the root Object3D. */
+  private createSpriteEntity(entity: Entity): THREE.Object3D {
+    const unit = entity as Unit;
+    const config = this.spriteSheetManager!.getConfig(unit.unitType);
+    if (!config) {
+      // Fallback to 3D mesh
+      return this.factory.create(this.getMeshType(entity));
+    }
+
+    const squadSize = unit.stats.squadSize || 1;
+    this.spriteEntities.add(entity.entityId);
+
+    if (squadSize > 1) {
+      return this.createSpriteSquad(entity, config, squadSize);
+    }
+
+    // Single sprite
+    const billboard = new SpriteBillboard(config);
+    const animator = new SpriteAnimator();
+
+    this.sprites.set(entity.entityId, [billboard]);
+    this.animators.set(entity.entityId, [animator]);
+
+    // Add shadow blob
+    this.addShadowBlob(billboard.mesh);
+
+    return billboard.mesh;
+  }
+
+  /** Create a squad of sprite billboards in formation. */
+  private createSpriteSquad(entity: Entity, config: import('./sprites/SpriteSheetConfig').SpriteSheetConfig, squadSize: number): THREE.Group {
+    const squad = new THREE.Group();
+    const billboards: SpriteBillboard[] = [];
+    const animators: SpriteAnimator[] = [];
+
+    const formations: Record<number, { x: number; z: number }[]> = {
+      2: [{ x: -0.25, z: 0 }, { x: 0.25, z: 0 }],
+      3: [{ x: 0, z: -0.25 }, { x: -0.28, z: 0.18 }, { x: 0.28, z: 0.18 }],
+      4: [{ x: -0.25, z: -0.25 }, { x: 0.25, z: -0.25 }, { x: -0.25, z: 0.25 }, { x: 0.25, z: 0.25 }],
+      5: [{ x: 0, z: -0.3 }, { x: -0.3, z: -0.05 }, { x: 0.3, z: -0.05 }, { x: -0.18, z: 0.28 }, { x: 0.18, z: 0.28 }],
+      6: [{ x: -0.22, z: -0.3 }, { x: 0.22, z: -0.3 }, { x: -0.35, z: 0 }, { x: 0.35, z: 0 }, { x: -0.22, z: 0.3 }, { x: 0.22, z: 0.3 }],
+    };
+
+    const positions = formations[squadSize] || formations[4]!;
+    const spriteScale = squadSize <= 3 ? 0.7 : squadSize <= 4 ? 0.6 : 0.5;
+
+    for (let i = 0; i < squadSize; i++) {
+      const billboard = new SpriteBillboard(config);
+      // Stagger idle start times for variety
+      const animator = new SpriteAnimator(i * 120);
+
+      const pos = positions[i] || { x: (Math.random() - 0.5) * 0.3, z: (Math.random() - 0.5) * 0.3 };
+      billboard.mesh.position.set(pos.x, 0, pos.z);
+      billboard.mesh.scale.setScalar(spriteScale);
+      billboard.mesh.userData.squadIndex = i;
+
+      // Add shadow blob per squad member
+      this.addShadowBlob(billboard.mesh);
+
+      squad.add(billboard.mesh);
+      billboards.push(billboard);
+      animators.push(animator);
+    }
+
+    this.sprites.set(entity.entityId, billboards);
+    this.animators.set(entity.entityId, animators);
+
+    return squad;
+  }
+
+  /** Add a flat dark ellipse shadow under a sprite mesh. */
+  private addShadowBlob(parentMesh: THREE.Mesh): void {
+    const shadowGeo = new THREE.CircleGeometry(0.25, 12);
+    shadowGeo.rotateX(-Math.PI / 2);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.25,
+      depthWrite: false,
+    });
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.position.y = 0.01; // Just above ground
+    shadow.scale.set(1, 1, 0.6); // Ellipse shape
+    parentMesh.add(shadow);
+  }
+
+  /** Per-frame update for sprite entities: animation state, direction, billboarding. */
+  private updateSpriteEntity(
+    unit: Unit,
+    mesh: THREE.Object3D,
+    cameraPos: THREE.Vector3 | undefined,
+    cameraAzimuth: number
+  ): void {
+    const billboards = this.sprites.get(unit.entityId);
+    const animatorList = this.animators.get(unit.entityId);
+    if (!billboards || !animatorList) return;
+
+    const config = this.spriteSheetManager?.getConfig(unit.unitType);
+    if (!config) return;
+
+    // Determine animation state
+    const mover = unit.getComponent<MoverComponent>('mover');
+    const combat = unit.getComponent<CombatComponent>('combat');
+    const health = unit.getComponent<HealthComponent>('health');
+
+    let targetAnim: 'idle' | 'walk' | 'attack' | 'death' = 'idle';
+    if (health && health.currentHp <= 0) {
+      targetAnim = 'death';
+    } else if (combat?.target?.active) {
+      targetAnim = 'attack';
+    } else if (mover?.isMoving()) {
+      targetAnim = 'walk';
+    }
+
+    const direction = facingToDirection8(unit.facing, cameraAzimuth);
+
+    // Update each billboard (single or squad members)
+    // deltaMs approximation: use 16ms (~60fps) since we don't get delta here.
+    // The actual delta is applied via updateEffects().
+    for (let i = 0; i < billboards.length; i++) {
+      const billboard = billboards[i];
+      const animator = animatorList[i];
+
+      animator.play(targetAnim);
+      animator.update(16, config);
+
+      const { offsetX, offsetY } = animator.getUVOffset(direction, config);
+      billboard.setFrame(offsetX, offsetY);
+
+      // Y-axis billboarding
+      if (cameraPos) {
+        billboard.faceCamera(cameraPos);
+      }
+    }
+  }
+
   /** Set which entities are selected (for highlight rendering + selection rings). */
   setSelected(entityIds: string[]): void {
     // Reset previously selected
     for (const id of this.selectedIds) {
       const mesh = this.meshes.get(id);
-      if (mesh) this.setHighlight(mesh, false);
+      if (mesh) this.setHighlight(mesh, false, id);
       // Remove ring
       const ring = this.selectionRings.get(id);
       if (ring) {
@@ -191,7 +386,7 @@ export class EntityRenderer {
       this.selectedIds.add(id);
       const mesh = this.meshes.get(id);
       if (mesh) {
-        this.setHighlight(mesh, true);
+        this.setHighlight(mesh, true, id);
         // Add selection ring
         this.addSelectionRing(id, mesh);
       }
@@ -201,24 +396,65 @@ export class EntityRenderer {
   private addSelectionRing(entityId: string, parentMesh: THREE.Object3D): void {
     const team = parentMesh.userData.team as string;
     const color = team === 'player' ? 0x44ff88 : 0xff4444;
+    const isSprite = this.spriteEntities.has(entityId);
 
-    const geometry = new THREE.RingGeometry(0.35, 0.45, 24);
-    geometry.rotateX(-Math.PI / 2); // Lay flat on ground
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.6,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const ring = new THREE.Mesh(geometry, material);
-    ring.position.copy(parentMesh.position);
-    ring.position.y += 0.02; // Slightly above ground
-    this.scene.add(ring);
-    this.selectionRings.set(entityId, ring);
+    let selectionMesh: THREE.Mesh;
+
+    if (isSprite) {
+      // Ground square highlight for sprite units
+      const size = parentMesh.userData.squadSize > 1 ? 1.2 : 0.8;
+      const geometry = new THREE.PlaneGeometry(size, size);
+      geometry.rotateX(-Math.PI / 2);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      selectionMesh = new THREE.Mesh(geometry, material);
+
+      // Add a brighter border edge using a slightly larger wireframe square
+      const borderGeo = new THREE.PlaneGeometry(size + 0.06, size + 0.06);
+      borderGeo.rotateX(-Math.PI / 2);
+      const borderMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        wireframe: true,
+      });
+      const border = new THREE.Mesh(borderGeo, borderMat);
+      border.position.y = -0.005;
+      selectionMesh.add(border);
+    } else {
+      // Circle ring for 3D mesh units/buildings
+      const geometry = new THREE.RingGeometry(0.35, 0.45, 24);
+      geometry.rotateX(-Math.PI / 2);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      selectionMesh = new THREE.Mesh(geometry, material);
+    }
+
+    selectionMesh.position.copy(parentMesh.position);
+    selectionMesh.position.y += 0.02;
+    this.scene.add(selectionMesh);
+    this.selectionRings.set(entityId, selectionMesh);
   }
 
-  private setHighlight(obj: THREE.Object3D, on: boolean): void {
+  private setHighlight(obj: THREE.Object3D, on: boolean, entityId?: string): void {
+    // Sprite path: no tinting, selection is shown via ground square only
+    if (entityId && this.spriteEntities.has(entityId)) {
+      return;
+    }
+
+    // 3D mesh path
     obj.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         child.material.emissive.set(on ? 0x44ff88 : 0x000000);
@@ -244,6 +480,24 @@ export class EntityRenderer {
     const mesh = this.meshes.get(entityId);
     if (!mesh) return;
 
+    // Sprite flash path
+    if (this.spriteEntities.has(entityId)) {
+      const billboards = this.sprites.get(entityId);
+      if (billboards) {
+        const origColor = billboards[0]?.mesh.material.color.clone();
+        for (const bb of billboards) {
+          bb.setTint(color);
+        }
+        this.activeFlashes.set(entityId, {
+          timer: duration,
+          originals: new Map(),
+          spriteOrigColor: origColor,
+        });
+      }
+      return;
+    }
+
+    // 3D mesh flash path
     const originals = new Map<THREE.Mesh, { color: THREE.Color; intensity: number }>();
     mesh.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
@@ -265,6 +519,9 @@ export class EntityRenderer {
     attackerId: string; targetId: string; isRanged: boolean;
     fromX: number; fromY: number; toX: number; toY: number;
   }): void => {
+    // Skip lunge/recoil for sprite entities — they use sprite attack animation
+    if (this.spriteEntities.has(data.attackerId)) return;
+
     const dx = data.toX - data.fromX;
     const dz = data.toY - data.fromY;
     const len = Math.sqrt(dx * dx + dz * dz) || 1;
@@ -299,11 +556,25 @@ export class EntityRenderer {
     for (const [id, flash] of this.activeFlashes) {
       flash.timer -= deltaMs;
       if (flash.timer <= 0) {
-        // Restore originals
-        for (const [child, orig] of flash.originals) {
-          if (child.material instanceof THREE.MeshStandardMaterial) {
-            child.material.emissive.copy(orig.color);
-            child.material.emissiveIntensity = orig.intensity;
+        // Sprite flash restore
+        if (this.spriteEntities.has(id)) {
+          const billboards = this.sprites.get(id);
+          if (billboards) {
+            if (flash.spriteOrigColor) {
+              for (const bb of billboards) {
+                bb.mesh.material.color.copy(flash.spriteOrigColor);
+              }
+            } else {
+              for (const bb of billboards) bb.clearTint();
+            }
+          }
+        } else {
+          // 3D mesh flash restore
+          for (const [child, orig] of flash.originals) {
+            if (child.material instanceof THREE.MeshStandardMaterial) {
+              child.material.emissive.copy(orig.color);
+              child.material.emissiveIntensity = orig.intensity;
+            }
           }
         }
         this.activeFlashes.delete(id);
@@ -363,7 +634,7 @@ export class EntityRenderer {
     return 'default';
   }
 
-  /** Create a group of model clones arranged in a tight formation within a tile. */
+  /** Create a group of 3D model clones arranged in a tight formation within a tile. */
   private createSquadMesh(meshType: string, squadSize: number): THREE.Group {
     const squad = new THREE.Group();
 
@@ -414,6 +685,14 @@ export class EntityRenderer {
   dispose(): void {
     EventBus.off('damage-dealt', this.onDamageDealt, this);
     EventBus.off('attack-fired', this.onAttackFired, this);
+
+    // Clean up sprites
+    for (const [, billboards] of this.sprites) {
+      for (const bb of billboards) bb.dispose();
+    }
+    this.sprites.clear();
+    this.animators.clear();
+    this.spriteEntities.clear();
 
     // Clean up selection rings
     for (const ring of this.selectionRings.values()) {

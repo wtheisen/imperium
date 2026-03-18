@@ -76,6 +76,13 @@ export class CombatComponent implements Component {
     const health = target.getComponent<HealthComponent>('health');
     if (!health) return;
 
+    // Face the target
+    const dx = target.tileX - this.entity.tileX;
+    const dz = target.tileY - this.entity.tileY;
+    if (dx !== 0 || dz !== 0) {
+      this.entity.facing = Math.atan2(dx, dz);
+    }
+
     EventBus.emit('attack-fired', {
       attackerId: this.entity.entityId,
       targetId: target.entityId,
