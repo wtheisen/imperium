@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { TerrainType } from '../map/MapManager';
 
-// ── Noise utilities (kept for border blending) ────────────────────────
+// ── Noise utilities (for border blending only) ───────────────────────
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
 
 function seededRandom(seed: number): () => number {
   let s = seed;
@@ -41,90 +45,64 @@ function fbm(x: number, y: number, octaves: number, seed: number): number {
   return value / total;
 }
 
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
-
 // ── LPC tile image data ───────────────────────────────────────────────
 
-const TILE_PX = 32; // pixels per tile in the tileset
+const TILE_PX = 32;
 const NUM_TERRAIN_TYPES = 8;
 
-/**
- * Loaded tile pixel data. Each terrain type (indexed by TerrainType enum value)
- * has a Uint8ClampedArray of RGBA pixel data (32x32 = 4096 bytes).
- */
+/** Per-terrain-type canvases (32x32 each) for fast drawImage stamping */
+let tileCanvases: HTMLCanvasElement[] | null = null;
+/** Per-terrain-type pixel data for per-pixel border blending */
 let tilePixels: Uint8ClampedArray[] | null = null;
 
-/** Load the LPC terrain tileset strip and extract per-tile pixel data. */
+/** Load the LPC terrain tileset strip and extract per-tile data. */
 export function loadTerrainTileset(): Promise<void> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
+      const srcCanvas = document.createElement('canvas');
+      srcCanvas.width = img.width;
+      srcCanvas.height = img.height;
+      const srcCtx = srcCanvas.getContext('2d')!;
+      srcCtx.drawImage(img, 0, 0);
 
+      tileCanvases = [];
       tilePixels = [];
       for (let i = 0; i < NUM_TERRAIN_TYPES; i++) {
-        const data = ctx.getImageData(i * TILE_PX, 0, TILE_PX, TILE_PX);
+        // Extract pixel data
+        const data = srcCtx.getImageData(i * TILE_PX, 0, TILE_PX, TILE_PX);
         tilePixels.push(data.data);
+
+        // Create a small canvas for this tile (for fast drawImage stamping)
+        const tc = document.createElement('canvas');
+        tc.width = TILE_PX;
+        tc.height = TILE_PX;
+        const tctx = tc.getContext('2d')!;
+        tctx.putImageData(data, 0, 0);
+        tileCanvases.push(tc);
       }
       resolve();
     };
     img.onerror = () => reject(new Error('Failed to load terrain-tiles.png'));
-    // Vite serves files from public/ at root
     img.src = 'sprites/terrain-tiles.png';
   });
 }
 
-/**
- * Sample a pixel from the loaded tile image for a terrain type.
- * Uses tiling (modulo) so the 32x32 texture repeats across the map.
- */
+/** Sample a pixel from the loaded tile image (with tiling). */
 function sampleTilePixel(terrainType: number, wx: number, wy: number): [number, number, number] {
   if (!tilePixels || terrainType < 0 || terrainType >= tilePixels.length) {
-    return [128, 128, 128]; // gray fallback
+    return [128, 128, 128];
   }
   const pixels = tilePixels[terrainType];
-  // Map world coords to pixel coords within the 32x32 tile (repeating)
   const px = ((Math.floor(wx * TILE_PX) % TILE_PX) + TILE_PX) % TILE_PX;
   const py = ((Math.floor(wy * TILE_PX) % TILE_PX) + TILE_PX) % TILE_PX;
   const idx = (py * TILE_PX + px) * 4;
   return [pixels[idx], pixels[idx + 1], pixels[idx + 2]];
 }
 
-/** Sample terrain color — uses loaded tile images if available, else procedural fallback. */
-export function sampleTerrainColor(terrainType: number, wx: number, wy: number): [number, number, number] {
-  if (tilePixels) {
-    return sampleTilePixel(terrainType, wx, wy);
-  }
-  // Procedural fallback (used before tileset loads)
-  return sampleProceduralColor(terrainType, wx, wy);
-}
-
-// ── Procedural fallback colors (simple, fast) ─────────────────────────
-
-function sampleProceduralColor(terrainType: number, wx: number, wy: number): [number, number, number] {
-  const n = fbm(wx * 6, wy * 6, 3, terrainType * 10000);
-  switch (terrainType) {
-    case TerrainType.GRASS:      return [clamp(55 + n * 30, 0, 255), clamp(95 + n * 40, 0, 255), clamp(40 + n * 15, 0, 255)];
-    case TerrainType.WATER:      return [clamp(20 + n * 15, 0, 255), clamp(45 + n * 25, 0, 255), clamp(80 + n * 40, 0, 255)];
-    case TerrainType.GOLD_MINE:  return [clamp(140 + n * 40, 0, 255), clamp(120 + n * 30, 0, 255), clamp(50 + n * 15, 0, 255)];
-    case TerrainType.STONE:      return [clamp(95 + n * 40, 0, 255), clamp(92 + n * 40, 0, 255), clamp(90 + n * 40, 0, 255)];
-    case TerrainType.DIRT:       return [clamp(110 + n * 30, 0, 255), clamp(85 + n * 20, 0, 255), clamp(55 + n * 15, 0, 255)];
-    case TerrainType.FOREST:     return [clamp(25 + n * 20, 0, 255), clamp(55 + n * 35, 0, 255), clamp(20 + n * 15, 0, 255)];
-    case TerrainType.METAL_FLOOR: return [clamp(60 + n * 15, 0, 255), clamp(62 + n * 15, 0, 255), clamp(65 + n * 18, 0, 255)];
-    case TerrainType.HULL_WALL:  return [clamp(40 + n * 12, 0, 255), clamp(42 + n * 12, 0, 255), clamp(48 + n * 14, 0, 255)];
-    default:                     return [clamp(55 + n * 30, 0, 255), clamp(95 + n * 40, 0, 255), clamp(40 + n * 15, 0, 255)];
-  }
-}
-
 // ── Blended map texture generation ────────────────────────────────────
 
-const BLEND_WIDTH = 0.38;
+const BLEND_WIDTH = 0.35;
 const SHARP_TYPES = new Set([TerrainType.HULL_WALL, TerrainType.METAL_FLOOR]);
 
 function smoothstep(lo: number, hi: number, t: number): number {
@@ -133,9 +111,14 @@ function smoothstep(lo: number, hi: number, t: number): number {
 }
 
 /**
- * Generate a single blended terrain texture covering the entire map.
- * Samples from loaded LPC tile images (or procedural fallback).
- * Terrain types blend smoothly at tile borders with noise-modulated edges.
+ * Generate the blended map texture.
+ *
+ * Fast path (tile images loaded):
+ *   1. Stamp each tile's 32x32 image onto the canvas via drawImage (GPU-fast)
+ *   2. Only do per-pixel blending in narrow border strips between different terrain types
+ *
+ * Slow path (fallback before images load):
+ *   Simple flat colors per tile, no per-pixel noise.
  */
 export function generateBlendedMapTexture(
   terrainGrid: TerrainType[][],
@@ -149,94 +132,127 @@ export function generateBlendedMapTexture(
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
-  const imageData = ctx.createImageData(w, h);
-  const d = imageData.data;
 
-  for (let py = 0; py < h; py++) {
-    for (let px = 0; px < w; px++) {
-      const idx = (py * w + px) * 4;
+  if (tileCanvases && tilePixels) {
+    // ── Fast path: stamp tiles then blend borders ──────────────────
 
-      const wx = px / resolution;
-      const wy = py / resolution;
-      const tx = Math.floor(wx);
-      const ty = Math.floor(wy);
-      const fx = wx - tx;
-      const fy = wy - ty;
+    // Step 1: Stamp all tiles using drawImage (very fast)
+    for (let ty = 0; ty < mapHeight; ty++) {
+      for (let tx = 0; tx < mapWidth; tx++) {
+        const terrainType = terrainGrid[ty]?.[tx] ?? TerrainType.GRASS;
+        const tileCanvas = tileCanvases[terrainType] ?? tileCanvases[0];
+        // Draw the 32x32 tile scaled to `resolution x resolution`
+        ctx.drawImage(tileCanvas, 0, 0, TILE_PX, TILE_PX,
+          tx * resolution, ty * resolution, resolution, resolution);
+      }
+    }
 
-      const ctxType = tx >= 0 && tx < mapWidth && ty >= 0 && ty < mapHeight
-        ? terrainGrid[ty][tx]
-        : TerrainType.GRASS;
+    // Step 2: Per-pixel blending only at borders between different terrain types
+    // Find which tiles have a neighbor with a different type
+    const borderTiles: { tx: number; ty: number }[] = [];
+    for (let ty = 0; ty < mapHeight; ty++) {
+      for (let tx = 0; tx < mapWidth; tx++) {
+        const ct = terrainGrid[ty][tx];
+        if (SHARP_TYPES.has(ct)) continue;
+        let hasDifferentNeighbor = false;
+        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nx = tx + dx, ny = ty + dy;
+          if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight) {
+            if (terrainGrid[ny][nx] !== ct && !SHARP_TYPES.has(terrainGrid[ny][nx])) {
+              hasDifferentNeighbor = true;
+              break;
+            }
+          }
+        }
+        if (hasDifferentNeighbor) borderTiles.push({ tx, ty });
+      }
+    }
 
-      const isSharp = SHARP_TYPES.has(ctxType);
-      const [cr, cg, cb] = sampleTerrainColor(ctxType, wx, wy);
+    // Only process border tile pixels
+    if (borderTiles.length > 0) {
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const d = imageData.data;
 
-      if (isSharp) {
-        d[idx] = cr; d[idx + 1] = cg; d[idx + 2] = cb; d[idx + 3] = 255;
-        continue;
+      for (const { tx, ty } of borderTiles) {
+        const ctxType = terrainGrid[ty][tx];
+        const startPx = tx * resolution;
+        const startPy = ty * resolution;
+
+        for (let ly = 0; ly < resolution; ly++) {
+          for (let lx = 0; lx < resolution; lx++) {
+            const px = startPx + lx;
+            const py = startPy + ly;
+            const fx = lx / resolution; // 0..1 within tile
+            const fy = ly / resolution;
+
+            // Quick check: is this pixel near any border?
+            const minEdgeDist = Math.min(fx, 1 - fx, fy, 1 - fy);
+            if (minEdgeDist >= BLEND_WIDTH) continue; // interior pixel, skip
+
+            const wx = px / resolution;
+            const wy = py / resolution;
+            const borderNoise = fbm(wx * 4, wy * 4, 2, 77777) * 0.1;
+
+            const [cr, cg, cb] = sampleTilePixel(ctxType, wx, wy);
+            let r = cr, g = cg, b = cb;
+            let totalWeight = 1.0;
+
+            // Cardinal blending
+            const edges: [number, number, number][] = [
+              [tx - 1, ty, fx],
+              [tx + 1, ty, 1 - fx],
+              [tx, ty - 1, fy],
+              [tx, ty + 1, 1 - fy],
+            ];
+            for (const [nx, ny, dist] of edges) {
+              if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
+              const nType = terrainGrid[ny][nx];
+              if (nType === ctxType || SHARP_TYPES.has(nType)) continue;
+              const ad = dist + borderNoise;
+              if (ad >= BLEND_WIDTH) continue;
+              const bw = 1 - smoothstep(0, BLEND_WIDTH, ad);
+              const [nr, ng, nb] = sampleTilePixel(nType, wx, wy);
+              r += nr * bw; g += ng * bw; b += nb * bw;
+              totalWeight += bw;
+            }
+
+            const idx = (py * w + px) * 4;
+            d[idx] = clamp(r / totalWeight, 0, 255);
+            d[idx + 1] = clamp(g / totalWeight, 0, 255);
+            d[idx + 2] = clamp(b / totalWeight, 0, 255);
+            // alpha stays 255
+          }
+        }
       }
 
-      const borderNoise = fbm(wx * 4, wy * 4, 2, 77777) * 0.12;
+      ctx.putImageData(imageData, 0, 0);
+    }
+  } else {
+    // ── Fallback: flat colors per tile (instant, no noise) ─────────
+    const FALLBACK_COLORS: Record<number, string> = {
+      [TerrainType.GRASS]:       '#4a6b30',
+      [TerrainType.WATER]:       '#1a4060',
+      [TerrainType.GOLD_MINE]:   '#8a7040',
+      [TerrainType.STONE]:       '#707070',
+      [TerrainType.DIRT]:        '#6e5535',
+      [TerrainType.FOREST]:      '#2a4520',
+      [TerrainType.METAL_FLOOR]: '#404448',
+      [TerrainType.HULL_WALL]:   '#2a2c32',
+    };
 
-      let r = cr, g = cg, b = cb;
-      let totalWeight = 1.0;
-
-      // Cardinal neighbor blending
-      const edges: [number, number, number][] = [
-        [tx - 1, ty, fx],
-        [tx + 1, ty, 1 - fx],
-        [tx, ty - 1, fy],
-        [tx, ty + 1, 1 - fy],
-      ];
-
-      for (const [nx, ny, dist] of edges) {
-        if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
-        const nType = terrainGrid[ny][nx];
-        if (nType === ctxType || SHARP_TYPES.has(nType)) continue;
-
-        const adjustedDist = dist + borderNoise;
-        if (adjustedDist >= BLEND_WIDTH) continue;
-
-        const w2 = 1 - smoothstep(0, BLEND_WIDTH, adjustedDist);
-        const [nr, ng, nb] = sampleTerrainColor(nType, wx, wy);
-        r += nr * w2; g += ng * w2; b += nb * w2;
-        totalWeight += w2;
+    for (let ty = 0; ty < mapHeight; ty++) {
+      for (let tx = 0; tx < mapWidth; tx++) {
+        const terrainType = terrainGrid[ty]?.[tx] ?? TerrainType.GRASS;
+        ctx.fillStyle = FALLBACK_COLORS[terrainType] ?? FALLBACK_COLORS[TerrainType.GRASS];
+        ctx.fillRect(tx * resolution, ty * resolution, resolution, resolution);
       }
-
-      // Diagonal neighbor blending (weaker)
-      const corners: [number, number, number][] = [
-        [tx - 1, ty - 1, Math.sqrt(fx * fx + fy * fy)],
-        [tx + 1, ty - 1, Math.sqrt((1 - fx) * (1 - fx) + fy * fy)],
-        [tx - 1, ty + 1, Math.sqrt(fx * fx + (1 - fy) * (1 - fy))],
-        [tx + 1, ty + 1, Math.sqrt((1 - fx) * (1 - fx) + (1 - fy) * (1 - fy))],
-      ];
-
-      for (const [nx, ny, dist] of corners) {
-        if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
-        const nType = terrainGrid[ny][nx];
-        if (nType === ctxType || SHARP_TYPES.has(nType)) continue;
-
-        const adjustedDist = dist * 0.7 + borderNoise;
-        if (adjustedDist >= BLEND_WIDTH) continue;
-
-        const w2 = (1 - smoothstep(0, BLEND_WIDTH, adjustedDist)) * 0.5;
-        const [nr, ng, nb] = sampleTerrainColor(nType, wx, wy);
-        r += nr * w2; g += ng * w2; b += nb * w2;
-        totalWeight += w2;
-      }
-
-      d[idx] = clamp(r / totalWeight, 0, 255);
-      d[idx + 1] = clamp(g / totalWeight, 0, 255);
-      d[idx + 2] = clamp(b / totalWeight, 0, 255);
-      d[idx + 3] = 255;
     }
   }
 
-  ctx.putImageData(imageData, 0, 0);
-
   const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = true;
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
   return tex;
 }
 
@@ -251,7 +267,6 @@ function generateWaterTexture(seed: number): HTMLCanvasElement {
   const ctx = canvas.getContext('2d')!;
   const imageData = ctx.createImageData(TEX_SIZE, TEX_SIZE);
   const d = imageData.data;
-
   for (let y = 0; y < TEX_SIZE; y++) {
     for (let x = 0; x < TEX_SIZE; x++) {
       const idx = (y * TEX_SIZE + x) * 4;
@@ -265,12 +280,10 @@ function generateWaterTexture(seed: number): HTMLCanvasElement {
       d[idx + 3] = 255;
     }
   }
-
   ctx.putImageData(imageData, 0, 0);
   return canvas;
 }
 
-/** Terrain texture cache — kept for water overlay tiles */
 export class TerrainTextures {
   private textures = new Map<string, THREE.CanvasTexture>();
 
@@ -289,9 +302,7 @@ export class TerrainTextures {
   }
 
   dispose(): void {
-    for (const tex of this.textures.values()) {
-      tex.dispose();
-    }
+    for (const tex of this.textures.values()) tex.dispose();
     this.textures.clear();
   }
 }
