@@ -26,6 +26,9 @@ export interface PlayerStateData {
   unlockedNodes: Set<string>;
   requisitionPoints: number;
   activeModifiers: string[];            // difficulty modifier IDs for next mission
+  shipCredits: number;
+  shipUpgrades: Record<string, number>; // roomId -> upgrade level
+  shipOrdnance: string[];               // card IDs loaded into ship ordnance slots
   version: number;
 }
 
@@ -41,6 +44,9 @@ const state: PlayerStateData = {
   unlockedNodes: new Set(),
   requisitionPoints: 0,
   activeModifiers: [],
+  shipCredits: 0,
+  shipUpgrades: {},
+  shipOrdnance: [],
   version: 1,
 };
 
@@ -57,8 +63,6 @@ function initStarterCollection(): void {
     narthecium: 2,
     lance_strike: 1,
     blessed_armour: 1,
-    blessed_bolts: 1,
-    logis_protocol: 1,
     heated_bolts: 1,
     power_fist: 1,
     jump_pack: 1,
@@ -95,6 +99,9 @@ function initStarterCollection(): void {
   state.unlockedNodes = new Set();
   state.requisitionPoints = 0;
   state.activeModifiers = [];
+  state.shipCredits = 0;
+  state.shipUpgrades = {};
+  state.shipOrdnance = ['lance_strike', 'frag_storm'];
   state.version = 1;
 }
 
@@ -109,6 +116,9 @@ export function savePlayerState(): void {
     unlockedNodes: Array.from(state.unlockedNodes),
     requisitionPoints: state.requisitionPoints,
     activeModifiers: state.activeModifiers,
+    shipCredits: state.shipCredits,
+    shipUpgrades: state.shipUpgrades,
+    shipOrdnance: state.shipOrdnance,
     version: state.version,
   };
   try {
@@ -134,6 +144,9 @@ export function loadPlayerState(): boolean {
     state.unlockedNodes = new Set(data.unlockedNodes || []);
     state.requisitionPoints = data.requisitionPoints ?? 0;
     state.activeModifiers = data.activeModifiers || [];
+    state.shipCredits = data.shipCredits ?? 0;
+    state.shipUpgrades = data.shipUpgrades || {};
+    state.shipOrdnance = data.shipOrdnance || [];
     state.version = data.version ?? 1;
     return true;
   } catch (e) {
@@ -219,4 +232,30 @@ export function toggleModifier(id: string): void {
 
 export function clearModifiers(): void {
   state.activeModifiers = [];
+}
+
+export function addShipCredits(amount: number): void {
+  state.shipCredits += amount;
+}
+
+export function spendShipCredits(amount: number): boolean {
+  if (state.shipCredits < amount) return false;
+  state.shipCredits -= amount;
+  return true;
+}
+
+export function getShipUpgradeLevel(roomId: string): number {
+  return state.shipUpgrades[roomId] ?? 0;
+}
+
+export function setShipUpgradeLevel(roomId: string, level: number): void {
+  state.shipUpgrades[roomId] = level;
+}
+
+export function getShipOrdnance(): string[] {
+  return state.shipOrdnance;
+}
+
+export function setShipOrdnance(cardIds: string[]): void {
+  state.shipOrdnance = cardIds;
 }

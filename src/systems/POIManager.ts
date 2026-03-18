@@ -1,6 +1,7 @@
 import { EventBus } from '../EventBus';
 import { POIDefinition } from '../missions/MissionDefinition';
 import { EntityManager } from './EntityManager';
+import { HealthComponent } from '../components/HealthComponent';
 import { POI_PICKUP_RADIUS } from '../config';
 
 interface ActivePOI {
@@ -34,22 +35,66 @@ export class POIManager {
         const dy = Math.abs(unit.tileY - poi.definition.tileY);
         if (dx + dy <= POI_PICKUP_RADIUS) {
           poi.collected = true;
-          const reward = poi.definition.reward;
-          if (reward.gold) {
-            EventBus.emit('gold-changed', { amount: reward.gold, total: -1 }); // total resolved by listener
-          }
-          if (reward.cardDraws) {
-            EventBus.emit('bonus-draws', { count: reward.cardDraws });
-          }
+          this.applyReward(poi.definition);
           EventBus.emit('poi-collected', {
             id: poi.definition.id,
             type: poi.definition.type,
             tileX: poi.definition.tileX,
             tileY: poi.definition.tileY,
-            reward,
+            reward: poi.definition.reward,
           });
           break;
         }
+      }
+    }
+  }
+
+  private applyReward(def: POIDefinition): void {
+    const reward = def.reward;
+    const tx = def.tileX;
+    const ty = def.tileY;
+
+    switch (def.type) {
+      case 'gold_cache': {
+        const gold = reward.gold ?? 10;
+        EventBus.emit('gold-changed', { amount: gold, total: -1 });
+        EventBus.emit('floating-text-3d', { tileX: tx, tileY: ty, text: `+${gold} GOLD`, color: '#c8982a' });
+        break;
+      }
+      case 'ammo_dump': {
+        const draws = reward.cardDraws ?? 1;
+        EventBus.emit('bonus-draws', { count: draws });
+        EventBus.emit('floating-text-3d', { tileX: tx, tileY: ty, text: `+${draws} CARD${draws > 1 ? 'S' : ''}`, color: '#50b0b0' });
+        break;
+      }
+      case 'med_station': {
+        const healAmount = reward.healAmount ?? 15;
+        const healRadius = reward.healRadius ?? 5;
+        let healed = 0;
+        for (const unit of this.entityManager.getUnits('player')) {
+          if (!unit.active) continue;
+          const dist = Math.abs(unit.tileX - tx) + Math.abs(unit.tileY - ty);
+          if (dist <= healRadius) {
+            const health = unit.getComponent<HealthComponent>('health');
+            if (health && health.currentHp < health.maxHp) {
+              health.heal(healAmount);
+              healed++;
+            }
+          }
+        }
+        EventBus.emit('floating-text-3d', { tileX: tx, tileY: ty, text: `AREA HEALED (${healed})`, color: '#60aa60' });
+        break;
+      }
+      case 'intel': {
+        const radius = reward.fogRevealRadius ?? 20;
+        EventBus.emit('fog-reveal', { tileX: tx, tileY: ty, radius });
+        EventBus.emit('floating-text-3d', { tileX: tx, tileY: ty, text: 'FOG REVEALED', color: '#6090cc' });
+        break;
+      }
+      case 'relic': {
+        EventBus.emit('bonus-draws', { count: 1, typeFilter: 'equipment' });
+        EventBus.emit('floating-text-3d', { tileX: tx, tileY: ty, text: 'RELIC FOUND', color: '#a070cc' });
+        break;
       }
     }
   }

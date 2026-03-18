@@ -10,11 +10,10 @@ const TYPE_THEME: Record<CardType, { bg: string; border: string; label: string; 
   unit:      { bg: 'rgba(60,80,120,0.2)',  border: 'rgba(80,120,180,0.35)', label: '#6090cc', icon: 'UNIT' },
   building:  { bg: 'rgba(60,100,60,0.2)',  border: 'rgba(80,150,80,0.35)',  label: '#60aa60', icon: 'BLDG' },
   ordnance:  { bg: 'rgba(100,60,120,0.2)', border: 'rgba(140,80,180,0.35)', label: '#a070cc', icon: 'ORD' },
-  doctrine:  { bg: 'rgba(120,100,50,0.2)', border: 'rgba(180,150,60,0.35)', label: '#c8a844', icon: 'DOC' },
   equipment: { bg: 'rgba(50,100,100,0.2)', border: 'rgba(70,150,150,0.35)', label: '#50b0b0', icon: 'GEAR' },
 };
 
-const TYPE_ORDER: CardType[] = ['unit', 'building', 'equipment', 'ordnance', 'doctrine'];
+const TYPE_ORDER: CardType[] = ['unit', 'building', 'equipment'];
 
 // Inject fonts (shared with MissionSelectScene)
 let fontsReady = false;
@@ -351,9 +350,10 @@ export class DeckEditScene implements GameSceneInterface {
     const allIds = Object.keys(state.collection)
       .filter(id => state.collection[id] > 0)
       .filter(id => {
-        if (this.filterType === 'all') return true;
         const card = CARD_DATABASE[id];
-        return card?.type === this.filterType;
+        if (!card || card.type === 'ordnance') return false; // ordnance goes in ship slots, not decks
+        if (this.filterType === 'all') return true;
+        return card.type === this.filterType;
       })
       .sort((a, b) => {
         const ca = CARD_DATABASE[a], cb = CARD_DATABASE[b];

@@ -38,9 +38,6 @@ export const EDGE_SCROLL_SPEED = 6;
 // Discard system
 export const DISCARDS_PER_OBJECTIVE = 2;
 
-// Doctrine system
-export const MAX_ACTIVE_DOCTRINES = 3;
-
 // Audio
 export const DEFAULT_VOLUME = 0.3;
 
@@ -79,3 +76,25 @@ export const SURVIVE_WAVE_INTERVAL_MS = 15000;
 export const SURVIVE_WAVE_SIZE_BASE = 4;
 export const ACTIVATE_CHANNEL_AGGRO_RADIUS = 12;
 export const POI_PICKUP_RADIUS = 2;
+
+// Pack system
+export const PACK_PICKUP_RADIUS = 2;
+export const PACK_BURN_GOLD_MULTIPLIER = 2;
+export const SALVAGE_CREDIT_BASE = 5;
+export const SALVAGE_DUPLICATE_BONUS = 3;
+export const CARDS_PER_PACK = 3;
+
+// Ship ordnance
+export const SHIP_ORDNANCE_BASE_SLOTS = 2;
+export const SHIP_ORDNANCE_BASE_CHARGES = 2;
+
+// Procedural PoI / Pack generation
+export const POI_BASE_COUNT = 4;
+export const POI_PER_DIFFICULTY = 2;
+export const POI_MIN_SPACING = 8;
+export const POI_MIN_DIST_FROM_START = 6;
+export const POI_MIN_DIST_FROM_CAMP = 4;
+export const POI_MIN_DIST_FROM_MINE = 4;
+export const PACK_BASE_COUNT = 2;
+export const PACK_PER_DIFFICULTY = 1;
+export const PACK_MIN_DIST_FROM_START = 12;

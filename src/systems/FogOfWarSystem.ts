@@ -48,7 +48,14 @@ export class FogOfWarSystem {
         this.prevFogGrid[y][x] = FogState.HIDDEN;
       }
     }
+
+    EventBus.on('fog-reveal', this.onFogReveal, this);
   }
+
+  private onFogReveal = (data: { tileX: number; tileY: number; radius: number }): void => {
+    this.revealAround(data.tileX, data.tileY, data.radius);
+    EventBus.emit('fog-updated', this.fogGrid);
+  };
 
   private getSightRadius(entity: Entity): number {
     if (entity instanceof Building) {
@@ -150,6 +157,7 @@ export class FogOfWarSystem {
   }
 
   destroy(): void {
+    EventBus.off('fog-reveal', this.onFogReveal, this);
     this.fogGrid = [];
     this.prevFogGrid = [];
     this.hiddenEnemies.clear();

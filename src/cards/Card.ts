@@ -1,6 +1,6 @@
-export type CardType = 'unit' | 'building' | 'ordnance' | 'doctrine' | 'equipment';
+export type CardType = 'unit' | 'building' | 'ordnance' | 'equipment';
 
-/** @deprecated Use 'doctrine' instead. Kept for backwards compat with saved data. */
+/** @deprecated Kept for backwards compat with saved data. */
 export type LegacyCardType = 'joker';
 
 export interface WargearStatBoost {
@@ -45,10 +45,6 @@ export interface Card {
   ordnanceEffect?: string;
   ordnanceRadius?: number;
   ordnanceValue?: number;
-  // For doctrines (formerly jokers)
-  doctrineEffect?: string;
-  doctrineFilter?: string;
-  doctrineValue?: number;
   // For buildings
   tileWidth?: number;
   tileHeight?: number;

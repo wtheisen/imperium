@@ -32,6 +32,8 @@ export class VFXRenderer {
   // Persistent markers
   private objectiveMarkers = new Map<string, THREE.Group>();
   private supplyPodMeshes = new Map<string, THREE.Group>();
+  private packMarkers = new Map<string, THREE.Group>();
+  private poiMarkers = new Map<string, THREE.Group>();
 
   // Gold mine models
   private goldMines = new Map<string, { group: THREE.Group; barFill: THREE.Mesh; barBg: THREE.Mesh; label: THREE.Mesh; labelCanvas: HTMLCanvasElement; labelTexture: THREE.CanvasTexture; remaining: number; maxGold: number }>();
@@ -52,6 +54,12 @@ export class VFXRenderer {
   private ghostMesh: THREE.Object3D | null = null;
   private ghostMeshType: string = '';
   private ghostFactory: import('./EntityMeshFactory').EntityMeshFactory | null = null;
+
+  // Ordnance reticule & AOE ring
+  private ordnanceReticule: THREE.Group | null = null;
+  private ordnanceAoeRing: THREE.Mesh | null = null;
+  private ordnanceAoeRingMat: THREE.MeshBasicMaterial | null = null;
+  private ordnanceReticuleMat: THREE.MeshBasicMaterial | null = null;
 
   // Projected card label on ground during drag
   private cardLabel: THREE.Mesh | null = null;
@@ -97,6 +105,10 @@ export class VFXRenderer {
     EventBus.on('mine-tooltip-3d', this.onMineTooltip, this);
     EventBus.on('gold-mine-3d', this.onGoldMine, this);
     EventBus.on('gold-mine-update-3d', this.onGoldMineUpdate, this);
+    EventBus.on('pack-marker-3d', this.onPackMarker, this);
+    EventBus.on('pack-opened-3d', this.onPackOpened, this);
+    EventBus.on('poi-marker-3d', this.onPOIMarker, this);
+    EventBus.on('poi-collected', this.onPOICollected, this);
   }
 
   // ── Tile Hover Ring ────────────────────────────────────────
@@ -189,6 +201,9 @@ export class VFXRenderer {
     this.placementRing.visible = false;
     this.scene.add(this.placementRing);
 
+    // Ordnance reticule (crosshair + AOE ring)
+    this.createOrdnanceReticule();
+
     // Ghost mesh factory
     this.ghostFactory = new EntityMeshFactory();
 
@@ -238,6 +253,86 @@ export class VFXRenderer {
     ctx.fillText(displayName, 64, 24);
 
     this.cardLabelTexture.needsUpdate = true;
+  }
+
+  private createOrdnanceReticule(): void {
+    const group = new THREE.Group();
+
+    // Outer crosshair ring (thin circle)
+    const crosshairMat = new THREE.MeshBasicMaterial({
+      color: 0x8844cc,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide,
+    });
+    this.ordnanceReticuleMat = crosshairMat;
+
+    const outerRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.35, 0.42, 32, 1).rotateX(-Math.PI / 2),
+      crosshairMat,
+    );
+    group.add(outerRing);
+
+    // Inner dot
+    const dotGeo = new THREE.CircleGeometry(0.08, 16).rotateX(-Math.PI / 2);
+    const dot = new THREE.Mesh(dotGeo, crosshairMat);
+    group.add(dot);
+
+    // Crosshair lines (4 lines extending from ring)
+    const lineMat = crosshairMat;
+    const lineLen = 0.2;
+    const lineWidth = 0.03;
+    const offsets = [
+      { x: 0.5, z: 0, rx: 0 },   // right
+      { x: -0.5, z: 0, rx: 0 },  // left
+      { x: 0, z: 0.5, rx: 0 },   // down
+      { x: 0, z: -0.5, rx: 0 },  // up
+    ];
+    for (const o of offsets) {
+      const geo = new THREE.PlaneGeometry(
+        o.z === 0 ? lineLen : lineWidth,
+        o.z === 0 ? lineWidth : lineLen,
+      ).rotateX(-Math.PI / 2);
+      const line = new THREE.Mesh(geo, lineMat);
+      line.position.set(o.x, 0, o.z);
+      group.add(line);
+    }
+
+    group.position.y = 0.13;
+    group.visible = false;
+    this.scene.add(group);
+    this.ordnanceReticule = group;
+
+    // AOE radius ring (separate, scales dynamically)
+    this.ordnanceAoeRingMat = new THREE.MeshBasicMaterial({
+      color: 0x8844cc,
+      transparent: true,
+      opacity: 0.25,
+      side: THREE.DoubleSide,
+    });
+    const aoeGeo = new THREE.RingGeometry(0.95, 1.0, 48, 1).rotateX(-Math.PI / 2);
+    this.ordnanceAoeRing = new THREE.Mesh(aoeGeo, this.ordnanceAoeRingMat);
+    this.ordnanceAoeRing.position.y = 0.12;
+    this.ordnanceAoeRing.visible = false;
+    this.scene.add(this.ordnanceAoeRing);
+  }
+
+  private showOrdnanceReticule(tileX: number, tileY: number, radius: number): void {
+    if (this.ordnanceReticule) {
+      this.ordnanceReticule.position.set(tileX, 0.13, tileY);
+      this.ordnanceReticule.visible = true;
+    }
+    if (this.ordnanceAoeRing) {
+      this.ordnanceAoeRing.position.set(tileX, 0.12, tileY);
+      this.ordnanceAoeRing.scale.setScalar(radius);
+      this.ordnanceAoeRing.visible = true;
+      if (this.ordnanceAoeRingMat) this.ordnanceAoeRingMat.opacity = 0.25;
+    }
+  }
+
+  private hideOrdnanceReticule(): void {
+    if (this.ordnanceReticule) this.ordnanceReticule.visible = false;
+    if (this.ordnanceAoeRing) this.ordnanceAoeRing.visible = false;
   }
 
   private ghostSquadSize: number = 1;
@@ -327,27 +422,37 @@ export class VFXRenderer {
   private onPlacementPreview = (data: {
     tileX: number; tileY: number; valid: boolean; visible: boolean;
     cardType?: string; entityType?: string; cardName?: string; squadSize?: number;
+    ordnanceRadius?: number;
   }): void => {
     if (!this.placementRing || !this.placementRingMat) return;
 
     if (!data.visible) {
       this.placementRing.visible = false;
       this.hideGhostMesh();
+      this.hideOrdnanceReticule();
       return;
     }
 
-    // Placement ring
-    this.placementRing.position.set(data.tileX, 0.12, data.tileY);
-    this.placementRingMat.color.set(data.valid ? 0x44ff44 : 0xff4444);
-    this.placementRing.visible = true;
-
-    // Ghost entity mesh for units/buildings
-    if (data.entityType && (data.cardType === 'unit' || data.cardType === 'building')) {
-      const prefix = data.cardType === 'unit' ? 'unit' : 'building';
-      const meshType = `${prefix}-${data.entityType}`;
-      this.setGhostMesh(meshType, data.tileX, data.tileY, data.valid, data.squadSize || 1);
-    } else {
+    // Ordnance: show reticule + AOE ring instead of placement square
+    if (data.cardType === 'ordnance') {
+      this.placementRing.visible = false;
       this.hideGhostMesh();
+      this.showOrdnanceReticule(data.tileX, data.tileY, data.ordnanceRadius || 3);
+    } else {
+      this.hideOrdnanceReticule();
+      // Normal placement ring
+      this.placementRing.position.set(data.tileX, 0.12, data.tileY);
+      this.placementRingMat.color.set(data.valid ? 0x44ff44 : 0xff4444);
+      this.placementRing.visible = true;
+
+      // Ghost entity mesh for units/buildings
+      if (data.entityType && (data.cardType === 'unit' || data.cardType === 'building')) {
+        const prefix = data.cardType === 'unit' ? 'unit' : 'building';
+        const meshType = `${prefix}-${data.entityType}`;
+        this.setGhostMesh(meshType, data.tileX, data.tileY, data.valid, data.squadSize || 1);
+      } else {
+        this.hideGhostMesh();
+      }
     }
 
     // Card name label floating above the preview
@@ -623,7 +728,6 @@ export class VFXRenderer {
       unit: 0xffffff,
       building: 0xffffff,
       ordnance: 0x8844cc,
-      doctrine: 0xffaa00,
       equipment: 0x44dddd,
     };
     const color = colorMap[data.cardType] || 0xffffff;
@@ -869,6 +973,137 @@ export class VFXRenderer {
     this.supplyPodMeshes.delete(data.id);
   };
 
+  // ── Pack Markers ──────────────────────────────────────────────
+
+  private onPackMarker = (data: { id: string; type: string; tileX: number; tileY: number }): void => {
+    const group = new THREE.Group();
+
+    // Color based on pack type
+    const colorMap: Record<string, number> = {
+      random: 0xc8982a,   // gold
+      wargear: 0x50b0b0,  // teal
+      ordnance: 0xa070cc, // purple
+      unit: 0x6090cc,     // blue
+      building: 0x60aa60, // green
+    };
+    const color = colorMap[data.type] || 0xc8982a;
+
+    // Crate body
+    const bodyGeo = new THREE.BoxGeometry(0.35, 0.25, 0.35);
+    const bodyMat = new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.4 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.125;
+    group.add(body);
+
+    // Glow beacon
+    const beaconGeo = new THREE.SphereGeometry(0.15, 8, 6);
+    const beaconMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 });
+    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+    beacon.position.y = 0.5;
+    beacon.userData.pulse = true;
+    group.add(beacon);
+
+    group.position.set(data.tileX, 0, data.tileY);
+    this.scene.add(group);
+    this.packMarkers.set(data.id, group);
+  };
+
+  private onPackOpened = (data: { id: string }): void => {
+    const group = this.packMarkers.get(data.id);
+    if (!group) return;
+
+    // Burst particles
+    const pos = group.position;
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
+      const p = new THREE.Mesh(this.boxGeo, mat);
+      p.position.copy(pos).add(new THREE.Vector3(0, 0.3, 0));
+      this.scene.add(p);
+      this.particles.push({
+        mesh: p,
+        velocity: new THREE.Vector3(Math.cos(angle) * 2, 2 + Math.random() * 2, Math.sin(angle) * 2),
+        lifetime: 600,
+        elapsed: 0,
+        fadeOut: true,
+        scaleSpeed: -0.3,
+      });
+    }
+
+    this.scene.remove(group);
+    this.packMarkers.delete(data.id);
+  };
+
+  // ── PoI Markers ──────────────────────────────────────────────
+
+  private static readonly POI_COLORS: Record<string, number> = {
+    gold_cache:  0xc8982a,
+    ammo_dump:   0x50b0b0,
+    med_station: 0x60aa60,
+    intel:       0x6090cc,
+    relic:       0xa070cc,
+  };
+
+  private onPOIMarker = (data: { id: string; type: string; tileX: number; tileY: number }): void => {
+    const group = new THREE.Group();
+    const color = VFXRenderer.POI_COLORS[data.type] ?? 0xc8982a;
+
+    // Pillar base
+    const pillarGeo = new THREE.CylinderGeometry(0.06, 0.1, 0.6, 6);
+    const pillarMat = new THREE.MeshStandardMaterial({ color, metalness: 0.6, roughness: 0.3 });
+    const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+    pillar.position.y = 0.3;
+    group.add(pillar);
+
+    // Floating icon sphere
+    const iconGeo = new THREE.SphereGeometry(0.12, 8, 6);
+    const iconMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 });
+    const icon = new THREE.Mesh(iconGeo, iconMat);
+    icon.position.y = 0.8;
+    icon.userData.pulse = true;
+    icon.userData.float = true;
+    group.add(icon);
+
+    // Ground glow ring
+    const ringGeo = new THREE.RingGeometry(0.2, 0.35, 12);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.y = 0.02;
+    ring.userData.pulse = true;
+    group.add(ring);
+
+    group.position.set(data.tileX, 0, data.tileY);
+    this.scene.add(group);
+    this.poiMarkers.set(data.id, group);
+  };
+
+  private onPOICollected = (data: { id: string; tileX: number; tileY: number }): void => {
+    const group = this.poiMarkers.get(data.id);
+    if (!group) return;
+
+    // Burst particles
+    const pos = group.position;
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
+      const p = new THREE.Mesh(this.boxGeo, mat);
+      p.position.copy(pos).add(new THREE.Vector3(0, 0.4, 0));
+      this.scene.add(p);
+      this.particles.push({
+        mesh: p,
+        velocity: new THREE.Vector3(Math.cos(angle) * 2, 2.5 + Math.random() * 2, Math.sin(angle) * 2),
+        lifetime: 700,
+        elapsed: 0,
+        fadeOut: true,
+        scaleSpeed: -0.3,
+      });
+    }
+
+    this.scene.remove(group);
+    this.poiMarkers.delete(data.id);
+  };
+
   // ── HP Bars (Gap 7) ──────────────────────────────────────────
 
   /** Sync HP bars for all entities. Called each frame from update(). */
@@ -1088,6 +1323,35 @@ export class VFXRenderer {
         }
       });
     }
+
+    // Pulse pack marker beacons
+    for (const group of this.packMarkers.values()) {
+      group.traverse((child) => {
+        if (child.userData.pulse && child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
+          child.material.opacity = 0.2 + 0.2 * Math.sin(Date.now() / 500);
+        }
+      });
+    }
+
+    // Pulse and float PoI marker beacons
+    const poiTime = Date.now();
+    for (const group of this.poiMarkers.values()) {
+      group.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
+          if (child.userData.pulse) {
+            child.material.opacity = 0.15 + 0.25 * Math.sin(poiTime / 400);
+          }
+          if (child.userData.float) {
+            child.position.y = 0.8 + 0.08 * Math.sin(poiTime / 600);
+          }
+        }
+      });
+    }
+
+    // Rotate ordnance reticule slowly
+    if (this.ordnanceReticule && this.ordnanceReticule.visible) {
+      this.ordnanceReticule.rotation.y += 0.8 * dt;
+    }
   }
 
   dispose(): void {
@@ -1106,6 +1370,10 @@ export class VFXRenderer {
     EventBus.off('mine-tooltip-3d', this.onMineTooltip, this);
     EventBus.off('gold-mine-3d', this.onGoldMine, this);
     EventBus.off('gold-mine-update-3d', this.onGoldMineUpdate, this);
+    EventBus.off('pack-marker-3d', this.onPackMarker, this);
+    EventBus.off('pack-opened-3d', this.onPackOpened, this);
+    EventBus.off('poi-marker-3d', this.onPOIMarker, this);
+    EventBus.off('poi-collected', this.onPOICollected, this);
 
     for (const p of this.particles) {
       this.scene.remove(p.mesh);
@@ -1129,6 +1397,16 @@ export class VFXRenderer {
     }
     this.supplyPodMeshes.clear();
 
+    for (const group of this.packMarkers.values()) {
+      this.scene.remove(group);
+    }
+    this.packMarkers.clear();
+
+    for (const group of this.poiMarkers.values()) {
+      this.scene.remove(group);
+    }
+    this.poiMarkers.clear();
+
     if (this.hoverRing) {
       this.scene.remove(this.hoverRing);
       (this.hoverRing.material as THREE.Material).dispose();
@@ -1143,6 +1421,17 @@ export class VFXRenderer {
       this.scene.remove(this.placementRing);
       this.placementRing.geometry.dispose();
       (this.placementRing.material as THREE.Material).dispose();
+    }
+    if (this.ordnanceReticule) {
+      this.scene.remove(this.ordnanceReticule);
+      this.ordnanceReticule.traverse(c => {
+        if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); }
+      });
+    }
+    if (this.ordnanceAoeRing) {
+      this.scene.remove(this.ordnanceAoeRing);
+      this.ordnanceAoeRing.geometry.dispose();
+      this.ordnanceAoeRingMat?.dispose();
     }
 
     // Cleanup ghost mesh

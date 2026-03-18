@@ -8,6 +8,7 @@ import {
   MAP_WIDTH, MAP_HEIGHT, SUPPLY_DROP_GOLD, SUPPLY_DROP_CARD_DRAWS,
   EXTRACTION_ZONE_RADIUS, SURVIVE_WAVE_INTERVAL_MS, SURVIVE_WAVE_SIZE_BASE,
 } from '../config';
+import { getSupplyDropInterval } from '../ship/ShipState';
 
 export type MissionState = 'DEPLOY' | 'ACTIVE' | 'EXTRACTION' | 'VICTORY' | 'DEFEAT';
 
@@ -342,8 +343,9 @@ export class MissionSystem {
     if (this.state !== 'ACTIVE') return;
 
     // Supply drop timer
+    const supplyInterval = this.mission.supplyDropIntervalMs * getSupplyDropInterval();
     this.supplyTimer += delta;
-    if (this.supplyTimer >= this.mission.supplyDropIntervalMs) {
+    if (this.supplyTimer >= supplyInterval) {
       this.supplyTimer = 0;
 
       const baseX = this.mission.playerStartX;
@@ -390,7 +392,7 @@ export class MissionSystem {
       objectives: this.objectiveStatuses.map(mapStatus),
       optionalObjectives: this.optionalObjectiveStatuses.map(mapStatus),
       supplyTimer: this.supplyTimer,
-      supplyInterval: this.mission.supplyDropIntervalMs,
+      supplyInterval: this.mission.supplyDropIntervalMs * getSupplyDropInterval(),
       extractionTimer: this.extractionTimer,
       extractionTimerMax: this.extractionTimerMax,
       isExtracting: this.state === 'EXTRACTION',

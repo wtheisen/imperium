@@ -1,6 +1,12 @@
-import { MAP_WIDTH, MAP_HEIGHT, NEAR_MINE_GOLD, DEFAULT_MINE_GOLD, FAR_MINE_GOLD } from '../config';
+import {
+  MAP_WIDTH, MAP_HEIGHT, NEAR_MINE_GOLD, DEFAULT_MINE_GOLD, FAR_MINE_GOLD,
+  POI_BASE_COUNT, POI_PER_DIFFICULTY, POI_MIN_SPACING, POI_MIN_DIST_FROM_START,
+  POI_MIN_DIST_FROM_CAMP, POI_MIN_DIST_FROM_MINE,
+  PACK_BASE_COUNT, PACK_PER_DIFFICULTY, PACK_MIN_DIST_FROM_START,
+} from '../config';
 import { IsoHelper } from './IsoHelper';
-import { MissionDefinition, TerrainParams } from '../missions/MissionDefinition';
+import { MissionDefinition, TerrainParams, POIDefinition, POIType } from '../missions/MissionDefinition';
+import { PackDefinition, PackType } from '../packs/PackTypes';
 import { EventBus } from '../EventBus';
 import { generateSpaceHulk } from './SpaceHulkGenerator';
 
@@ -67,6 +73,8 @@ export class MapManager {
   private terrain: TerrainType[][];
   private mineData: Map<string, MineData> = new Map();
   private floorType: TerrainType = TerrainType.GRASS;
+  private generatedPOIs: POIDefinition[] = [];
+  private generatedPacks: PackDefinition[] = [];
 
   constructor() {
     this.terrain = [];
@@ -168,6 +176,18 @@ export class MapManager {
 
     // Ensure connectivity from player start to all camps, objectives, and mines
     this.ensureConnectivity(mission);
+
+    // Compute reachability from player start for procedural placement
+    const reachable = this.floodFillReachable(mission.playerStartX, mission.playerStartY);
+
+    // Procedural PoIs and Packs
+    const poiSeed = (mission.terrain?.seed ?? Math.floor(Math.random() * 2147483646) + 1) + 7777;
+    const poiRng = createRng(poiSeed);
+    this.generatedPOIs = this.placeProceduralPOIs(mission, poiRng, reachable);
+
+    const packSeed = poiSeed + 3333;
+    const packRng = createRng(packSeed);
+    this.generatedPacks = this.placeProceduralPacks(mission, packRng, reachable);
   }
 
   private generateTerrain(
@@ -426,6 +446,11 @@ export class MapManager {
     for (const obj of mission.objectives) {
       targets.push({ x: obj.tileX, y: obj.tileY });
     }
+    if (mission.optionalObjectives) {
+      for (const obj of mission.optionalObjectives) {
+        targets.push({ x: obj.tileX, y: obj.tileY });
+      }
+    }
     for (const [key] of this.mineData) {
       const [mx, my] = key.split(',').map(Number);
       targets.push({ x: mx, y: my });
@@ -512,5 +537,169 @@ export class MapManager {
       mines.push({ tileX: x, tileY: y, remaining: data.remaining, maxGold: data.maxGold });
     }
     return mines;
+  }
+
+  getGeneratedPOIs(): POIDefinition[] { return this.generatedPOIs; }
+  getGeneratedPacks(): PackDefinition[] { return this.generatedPacks; }
+
+  /** Flood-fill reachable walkable tiles from a starting position */
+  private floodFillReachable(startX: number, startY: number): boolean[][] {
+    const reachable: boolean[][] = [];
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      reachable[y] = new Array(MAP_WIDTH).fill(false);
+    }
+    const queue: { x: number; y: number }[] = [{ x: startX, y: startY }];
+    reachable[startY][startX] = true;
+    while (queue.length > 0) {
+      const { x, y } = queue.shift()!;
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT && !reachable[ny][nx]) {
+          if (this.isWalkable(nx, ny)) {
+            reachable[ny][nx] = true;
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+    }
+    return reachable;
+  }
+
+  private placeProceduralPOIs(mission: MissionDefinition, rng: () => number, reachable: boolean[][]): POIDefinition[] {
+    const count = POI_BASE_COUNT + mission.difficulty * POI_PER_DIFFICULTY;
+    const placed: POIDefinition[] = [];
+    const mines = this.getAllMines();
+
+    // Weighted type distribution
+    const typeWeights: { type: POIType; weight: number; reward: () => POIDefinition['reward'] }[] = [
+      { type: 'gold_cache',  weight: 0.30, reward: () => ({ gold: 8 + Math.floor(rng() * 8) }) },
+      { type: 'ammo_dump',   weight: 0.25, reward: () => ({ cardDraws: 1 + (rng() < 0.3 ? 1 : 0) }) },
+      { type: 'med_station', weight: 0.15, reward: () => ({ healAmount: 15, healRadius: 5 }) },
+      { type: 'intel',       weight: 0.15, reward: () => ({ fogRevealRadius: 20 }) },
+      { type: 'relic',       weight: 0.15, reward: () => ({}) },
+    ];
+
+    const pickType = (): typeof typeWeights[0] => {
+      const r = rng();
+      let cumulative = 0;
+      for (const tw of typeWeights) {
+        cumulative += tw.weight;
+        if (r < cumulative) return tw;
+      }
+      return typeWeights[0];
+    };
+
+    let attempts = 0;
+    while (placed.length < count && attempts < 500) {
+      attempts++;
+      const tx = Math.floor(rng() * (MAP_WIDTH - 4)) + 2;
+      const ty = Math.floor(rng() * (MAP_HEIGHT - 4)) + 2;
+
+      if (!this.isWalkable(tx, ty)) continue;
+      if (!reachable[ty][tx]) continue;
+
+      // Min distance from player start
+      const distStart = Math.abs(tx - mission.playerStartX) + Math.abs(ty - mission.playerStartY);
+      if (distStart < POI_MIN_DIST_FROM_START) continue;
+
+      // Min distance from enemy camps
+      if (mission.enemyCamps.some(c => Math.abs(tx - c.tileX) + Math.abs(ty - c.tileY) < POI_MIN_DIST_FROM_CAMP)) continue;
+
+      // Min distance from other PoIs
+      if (placed.some(p => Math.abs(tx - p.tileX) + Math.abs(ty - p.tileY) < POI_MIN_SPACING)) continue;
+
+      // Min distance from gold mines
+      if (mines.some(m => Math.abs(tx - m.tileX) + Math.abs(ty - m.tileY) < POI_MIN_DIST_FROM_MINE)) continue;
+
+      const tw = pickType();
+      placed.push({
+        id: `poi_gen_${placed.length}`,
+        type: tw.type,
+        tileX: tx,
+        tileY: ty,
+        reward: tw.reward(),
+      });
+    }
+
+    return placed;
+  }
+
+  private placeProceduralPacks(mission: MissionDefinition, rng: () => number, reachable: boolean[][]): PackDefinition[] {
+    const count = PACK_BASE_COUNT + mission.difficulty * PACK_PER_DIFFICULTY;
+    const placed: PackDefinition[] = [];
+    const mines = this.getAllMines();
+
+    const packTypes: { type: PackType; weight: number }[] = [
+      { type: 'random',   weight: 0.40 },
+      { type: 'wargear',  weight: 0.25 },
+      { type: 'ordnance', weight: 0.15 },
+      { type: 'unit',     weight: 0.10 },
+      { type: 'building', weight: 0.10 },
+    ];
+
+    const pickType = (): PackType => {
+      const r = rng();
+      let cumulative = 0;
+      for (const pt of packTypes) {
+        cumulative += pt.weight;
+        if (r < cumulative) return pt.type;
+      }
+      return 'random';
+    };
+
+    // Place at least 1 pack near an enemy camp (within 6 tiles)
+    if (mission.enemyCamps.length > 0) {
+      let campAttempts = 0;
+      while (campAttempts < 100) {
+        campAttempts++;
+        const camp = mission.enemyCamps[Math.floor(rng() * mission.enemyCamps.length)];
+        const dx = Math.floor(rng() * 12) - 6;
+        const dy = Math.floor(rng() * 12) - 6;
+        const tx = camp.tileX + dx;
+        const ty = camp.tileY + dy;
+        if (tx < 2 || tx >= MAP_WIDTH - 2 || ty < 2 || ty >= MAP_HEIGHT - 2) continue;
+        if (!this.isWalkable(tx, ty)) continue;
+        if (!reachable[ty][tx]) continue;
+        const distCamp = Math.abs(tx - camp.tileX) + Math.abs(ty - camp.tileY);
+        if (distCamp > 6) continue;
+        if (mines.some(m => Math.abs(tx - m.tileX) + Math.abs(ty - m.tileY) < 3)) continue;
+
+        placed.push({ id: `pack_gen_0`, type: pickType(), tileX: tx, tileY: ty });
+        break;
+      }
+    }
+
+    // Place remaining packs spread across the map
+    let attempts = 0;
+    while (placed.length < count && attempts < 500) {
+      attempts++;
+      const tx = Math.floor(rng() * (MAP_WIDTH - 4)) + 2;
+      const ty = Math.floor(rng() * (MAP_HEIGHT - 4)) + 2;
+
+      if (!this.isWalkable(tx, ty)) continue;
+      if (!reachable[ty][tx]) continue;
+
+      // Min distance from player start
+      const distStart = Math.abs(tx - mission.playerStartX) + Math.abs(ty - mission.playerStartY);
+      if (distStart < PACK_MIN_DIST_FROM_START) continue;
+
+      // Min distance from other packs
+      if (placed.some(p => Math.abs(tx - p.tileX) + Math.abs(ty - p.tileY) < 8)) continue;
+
+      // Min distance from PoIs
+      if (this.generatedPOIs.some(p => Math.abs(tx - p.tileX) + Math.abs(ty - p.tileY) < 5)) continue;
+
+      // Min distance from gold mines
+      if (mines.some(m => Math.abs(tx - m.tileX) + Math.abs(ty - m.tileY) < 3)) continue;
+
+      placed.push({
+        id: `pack_gen_${placed.length}`,
+        type: pickType(),
+        tileX: tx,
+        tileY: ty,
+      });
+    }
+
+    return placed;
   }
 }

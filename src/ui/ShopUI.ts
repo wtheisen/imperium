@@ -122,7 +122,6 @@ const TYPE_COLORS: Record<string, string> = {
   unit: '#5b9bd5',
   building: '#8bc34a',
   ordnance: '#ce93d8',
-  doctrine: '#c8a84e',
   equipment: '#e57c3a',
 };
 

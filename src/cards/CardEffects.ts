@@ -1,7 +1,6 @@
 import { Card } from './Card';
 import { EntityManager } from '../systems/EntityManager';
 import { EconomySystem } from '../systems/EconomySystem';
-import { DoctrineManager } from './DoctrineManager';
 import { HealthComponent } from '../components/HealthComponent';
 import { CombatComponent } from '../components/CombatComponent';
 import { MoverComponent } from '../components/MoverComponent';
@@ -15,6 +14,7 @@ import { EventBus } from '../EventBus';
 import { TimerManager } from '../utils/TimerManager';
 import { getActiveModifiers } from '../state/PlayerState';
 import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getSpawnInvulnMs, getBuildingHpBonus } from '../ship/ShipState';
 
 /** Per-model stats. Total HP/damage = per-model × squadSize. */
 const UNIT_STATS: Record<string, UnitStats> = {
@@ -40,21 +40,14 @@ const BUILDING_STATS: Record<string, BuildingStats> = {
 export class CardEffects {
   private entityManager: EntityManager;
   private economy: EconomySystem;
-  private doctrineManager: DoctrineManager;
 
-  constructor(entityManager: EntityManager, economy: EconomySystem, doctrineManager: DoctrineManager) {
+  constructor(entityManager: EntityManager, economy: EconomySystem) {
     this.entityManager = entityManager;
     this.economy = economy;
-    this.doctrineManager = doctrineManager;
   }
 
   execute(card: Card, tileX: number, tileY: number): boolean {
-    let vanguardFree = false;
-    if (card.type === 'unit' && this.doctrineManager.isVanguardActive()) {
-      vanguardFree = true;
-    }
-
-    if (!vanguardFree && !this.economy.canAfford(card.cost)) return false;
+    if (!this.economy.canAfford(card.cost)) return false;
 
     let success = false;
 
@@ -68,20 +61,13 @@ export class CardEffects {
       case 'ordnance':
         success = this.castOrdnance(card, tileX, tileY);
         break;
-      case 'doctrine':
-        success = this.activateDoctrine(card);
-        break;
       case 'equipment':
         success = this.equipUnit(card, tileX, tileY);
         break;
     }
 
     if (success) {
-      if (vanguardFree) {
-        this.doctrineManager.consumeVanguard();
-      } else {
-        this.economy.spend(card.cost);
-      }
+      this.economy.spend(card.cost);
     }
 
     return success;
@@ -109,20 +95,16 @@ export class CardEffects {
       'player'
     );
 
-    this.doctrineManager.applyModifiers(unit);
     applyTechTreeBonuses(unit, this.entityManager);
     unit.addComponent('levelBadge', new LevelBadgeComponent(unit));
 
-    // Drop Pod Assault — spawn invulnerability
-    const invulnMs = this.doctrineManager.getSpawnInvulnerability();
+    const invulnMs = getSpawnInvulnMs();
     if (invulnMs > 0) {
       const health = unit.getComponent<HealthComponent>('health');
       if (health) {
         health.setInvulnerable(true);
         TimerManager.get().schedule(invulnMs, () => {
-          if (unit.active) {
-            health.setInvulnerable(false);
-          }
+          if (unit.active) health.setInvulnerable(false);
         });
       }
     }
@@ -131,26 +113,27 @@ export class CardEffects {
   }
 
   private spawnBuilding(card: Card, tileX: number, tileY: number): boolean {
-    const stats = BUILDING_STATS[card.entityType || ''];
-    if (!stats) return false;
+    const baseStats = BUILDING_STATS[card.entityType || ''];
+    if (!baseStats) return false;
 
-    const hpMult = this.doctrineManager.getBuildingHpMult();
-    const modifiedStats = hpMult !== 1
-      ? { ...stats, maxHp: Math.round(stats.maxHp * hpMult) }
-      : stats;
+    const hpBonus = getBuildingHpBonus();
+    const stats = hpBonus > 0
+      ? { ...baseStats, maxHp: Math.round(baseStats.maxHp * (1 + hpBonus)) }
+      : baseStats;
 
     const building = this.entityManager.spawnBuilding(
       tileX, tileY,
       card.texture || 'building-default',
       card.entityType || 'building',
-      modifiedStats,
+      stats,
       'player'
     );
 
     return building !== null;
   }
 
-  private castOrdnance(card: Card, tileX: number, tileY: number): boolean {
+  /** Execute an ordnance card effect. Public so ship ordnance can bypass gold cost. */
+  castOrdnance(card: Card, tileX: number, tileY: number): boolean {
     switch (card.ordnanceEffect) {
       case 'narthecium':
         return this.ordnanceHeal(tileX, tileY, card.ordnanceRadius || 5, card.ordnanceValue || 20);
@@ -332,19 +315,6 @@ export class CardEffects {
       best.addComponent('equipment', equip);
     }
     return equip.equip(card);
-  }
-
-  private activateDoctrine(card: Card): boolean {
-    const result = this.doctrineManager.addDoctrine(card);
-    if (!result.added) return false;
-
-    const units = this.entityManager.getUnits('player');
-    for (const unit of units) {
-      this.doctrineManager.applyModifiers(unit);
-    }
-
-    EventBus.emit('doctrines-changed', { doctrines: this.doctrineManager.getActiveDoctrines() });
-    return true;
   }
 
   static getUnitStats(unitType: string): UnitStats | undefined {

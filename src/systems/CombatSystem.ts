@@ -26,16 +26,27 @@ export class CombatSystem {
         const nearest = this.entityManager.getNearestEnemy(entity);
         if (nearest && combat.isInRange(nearest)) {
           combat.setTarget(nearest);
-          // Stop attack-moving units when they engage
-          if (mover?.attackMoving && mover.isMoving()) {
+          // Stop moving units when they engage
+          if (mover && mover.isMoving() && (mover.attackMoving || mover.behaviorMode !== 'none')) {
             mover.stopForCombat();
           }
         } else {
           combat.setTarget(null);
-          // Resume attack-move path if target died and we have a destination
-          if (hadTarget && mover?.attackMoving && mover.attackMoveDestination && !mover.isMoving()) {
-            const dest = mover.attackMoveDestination;
-            EventBus.emit('request-path', { unit: entity, targetX: dest.x, targetY: dest.y });
+          if (hadTarget && mover && !mover.isMoving()) {
+            // Resume attack-move path
+            if (mover.attackMoving && mover.attackMoveDestination) {
+              const dest = mover.attackMoveDestination;
+              EventBus.emit('request-path', { unit: entity, targetX: dest.x, targetY: dest.y });
+            }
+            // Resume patrol — walk to next waypoint
+            else if (mover.behaviorMode === 'patrol' && mover.patrolPoints.length >= 2) {
+              const next = mover.patrolPoints[mover.patrolIndex];
+              EventBus.emit('request-path', { unit: entity, targetX: next.x, targetY: next.y });
+            }
+            // Resume explore — pick a new random destination
+            else if (mover.behaviorMode === 'explore') {
+              EventBus.emit('command-explore-resume', { unit: entity });
+            }
           }
         }
       }

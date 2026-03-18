@@ -157,6 +157,9 @@ export class MissionSelectScene implements GameSceneInterface {
           <button id="ms-supply-depot" style="padding:6px 14px;background:transparent;
             color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
             font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">SUPPLY DEPOT</button>
+          <button id="ms-ship" style="padding:6px 14px;background:transparent;
+            color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
+            font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">SHIP</button>
         </div>
       </div>
 
@@ -213,7 +216,7 @@ export class MissionSelectScene implements GameSceneInterface {
           </div>
 
           <!-- Description + Objectives -->
-          <div style="padding:24px 40px;display:flex;gap:40px;flex:1;">
+          <div style="padding:24px 40px;display:flex;gap:40px;">
             <!-- Left column: briefing -->
             <div style="flex:1;">
               <div style="font-size:10px;letter-spacing:3px;color:rgba(200,152,42,0.4);margin-bottom:10px;">
@@ -463,6 +466,9 @@ export class MissionSelectScene implements GameSceneInterface {
     this.container.querySelector('#ms-supply-depot')?.addEventListener('click', () => {
       getSceneManager().start('ShopScene');
     });
+    this.container.querySelector('#ms-ship')?.addEventListener('click', () => {
+      getSceneManager().start('ShipScene');
+    });
 
     // Skull modifier toggles
     this.container.querySelectorAll('.ms-skull-btn').forEach(el => {
@@ -476,7 +482,7 @@ export class MissionSelectScene implements GameSceneInterface {
     });
 
     // Hover effects on utility buttons
-    ['#ms-edit-decks', '#ms-tech-trees', '#ms-supply-depot'].forEach(sel => {
+    ['#ms-edit-decks', '#ms-tech-trees', '#ms-supply-depot', '#ms-ship'].forEach(sel => {
       const btn = this.container?.querySelector(sel) as HTMLElement | null;
       if (btn) {
         btn.addEventListener('mouseenter', () => { btn.style.borderColor = 'rgba(90,122,138,0.6)'; btn.style.color = '#7a9aaa'; });

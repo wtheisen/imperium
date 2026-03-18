@@ -6,6 +6,9 @@ import { Card } from '../cards/Card';
 import { Deck } from '../cards/Deck';
 import { getSelectedDeckCards } from '../state/PlayerState';
 import { getCardArtRenderer } from '../renderer/CardArtRenderer';
+import { getScannerLevel } from '../ship/ShipState';
+import { POIDefinition } from '../missions/MissionDefinition';
+import { PackDefinition } from '../packs/PackTypes';
 
 const TILE_PX = 12;
 
@@ -125,6 +128,9 @@ export class DropSiteScene implements GameSceneInterface {
   private deck: Deck | null = null;
   private mulliganCount: number = 0;
   private mulliganCardEls: HTMLElement[] = [];
+  private generatedPOIs: POIDefinition[] = [];
+  private generatedPacks: PackDefinition[] = [];
+  private scannerLevel: number = 0;
 
   create(data?: { mission?: MissionDefinition }): void {
     ensureFonts();
@@ -138,6 +144,17 @@ export class DropSiteScene implements GameSceneInterface {
 
     this.mapManager = new MapManager();
     this.mapManager.loadMissionTerrain(this.mission);
+
+    // Read procedurally generated PoIs and packs for scanner overlay
+    this.generatedPOIs = [
+      ...(this.mission.pointsOfInterest ?? []),
+      ...this.mapManager.getGeneratedPOIs(),
+    ];
+    this.generatedPacks = [
+      ...(this.mission.packSpawns ?? []),
+      ...this.mapManager.getGeneratedPacks(),
+    ];
+    this.scannerLevel = getScannerLevel();
 
     this.validZones = this.computeDropZones();
     // No selection yet — marker follows cursor until first click
@@ -234,11 +251,97 @@ export class DropSiteScene implements GameSceneInterface {
       </div>
 
       <!-- Main content -->
-      <div style="position:relative;flex:1;display:flex;align-items:center;justify-content:center;
-        padding:24px;gap:32px;overflow:auto;">
+      <div style="position:relative;flex:1;display:flex;align-items:stretch;
+        padding:16px 24px;gap:24px;overflow:auto;min-height:0;">
 
-        <!-- Left: Map -->
-        <div style="display:flex;flex-direction:column;gap:12px;animation:ds-fade-in 0.4s ease-out;">
+        <!-- Left: Mission Briefing -->
+        <div style="width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:0;
+          overflow-y:auto;animation:ds-fade-in 0.4s ease-out;">
+
+          <!-- Mission name -->
+          <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
+            color:#e8dcc0;letter-spacing:4px;line-height:1;margin-bottom:4px;">${this.mission.name.toUpperCase()}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <div style="display:flex;gap:3px;">
+              ${[1,2,3].map(d => `<div style="width:18px;height:5px;
+                background:${d <= this.mission.difficulty ? '#c43030' : 'rgba(200,191,160,0.08)'};
+                ${d <= this.mission.difficulty ? 'box-shadow:0 0 6px rgba(196,48,48,0.3);' : ''}"></div>`).join('')}
+            </div>
+            <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.3);">THREAT ${this.mission.difficulty}/3</div>
+          </div>
+
+          <!-- Briefing -->
+          <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:6px;">MISSION BRIEFING</div>
+          <div style="font-size:11px;color:rgba(200,191,160,0.5);line-height:1.6;margin-bottom:16px;">
+            ${this.mission.description}</div>
+
+          <!-- Divider -->
+          <div style="height:1px;background:linear-gradient(90deg,rgba(200,152,42,0.15),transparent);margin-bottom:14px;"></div>
+
+          <!-- Primary Objectives -->
+          <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:8px;">PRIMARY OBJECTIVES</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+            ${this.mission.objectives.map(obj => `
+              <div style="padding:8px 10px;background:rgba(200,152,42,0.03);
+                border-left:2px solid rgba(85,153,255,0.4);">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                  <div style="font-size:8px;letter-spacing:1px;color:#5599ff;
+                    background:rgba(85,153,255,0.1);padding:1px 5px;">${obj.type.toUpperCase()}</div>
+                  <div style="font-size:8px;color:rgba(200,191,160,0.3);">+${obj.goldReward} REQ</div>
+                </div>
+                <div style="font-family:'Teko',sans-serif;font-size:15px;font-weight:500;
+                  color:#c8bfa0;letter-spacing:1px;">${obj.name}</div>
+                <div style="font-size:9px;color:rgba(200,191,160,0.35);line-height:1.4;margin-top:2px;">
+                  ${obj.description}</div>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Optional Objectives -->
+          ${(this.mission.optionalObjectives && this.mission.optionalObjectives.length > 0) ? `
+            <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:8px;">BONUS OBJECTIVES</div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+              ${this.mission.optionalObjectives.map(obj => `
+                <div style="padding:8px 10px;background:rgba(200,152,42,0.02);
+                  border-left:2px solid rgba(200,152,42,0.25);">
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                    <div style="font-size:8px;letter-spacing:1px;color:#c8982a;
+                      background:rgba(200,152,42,0.08);padding:1px 5px;">${obj.type.toUpperCase()}</div>
+                    <div style="font-size:8px;color:rgba(200,191,160,0.3);">+${obj.goldReward} REQ</div>
+                  </div>
+                  <div style="font-family:'Teko',sans-serif;font-size:15px;font-weight:500;
+                    color:#c8bfa0;letter-spacing:1px;">${obj.name}</div>
+                  <div style="font-size:9px;color:rgba(200,191,160,0.35);line-height:1.4;margin-top:2px;">
+                    ${obj.description}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          <!-- Mission Stats -->
+          <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:8px;">FIELD CONDITIONS</div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;justify-content:space-between;padding:4px 8px;
+              background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,152,42,0.15);">
+              <span style="font-size:9px;color:rgba(200,191,160,0.3);">STARTING REQ</span>
+              <span style="font-family:'Teko',sans-serif;font-size:16px;color:#c8982a;font-weight:600;line-height:1;">${this.mission.startingGold}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:4px 8px;
+              background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,152,42,0.15);">
+              <span style="font-size:9px;color:rgba(200,191,160,0.3);">SUPPLY INTERVAL</span>
+              <span style="font-family:'Teko',sans-serif;font-size:16px;color:rgba(200,191,160,0.5);font-weight:500;line-height:1;">${Math.round(this.mission.supplyDropIntervalMs / 1000)}s</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:4px 8px;
+              background:rgba(200,191,160,0.02);border-left:2px solid rgba(196,48,48,0.2);">
+              <span style="font-size:9px;color:rgba(200,191,160,0.3);">ENEMY CAMPS</span>
+              <span style="font-family:'Teko',sans-serif;font-size:16px;color:#c43030;font-weight:500;line-height:1;">${this.mission.enemyCamps.length}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Map -->
+        <div style="display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
+          animation:ds-fade-in 0.4s ease-out 0.05s both;flex:1;min-width:0;">
           <!-- Map frame -->
           <div style="position:relative;border:1px solid rgba(200,152,42,0.15);
             box-shadow:0 0 20px rgba(0,0,0,0.4), inset 0 0 30px rgba(0,0,0,0.2);
@@ -270,6 +373,18 @@ export class DropSiteScene implements GameSceneInterface {
                 <div style="font-size:8px;color:rgba(200,191,160,0.25);letter-spacing:1px;">${l.label}</div>
               </div>
             `).join('')}
+            ${this.scannerLevel >= 1 ? `
+              <div style="display:flex;align-items:center;gap:4px;">
+                <div style="width:8px;height:8px;background:rgba(200,191,160,0.5);border-radius:50%;opacity:0.7;"></div>
+                <div style="font-size:8px;color:rgba(200,191,160,0.25);letter-spacing:1px;">POI</div>
+              </div>
+            ` : ''}
+            ${this.scannerLevel >= 3 ? `
+              <div style="display:flex;align-items:center;gap:4px;">
+                <div style="width:8px;height:6px;background:#c8982a;opacity:0.7;"></div>
+                <div style="font-size:8px;color:rgba(200,191,160,0.25);letter-spacing:1px;">CACHE</div>
+              </div>
+            ` : ''}
           </div>
         </div>
 
@@ -278,19 +393,19 @@ export class DropSiteScene implements GameSceneInterface {
           animation:ds-fade-in 0.5s ease-out 0.1s both;">
 
           <!-- Header -->
-          <div style="font-family:'Teko',sans-serif;font-size:36px;font-weight:700;
-            color:#e8dcc0;letter-spacing:6px;line-height:1;margin-bottom:4px;
+          <div style="font-family:'Teko',sans-serif;font-size:30px;font-weight:700;
+            color:#e8dcc0;letter-spacing:5px;line-height:1;margin-bottom:4px;
             animation:ds-header-in 0.6s ease-out;">DROP SITE</div>
-          <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:2px;margin-bottom:20px;">
+          <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:2px;margin-bottom:16px;">
             SELECT LANDING ZONE OR CLICK MAP</div>
 
           <!-- Landing zones -->
           <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:8px;">
             AVAILABLE LANDING ZONES</div>
-          <div id="zone-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:20px;"></div>
+          <div id="zone-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:16px;"></div>
 
           <!-- Intel readout -->
-          <div style="border-top:1px solid rgba(200,152,42,0.06);padding-top:16px;margin-bottom:20px;">
+          <div style="border-top:1px solid rgba(200,152,42,0.06);padding-top:14px;margin-bottom:16px;">
             <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:10px;">
               AUSPEX INTEL</div>
             <div id="drop-info" style="display:flex;flex-direction:column;gap:6px;"></div>
@@ -532,6 +647,14 @@ export class DropSiteScene implements GameSceneInterface {
         <div style="font-family:'Teko',sans-serif;font-size:16px;font-weight:500;
           color:#c8a84e;">${nearestMine === Infinity ? '—' : nearestMine + ' tiles'}</div>
       </div>
+      ${this.scannerLevel >= 1 ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;
+          padding:6px 8px;background:rgba(200,191,160,0.02);border-left:2px solid rgba(160,112,204,0.3);">
+          <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">AUSPEX CONTACTS</div>
+          <div style="font-family:'Teko',sans-serif;font-size:16px;font-weight:500;
+            color:#a070cc;">${this.generatedPOIs.length} PoI${this.scannerLevel >= 3 ? ` / ${this.generatedPacks.length} Caches` : ''}</div>
+        </div>
+      ` : ''}
     `;
   }
 
@@ -598,6 +721,52 @@ export class DropSiteScene implements GameSceneInterface {
       ctx.strokeStyle = '#88bbff';
       ctx.lineWidth = 1;
       ctx.stroke();
+    }
+
+    // Scanner-gated PoI markers
+    if (this.scannerLevel >= 1) {
+      const poiTypeColors: Record<string, string> = {
+        gold_cache: '#c8982a', ammo_dump: '#50b0b0', med_station: '#60aa60',
+        intel: '#6090cc', relic: '#a070cc',
+      };
+      for (const poi of this.generatedPOIs) {
+        const cx = poi.tileX * TILE_PX + TILE_PX / 2;
+        const cy = poi.tileY * TILE_PX + TILE_PX / 2;
+        if (this.scannerLevel >= 2) {
+          // Typed: colored dot
+          ctx.fillStyle = poiTypeColors[poi.type] || '#888888';
+          ctx.beginPath();
+          ctx.arc(cx, cy, TILE_PX * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = poiTypeColors[poi.type] || '#888888';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else {
+          // Generic "?" marker
+          ctx.fillStyle = 'rgba(200,191,160,0.5)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, TILE_PX * 0.4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#0a0a0e';
+          ctx.font = `bold ${TILE_PX * 0.7}px "Teko", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('?', cx, cy + 1);
+        }
+      }
+    }
+
+    // Scanner level 3: show pack markers
+    if (this.scannerLevel >= 3) {
+      for (const pack of this.generatedPacks) {
+        const cx = pack.tileX * TILE_PX + TILE_PX / 2;
+        const cy = pack.tileY * TILE_PX + TILE_PX / 2;
+        ctx.fillStyle = '#c8982a';
+        ctx.fillRect(cx - TILE_PX * 0.35, cy - TILE_PX * 0.25, TILE_PX * 0.7, TILE_PX * 0.5);
+        ctx.strokeStyle = '#e8d48b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cx - TILE_PX * 0.35, cy - TILE_PX * 0.25, TILE_PX * 0.7, TILE_PX * 0.5);
+      }
     }
 
     // Valid zones (markers)
@@ -681,12 +850,12 @@ export class DropSiteScene implements GameSceneInterface {
 
   private static readonly TYPE_COLORS: Record<string, string> = {
     unit: '#4488ff', building: '#44aa44', ordnance: '#8844cc',
-    doctrine: '#ffaa00', equipment: '#44dddd',
+    equipment: '#44dddd',
   };
 
   private static readonly TYPE_ICONS: Record<string, string> = {
     unit: '\u2694', building: '\u2302', ordnance: '\u2737',
-    doctrine: '\u2620', equipment: '\u2692',
+    equipment: '\u2692',
   };
 
   private buildMulliganHand(): void {

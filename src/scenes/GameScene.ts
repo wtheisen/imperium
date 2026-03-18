@@ -11,7 +11,6 @@ import { CombatSystem } from '../systems/CombatSystem';
 import { EconomySystem } from '../systems/EconomySystem';
 import { MissionSystem } from '../systems/MissionSystem';
 import { CardEffects } from '../cards/CardEffects';
-import { DoctrineManager } from '../cards/DoctrineManager';
 import { EnemyAI } from '../ai/EnemyAI';
 import { EnemyPlacement } from '../ai/EnemyPlacement';
 import { FogOfWarSystem } from '../systems/FogOfWarSystem';
@@ -32,7 +31,10 @@ import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { getActiveModifiers } from '../state/PlayerState';
 import { getMergedEffects } from '../state/DifficultyModifiers';
 import { POIManager } from '../systems/POIManager';
+import { PackManager } from '../systems/PackManager';
 import { resolveEnvironmentModifiers, EnvironmentEffects } from '../systems/EnvironmentModifierSystem';
+import { CARD_DATABASE } from '../cards/CardDatabase';
+import { PACK_BURN_GOLD_MULTIPLIER } from '../config';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -47,7 +49,6 @@ export class GameScene implements GameSceneInterface {
   private economySystem!: EconomySystem;
   private missionSystem!: MissionSystem;
   private cardEffects!: CardEffects;
-  private doctrineManager!: DoctrineManager;
   private enemyAI!: EnemyAI;
   private fogOfWar!: FogOfWarSystem;
   private spawnerSystem!: SpawnerSystem;
@@ -55,6 +56,7 @@ export class GameScene implements GameSceneInterface {
   private audioManager!: AudioManager;
   private pendingCard: any = null;
   private pendingFromKeyboard: boolean = false;
+  private pendingShipOrdnance: { card: Card; slotIndex: number } | null = null;
   private townHall: Building | null = null;
   private mission!: MissionDefinition;
   private objectiveMarkers: ObjectiveMarker[] = [];
@@ -64,6 +66,8 @@ export class GameScene implements GameSceneInterface {
   private paused: boolean = false;
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
   private poiManager: POIManager | null = null;
+  private packManager: PackManager | null = null;
+  private takenPackCards: string[] = [];
   private envEffects: EnvironmentEffects | null = null;
 
   create(data?: { mission?: MissionDefinition }): void {
@@ -110,10 +114,9 @@ export class GameScene implements GameSceneInterface {
 
     // Setup economy with mission starting gold
     this.economySystem = new EconomySystem(this.mission.startingGold);
-    this.doctrineManager = new DoctrineManager();
 
     // Setup card effects
-    this.cardEffects = new CardEffects(this.entityManager, this.economySystem, this.doctrineManager);
+    this.cardEffects = new CardEffects(this.entityManager, this.economySystem);
 
     // Setup RTS controls
     this.selectionSystem = new SelectionSystem(this.entityManager);
@@ -139,8 +142,15 @@ export class GameScene implements GameSceneInterface {
     // Setup spawner system for continuous enemy production
     this.spawnerSystem = new SpawnerSystem(this.entityManager, this.mission.enemyCamps);
 
-    // Setup POI manager
-    this.poiManager = new POIManager(this.entityManager, this.mission.pointsOfInterest);
+    // Setup POI manager — merge mission-defined + procedurally generated
+    const generatedPOIs = this.mapManager.getGeneratedPOIs();
+    const allPOIs = [...(this.mission.pointsOfInterest ?? []), ...generatedPOIs];
+    this.poiManager = new POIManager(this.entityManager, allPOIs);
+
+    // Setup pack manager — merge mission-defined + procedurally generated
+    const generatedPacks = this.mapManager.getGeneratedPacks();
+    const allPacks = [...(this.mission.packSpawns ?? []), ...generatedPacks];
+    this.packManager = new PackManager(this.entityManager, allPacks);
 
     // Create objective markers for required + optional objectives
     for (const obj of this.mission.objectives) {
@@ -185,14 +195,12 @@ export class GameScene implements GameSceneInterface {
     EventBus.on('unequip-wargear', this.onUnequipWargear, this);
     EventBus.on('wargear-orphaned', this.onWargearOrphaned, this);
     EventBus.on('objective-completed', this.onObjectiveCompleted, this);
-    EventBus.on('doctrine-replace-confirm', this.onDoctrineReplaceConfirm, this);
-    EventBus.on('card-played', this.onCardPlayedDoctrineEffects, this);
-    EventBus.on('entity-died', this.onEntityDiedDoctrineEffects, this);
     EventBus.on('mine-tick', this.onMineTick, this);
     EventBus.on('input-pointer-move', this.onInputMove3D, this);
     EventBus.on('input-pointer-down', this.onInputDown3D, this);
     EventBus.on('ordnance-vfx-3d', this.onOrdnanceVfx, this);
     EventBus.on('entity-died', this.onEntityDiedCameraShake, this);
+    EventBus.on('pack-decision', this.onPackDecision, this);
 
     // Audio
     this.audioManager = new AudioManager();
@@ -216,8 +224,9 @@ export class GameScene implements GameSceneInterface {
         const ci = this.pendingCard?.cardIndex ?? -1;
         this.pendingCard = null;
         this.pendingFromKeyboard = false;
+        this.pendingShipOrdnance = null;
         EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
-        EventBus.emit('card-play-failed', { reason: 'cancelled', cardIndex: ci });
+        if (ci >= 0) EventBus.emit('card-play-failed', { reason: 'cancelled', cardIndex: ci });
       }
       if (e.key === 'p' || e.key === 'P') {
         this.paused = !this.paused;
@@ -253,7 +262,7 @@ export class GameScene implements GameSceneInterface {
         const card = this.pendingCard.card;
         const w = card.tileWidth || 1;
         const h = card.tileHeight || 1;
-        const canPlace = (card.type === 'ordnance' || card.type === 'doctrine')
+        const canPlace = card.type === 'ordnance'
           ? true
           : card.type === 'equipment'
             ? this.hasEquippableUnitNear(evt.tileX, evt.tileY, card)
@@ -263,6 +272,7 @@ export class GameScene implements GameSceneInterface {
           tileX: evt.tileX, tileY: evt.tileY, valid: canPlace, visible: true,
           cardType: card.type, entityType: card.entityType, cardName: card.name,
           squadSize: unitStats?.squadSize || 1,
+          ordnanceRadius: card.ordnanceRadius,
         });
       }
     } else {
@@ -282,7 +292,24 @@ export class GameScene implements GameSceneInterface {
     EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
 
     if (evt.tileX < 0 || !IsoHelper.isInBounds(evt.tileX, evt.tileY)) {
-      EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: this.pendingCard?.cardIndex ?? -1 });
+      if (!this.pendingShipOrdnance) {
+        EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: this.pendingCard?.cardIndex ?? -1 });
+      }
+      this.pendingCard = null;
+      this.pendingFromKeyboard = false;
+      this.pendingShipOrdnance = null;
+      return;
+    }
+
+    // Ship ordnance: bypass gold cost, use castOrdnance directly
+    if (this.pendingShipOrdnance) {
+      const { card, slotIndex } = this.pendingShipOrdnance;
+      const success = this.cardEffects.castOrdnance(card, evt.tileX, evt.tileY);
+      if (success) {
+        EventBus.emit('ship-ordnance-fired', { slotIndex });
+        EventBus.emit('card-played-3d-vfx', { tileX: evt.tileX, tileY: evt.tileY, cardType: 'ordnance' });
+      }
+      this.pendingShipOrdnance = null;
       this.pendingCard = null;
       this.pendingFromKeyboard = false;
       return;
@@ -317,24 +344,39 @@ export class GameScene implements GameSceneInterface {
   }
 
   private onCardDragStart(data: any): void {
+    if (data.isShipOrdnance) {
+      this.pendingShipOrdnance = { card: data.card, slotIndex: data.slotIndex };
+      this.pendingCard = data;
+      this.pendingFromKeyboard = true;
+      return;
+    }
     this.pendingCard = data;
     this.pendingFromKeyboard = !data.screenX;
   }
 
-  private onCardDragReleased(data: { card: any; cardIndex: number; screenX: number; screenY: number }): void {
+  private onCardDragReleased(data: { card: any; cardIndex: number; screenX: number; screenY: number; isShipOrdnance?: boolean; slotIndex?: number }): void {
     EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
 
     const gameRenderer = (window as any).__gameRenderer;
     const tile = gameRenderer?.inputBridge?.screenToTile(data.screenX, data.screenY);
-    if (!tile) {
-      EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: data.cardIndex });
+    if (!tile || !IsoHelper.isInBounds(tile.tileX, tile.tileY)) {
+      if (!data.isShipOrdnance) {
+        EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: data.cardIndex });
+      }
       this.pendingCard = null;
+      this.pendingShipOrdnance = null;
       return;
     }
 
-    if (!IsoHelper.isInBounds(tile.tileX, tile.tileY)) {
-      EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: data.cardIndex });
+    // Ship ordnance via drag
+    if (data.isShipOrdnance && data.slotIndex !== undefined) {
+      const success = this.cardEffects.castOrdnance(data.card, tile.tileX, tile.tileY);
+      if (success) {
+        EventBus.emit('ship-ordnance-fired', { slotIndex: data.slotIndex });
+        EventBus.emit('card-played-3d-vfx', { tileX: tile.tileX, tileY: tile.tileY, cardType: 'ordnance' });
+      }
       this.pendingCard = null;
+      this.pendingShipOrdnance = null;
       return;
     }
 
@@ -355,7 +397,7 @@ export class GameScene implements GameSceneInterface {
       const card = data.card;
       const w = card.tileWidth || 1;
       const h = card.tileHeight || 1;
-      const canPlace = (card.type === 'ordnance' || card.type === 'doctrine')
+      const canPlace = card.type === 'ordnance'
         ? true
         : card.type === 'equipment'
           ? this.hasEquippableUnitNear(tile.tileX, tile.tileY, card)
@@ -365,6 +407,7 @@ export class GameScene implements GameSceneInterface {
         tileX: tile.tileX, tileY: tile.tileY, valid: canPlace, visible: true,
         cardType: card.type, entityType: card.entityType, cardName: card.name,
         squadSize: unitStats?.squadSize || 1,
+        ordnanceRadius: card.ordnanceRadius,
       });
     } else {
       EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
@@ -374,6 +417,7 @@ export class GameScene implements GameSceneInterface {
   private onCardDragCancel(): void {
     this.pendingCard = null;
     this.pendingFromKeyboard = false;
+    this.pendingShipOrdnance = null;
     EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
   }
 
@@ -401,6 +445,7 @@ export class GameScene implements GameSceneInterface {
         objectivesCompleted: this.missionSystem.objectiveStatuses.filter((s) => s.completed).length,
         totalObjectives: this.missionSystem.objectiveStatuses.length,
         sessionXp: this.xpTracker.getSessionXp(),
+        takenPackCards: this.takenPackCards,
       });
       return;
     }
@@ -415,7 +460,8 @@ export class GameScene implements GameSceneInterface {
     const sm = getSceneManager();
     sm.stop('UIScene');
     sm.stop('GameScene');
-    sm.start('GameOverScene', {
+
+    const missionData = {
       victory: true,
       missionId: this.mission.id,
       mission: this.mission,
@@ -425,7 +471,14 @@ export class GameScene implements GameSceneInterface {
       optionalCompleted: data?.optionalCompleted ?? 0,
       optionalTotal: data?.optionalTotal ?? 0,
       sessionXp: this.xpTracker.getSessionXp(),
-    });
+      takenPackCards: this.takenPackCards,
+    };
+
+    if (this.takenPackCards.length > 0) {
+      sm.start('SalvageScene', missionData);
+    } else {
+      sm.start('GameOverScene', missionData);
+    }
   }
 
   private onSupplyPodIncoming(data: { tileX: number; tileY: number; gold: number; cardDraws: number }): void {
@@ -441,36 +494,7 @@ export class GameScene implements GameSceneInterface {
   }
 
   private onObjectiveCompleted(_data: any): void {
-    const discardBonus = this.doctrineManager.getDiscardBonus();
-    EventBus.emit('reset-discards', { bonus: discardBonus });
-    this.doctrineManager.onObjectiveStart();
-  }
-
-  private onDoctrineReplaceConfirm({ replaceIndex, newDoctrine }: { replaceIndex: number; newDoctrine: Card }): void {
-    const removed = this.doctrineManager.replaceDoctrine(replaceIndex, newDoctrine);
-    if (removed) EventBus.emit('wargear-to-discard', { card: removed });
-    for (const unit of this.entityManager.getUnits('player')) {
-      this.doctrineManager.applyModifiers(unit);
-    }
-    EventBus.emit('doctrines-changed', { doctrines: this.doctrineManager.getActiveDoctrines() });
-  }
-
-  private onCardPlayedDoctrineEffects(_data: any): void {
-    const gold = this.doctrineManager.getOnCardPlayedGold();
-    if (gold > 0) {
-      this.economySystem.addGold(gold);
-      EventBus.emit('doctrine-triggered', { doctrineEffect: 'tithe_collector' });
-    }
-  }
-
-  private onEntityDiedDoctrineEffects({ entity }: { entity: any }): void {
-    if (entity?.team === 'enemy') {
-      const gold = this.doctrineManager.getOnEnemyKilledGold();
-      if (gold > 0) {
-        this.economySystem.addGold(gold);
-        EventBus.emit('doctrine-triggered', { doctrineEffect: 'scavenger_rites' });
-      }
-    }
+    EventBus.emit('reset-discards', { bonus: 0 });
   }
 
   private onMineTick({ mineX, mineY }: { mineX: number; mineY: number }): void {
@@ -522,6 +546,21 @@ export class GameScene implements GameSceneInterface {
     }
   }
 
+  private onPackDecision({ packId, decisions }: { packId: string; decisions: { cardId: string; action: string }[] }): void {
+    for (const d of decisions) {
+      if (d.action === 'take') {
+        this.takenPackCards.push(d.cardId);
+        // Add card to deck mid-mission (goes to discard pile)
+        EventBus.emit('pack-card-taken', { cardId: d.cardId });
+      } else {
+        // Burn for gold
+        const card = CARD_DATABASE[d.cardId];
+        const burnGold = card ? card.cost * PACK_BURN_GOLD_MULTIPLIER : 5;
+        this.economySystem.addGold(burnGold);
+      }
+    }
+  }
+
   private onPanToObjective({ tileX, tileY }: { tileX: number; tileY: number }): void {
     const gameRenderer = (window as any).__gameRenderer;
     if (gameRenderer?.cameraController) {
@@ -541,13 +580,16 @@ export class GameScene implements GameSceneInterface {
 
     this.entityManager.update(delta);
     this.combatSystem.update(delta);
+    this.economySystem.update(delta);
     this.missionSystem.update(delta);
     this.enemyAI.update(delta);
     this.fogOfWar.update(delta);
     this.spawnerSystem.update(delta);
     this.pathfinding.update();
+    this.commandSystem.update(delta);
     this.selectionSystem.update(delta);
     if (this.poiManager) this.poiManager.update();
+    if (this.packManager) this.packManager.update();
 
     // Sync entities to 3D renderer
     EventBus.emit('entities-sync', this.entityManager.getAllEntities());
@@ -595,14 +637,13 @@ export class GameScene implements GameSceneInterface {
     EventBus.off('unequip-wargear', this.onUnequipWargear, this);
     EventBus.off('wargear-orphaned', this.onWargearOrphaned, this);
     EventBus.off('objective-completed', this.onObjectiveCompleted, this);
-    EventBus.off('doctrine-replace-confirm', this.onDoctrineReplaceConfirm, this);
-    EventBus.off('card-played', this.onCardPlayedDoctrineEffects, this);
-    EventBus.off('entity-died', this.onEntityDiedDoctrineEffects, this);
     EventBus.off('mine-tick', this.onMineTick, this);
     EventBus.off('input-pointer-move', this.onInputMove3D, this);
     EventBus.off('input-pointer-down', this.onInputDown3D, this);
     EventBus.off('ordnance-vfx-3d', this.onOrdnanceVfx, this);
     EventBus.off('entity-died', this.onEntityDiedCameraShake, this);
+    EventBus.off('pack-decision', this.onPackDecision, this);
+    this.packManager?.destroy();
 
     if (this.escHandler) {
       document.removeEventListener('keydown', this.escHandler);

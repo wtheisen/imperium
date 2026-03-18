@@ -10,6 +10,8 @@ import { GameOverScene } from './scenes/GameOverScene';
 import { DeckEditScene } from './scenes/DeckEditScene';
 import { TechTreeScene } from './scenes/TechTreeScene';
 import { DropSiteScene } from './scenes/DropSiteScene';
+import { ShipScene } from './scenes/ShipScene';
+import { SalvageScene } from './scenes/SalvageScene';
 import { TimerManager } from './utils/TimerManager';
 
 // ── Three.js 3D renderer ──
@@ -44,6 +46,8 @@ sceneManager.register('GameOverScene', new GameOverScene());
 sceneManager.register('DeckEditScene', new DeckEditScene());
 sceneManager.register('TechTreeScene', new TechTreeScene());
 sceneManager.register('DropSiteScene', new DropSiteScene());
+sceneManager.register('ShipScene', new ShipScene());
+sceneManager.register('SalvageScene', new SalvageScene());
 
 // ── Main game loop ──
 let lastTime = performance.now();

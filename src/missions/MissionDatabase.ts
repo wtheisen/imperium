@@ -758,11 +758,6 @@ export const MISSIONS: MissionDefinition[] = [
         cardDraws: 2,
       },
     ],
-    pointsOfInterest: [
-      { id: 'poi_gold1', type: 'gold_cache', tileX: 15, tileY: 40, reward: { gold: 10 } },
-      { id: 'poi_gold2', type: 'gold_cache', tileX: 70, tileY: 35, reward: { gold: 10 } },
-      { id: 'poi_ammo', type: 'ammo_dump', tileX: 35, tileY: 15, reward: { cardDraws: 1 } },
-    ],
     enemyCamps: [
       {
         id: 'camp_center_ammo',
@@ -1007,10 +1002,6 @@ export const MISSIONS: MissionDefinition[] = [
         goldReward: 15,
         cardDraws: 1,
       },
-    ],
-    pointsOfInterest: [
-      { id: 'poi_medkit', type: 'med_station', tileX: 30, tileY: 50, reward: { gold: 8 } },
-      { id: 'poi_intel', type: 'intel', tileX: 70, tileY: 40, reward: { cardDraws: 1 } },
     ],
     enemyCamps: [
       {
@@ -1410,11 +1401,6 @@ export const MISSIONS: MissionDefinition[] = [
         goldReward: 25,
         cardDraws: 2,
       },
-    ],
-    pointsOfInterest: [
-      { id: 'poi_cache_sw', type: 'gold_cache', tileX: 15, tileY: 60, reward: { gold: 15 } },
-      { id: 'poi_cache_se', type: 'gold_cache', tileX: 65, tileY: 60, reward: { gold: 15 } },
-      { id: 'poi_ammo_mid', type: 'ammo_dump', tileX: 40, tileY: 25, reward: { cardDraws: 2 } },
     ],
     enemyCamps: [
       {

@@ -212,25 +212,6 @@ export class AudioManager {
     source.stop(this.ctx.currentTime + 0.2);
   }
 
-  playCardPlayedDoctrine(): void {
-    if (!this.canPlay('cardPlayDoctrine', 150)) return;
-    // Chime: ascending two-note
-    const t = this.ctx.currentTime;
-    const notes = [880, 1320]; // A5, E6
-    for (let i = 0; i < notes.length; i++) {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = notes[i];
-      gain.gain.setValueAtTime(0.2, t + i * 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.15);
-      osc.connect(gain);
-      gain.connect(this.masterGain);
-      osc.start(t + i * 0.08);
-      osc.stop(t + i * 0.08 + 0.15);
-    }
-  }
-
   /** Unit spawn: metallic materialization tone */
   playUnitSpawn(): void {
     if (!this.canPlay('unitSpawn', 100)) return;
@@ -512,9 +493,6 @@ export class AudioManager {
           return;
         case 'ordnance':
           this.playCardPlayedSpell();
-          return;
-        case 'doctrine':
-          this.playCardPlayedDoctrine();
           return;
       }
     }

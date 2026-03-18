@@ -2,9 +2,11 @@ import { STARTING_GOLD, KILL_GOLD_BASE, OBJECTIVE_COMPLETION_BONUS } from '../co
 import { EventBus } from '../EventBus';
 import { getActiveModifiers } from '../state/PlayerState';
 import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getPassiveIncomeRate, getGoldPerKill, getGoldPerCardPlayed, getObjectiveGoldBonus } from '../ship/ShipState';
 
 export class EconomySystem {
   private gold: number;
+  private passiveIncomeTimer: number = 0;
 
   constructor(startingGold?: number) {
     this.gold = startingGold ?? STARTING_GOLD;
@@ -14,6 +16,7 @@ export class EconomySystem {
     EventBus.on('gold-gathered', this.onGoldGathered, this);
     EventBus.on('objective-completed', this.onObjectiveCompleted, this);
     EventBus.on('supply-drop', this.onSupplyDrop, this);
+    EventBus.on('card-played', this.onCardPlayed, this);
   }
 
   getGold(): number {
@@ -40,7 +43,7 @@ export class EconomySystem {
 
   private onEntityDied({ entity, killer }: { entity: any; killer?: any }): void {
     if (entity.team === 'enemy' && killer && killer.team === 'player') {
-      this.addGold(KILL_GOLD_BASE);
+      this.addGold(KILL_GOLD_BASE + getGoldPerKill());
     }
   }
 
@@ -49,7 +52,25 @@ export class EconomySystem {
   }
 
   private onObjectiveCompleted({ goldReward }: { objectiveId: string; goldReward: number; cardDraws: number }): void {
-    this.addGold(goldReward);
+    const bonus = getObjectiveGoldBonus();
+    const total = bonus > 0 ? Math.round(goldReward * (1 + bonus)) : goldReward;
+    this.addGold(total);
+  }
+
+  private onCardPlayed(_data: any): void {
+    const bonus = getGoldPerCardPlayed();
+    if (bonus > 0) this.addGold(bonus);
+  }
+
+  update(delta: number): void {
+    const rate = getPassiveIncomeRate();
+    if (rate > 0) {
+      this.passiveIncomeTimer += delta;
+      if (this.passiveIncomeTimer >= 10000) {
+        this.passiveIncomeTimer -= 10000;
+        this.addGold(Math.round(rate));
+      }
+    }
   }
 
   private onSupplyDrop({ gold }: { gold: number }): void {
@@ -61,5 +82,6 @@ export class EconomySystem {
     EventBus.off('gold-gathered', this.onGoldGathered, this);
     EventBus.off('objective-completed', this.onObjectiveCompleted, this);
     EventBus.off('supply-drop', this.onSupplyDrop, this);
+    EventBus.off('card-played', this.onCardPlayed, this);
   }
 }

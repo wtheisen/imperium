@@ -1,4 +1,5 @@
 import { UnitStats } from '../entities/Unit';
+import { PackDefinition } from '../packs/PackTypes';
 
 export type ObjectiveType = 'destroy' | 'recover' | 'purge' | 'survive' | 'activate' | 'collect';
 
@@ -29,12 +30,20 @@ export interface ObjectiveDefinition {
   cardDraws: number;
 }
 
+export type POIType = 'gold_cache' | 'ammo_dump' | 'med_station' | 'intel' | 'relic';
+
 export interface POIDefinition {
   id: string;
-  type: 'gold_cache' | 'ammo_dump' | 'med_station' | 'intel';
+  type: POIType;
   tileX: number;
   tileY: number;
-  reward: { gold?: number; cardDraws?: number };
+  reward: {
+    gold?: number;
+    cardDraws?: number;
+    healAmount?: number;
+    healRadius?: number;
+    fogRevealRadius?: number;
+  };
 }
 
 export interface CampUnitDef {
@@ -100,4 +109,6 @@ export interface MissionDefinition {
   environmentModifiers?: EnvironmentModifier[];
   /** Points of interest — bonus pickups scattered on map */
   pointsOfInterest?: POIDefinition[];
+  /** Card packs placed on the map for the player to discover */
+  packSpawns?: PackDefinition[];
 }

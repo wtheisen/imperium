@@ -188,6 +188,24 @@ export class HotkeyGrid {
           EventBus.emit('command-hold', { units: [...this.selectedUnits] });
         },
       };
+      cells[13] = {
+        key: 'V',
+        label: 'Patrol',
+        enabled: true,
+        cooldownPct: 0,
+        action: () => {
+          EventBus.emit('patrol-mode-cursor', { active: true });
+        },
+      };
+      cells[14] = {
+        key: 'B',
+        label: 'Explore',
+        enabled: true,
+        cooldownPct: 0,
+        action: () => {
+          EventBus.emit('command-explore', { units: [...this.selectedUnits] });
+        },
+      };
     }
 
     return {

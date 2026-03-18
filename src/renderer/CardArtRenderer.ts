@@ -88,7 +88,7 @@ export class CardArtRenderer {
   }
 
   private renderAbstract(cardType: string): string {
-    // For non-entity cards (ordnance, doctrine), draw a 2D icon
+    // For non-entity cards (ordnance, equipment), draw a 2D icon
     const canvas = document.createElement('canvas');
     canvas.width = ART_W;
     canvas.height = ART_H;
@@ -97,7 +97,6 @@ export class CardArtRenderer {
     // Atmospheric gradient background
     const colors: Record<string, [string, string]> = {
       ordnance: ['#2a1a1a', '#4a2020'],
-      doctrine: ['#1a1a0a', '#3a3010'],
       equipment: ['#0a1a1a', '#103a3a'],
     };
     const [c1, c2] = colors[cardType] || ['#1a1a1a', '#2a2a2a'];
@@ -115,7 +114,6 @@ export class CardArtRenderer {
 
     const icons: Record<string, string> = {
       ordnance: '\u2737',   // ✷
-      doctrine: '\u2620',   // ☠
       equipment: '\u2692',  // ⚒
     };
     ctx.fillText(icons[cardType] || '\u2605', ART_W / 2, ART_H / 2);

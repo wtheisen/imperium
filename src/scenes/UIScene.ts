@@ -10,13 +10,17 @@ import { getAllCards } from '../cards/CardDatabase';
 import { GameSceneInterface } from './SceneManager';
 import { CommandPanel } from '../ui/CommandPanel';
 import { ObjectiveDisplay } from '../ui/ObjectiveDisplay';
-import { DoctrinePanel } from '../ui/DoctrinePanel';
 import { ShopUI } from '../ui/ShopUI';
 import { Minimap } from '../ui/Minimap';
 import { HotkeyGrid } from '../ui/HotkeyGrid';
 import { CardTooltip } from '../ui/CardTooltip';
 import { KeybindingOverlay } from '../ui/KeybindingOverlay';
 import { getCardArtRenderer } from '../renderer/CardArtRenderer';
+import { PackPickupUI } from '../ui/PackPickupUI';
+import { CARD_DATABASE } from '../cards/CardDatabase';
+import { getHandSizeBonus, getShipOrdnanceSlots, getShipOrdnanceCharges } from '../ship/ShipState';
+import { ShipOrdnanceBar } from '../ui/ShipOrdnanceBar';
+import { getShipOrdnance } from '../state/PlayerState';
 
 /**
  * UIScene — manages deck, hand, gold, and all HUD logic.
@@ -36,12 +40,13 @@ export class UIScene implements GameSceneInterface {
   private isMuted = false;
   private commandPanel: CommandPanel | null = null;
   private objectiveDisplay: ObjectiveDisplay | null = null;
-  private doctrinePanel: DoctrinePanel | null = null;
   private shopUI: ShopUI | null = null;
   private minimap: Minimap | null = null;
   private hotkeyGrid: HotkeyGrid | null = null;
   private cardTooltip: CardTooltip | null = null;
   private keybindingOverlay: KeybindingOverlay | null = null;
+  private packPickupUI: PackPickupUI | null = null;
+  private shipOrdnanceBar: ShipOrdnanceBar | null = null;
   private pauseOverlay: HTMLDivElement | null = null;
   /** Per-slot DOM elements for incremental updates. Index 0 = deck pile. */
   private slotEls: HTMLElement[] = [];
@@ -79,6 +84,7 @@ export class UIScene implements GameSceneInterface {
       const startingCards: Card[] = getSelectedDeckCards();
       this.deck = new Deck(startingCards);
     }
+    this.deck.setHandSizeBonus(getHandSizeBonus());
 
     // Create HTML UI overlay
     this.createUIOverlay();
@@ -89,11 +95,16 @@ export class UIScene implements GameSceneInterface {
     if (this.mission) {
       this.objectiveDisplay = new ObjectiveDisplay(this.mission);
     }
-    this.doctrinePanel = new DoctrinePanel();
     this.shopUI = new ShopUI();
     this.minimap = new Minimap();
     this.cardTooltip = new CardTooltip();
     this.keybindingOverlay = new KeybindingOverlay();
+
+    // Ship ordnance bar
+    const ordnanceIds = getShipOrdnance();
+    const ordnanceSlots = getShipOrdnanceSlots();
+    const ordnanceCharges = getShipOrdnanceCharges();
+    this.shipOrdnanceBar = new ShipOrdnanceBar(ordnanceIds, ordnanceSlots, ordnanceCharges);
 
     // Event listeners
     EventBus.on('card-played', this.onCardPlayed, this);
@@ -116,6 +127,11 @@ export class UIScene implements GameSceneInterface {
     EventBus.on('reinforcements-incoming', this.onReinforcementsIncoming, this);
     EventBus.on('game-paused', this.onGamePaused, this);
     EventBus.on('game-resumed', this.onGameResumed, this);
+    EventBus.on('pack-collected', this.onPackCollected, this);
+    EventBus.on('pack-card-taken', this.onPackCardTaken, this);
+    EventBus.on('ship-ordnance-select', this.onShipOrdnanceSelect, this);
+    EventBus.on('ship-ordnance-fired', this.onShipOrdnanceFired, this);
+    EventBus.on('card-drag-cancel', this.onShipOrdnanceCancel, this);
 
     // Keyboard shortcuts for card selection (1-5)
     document.addEventListener('keydown', this.onKeyDown);
@@ -369,6 +385,7 @@ export class UIScene implements GameSceneInterface {
   };
 
   private onCardPlayFailedVFX = ({ cardIndex }: { cardIndex?: number }): void => {
+    this.shipOrdnanceBar?.deselectCurrent();
     if (cardIndex !== undefined && cardIndex >= 0 && cardIndex < this.slotEls.length) {
       const slotEl = this.slotEls[cardIndex];
       if (slotEl) {
@@ -390,14 +407,13 @@ export class UIScene implements GameSceneInterface {
 
   private static TYPE_COLORS: Record<string, string> = {
     unit: '#4488ff', building: '#44aa44', ordnance: '#8844cc',
-    doctrine: '#ffaa00', equipment: '#44dddd',
+    equipment: '#44dddd',
   };
 
   private static readonly TYPE_ICONS: Record<string, string> = {
     unit: '\u2694',       // ⚔
     building: '\u2302',   // ⌂
     ordnance: '\u2737',   // ✷
-    doctrine: '\u2620',   // ☠
     equipment: '\u2692',  // ⚒
   };
 
@@ -1340,14 +1356,7 @@ export class UIScene implements GameSceneInterface {
     if (this.currentGold >= card.cost) {
       EventBus.emit('gold-changed', { amount: -card.cost, total: this.currentGold - card.cost });
       this.currentGold -= card.cost;
-      if (card.type === 'doctrine') {
-        EventBus.emit('card-drag-released', {
-          card, cardIndex: -1,
-          screenX: window.innerWidth / 2, screenY: window.innerHeight / 2,
-        });
-      } else {
-        this.deck.addCard(card);
-      }
+      this.deck.addCard(card);
       if (this.shopUI) this.shopUI.hide();
     }
   }
@@ -1458,6 +1467,19 @@ export class UIScene implements GameSceneInterface {
   private onReinforcementsIncoming(): void {
     this.showBanner('ENEMY REINFORCEMENTS INCOMING', '#c43030', 3000, true);
   }
+
+  private onPackCollected = (data: { packId: string; type: string; cards: string[] }): void => {
+    // Create pack pickup UI overlay
+    this.packPickupUI = new PackPickupUI(data.packId, data.type as any, data.cards);
+  };
+
+  private onPackCardTaken = (data: { cardId: string }): void => {
+    // Add card to the in-game deck
+    const card = CARD_DATABASE[data.cardId];
+    if (card && this.deck) {
+      this.deck.addCard(card);
+    }
+  };
 
   private onGamePaused = (): void => {
     if (this.pauseOverlay) return;
@@ -1702,6 +1724,23 @@ export class UIScene implements GameSceneInterface {
     this.scryState.timeout = setTimeout(() => this.cancelScry(), 2000);
   }
 
+  private onShipOrdnanceSelect(data: { card: Card; slotIndex: number }): void {
+    EventBus.emit('card-drag-start', {
+      card: data.card,
+      cardIndex: -1,
+      isShipOrdnance: true,
+      slotIndex: data.slotIndex,
+    });
+  }
+
+  private onShipOrdnanceFired(data: { slotIndex: number }): void {
+    this.shipOrdnanceBar?.fireSlot(data.slotIndex);
+  }
+
+  private onShipOrdnanceCancel(): void {
+    this.shipOrdnanceBar?.deselectCurrent();
+  }
+
   update(): void {
     if (this.deckInfoEl) {
       this.deckInfoEl.textContent = `Armoury: ${this.deck.getDeckSize()} | Spent: ${this.deck.getDiscardSize()}`;
@@ -1741,6 +1780,13 @@ export class UIScene implements GameSceneInterface {
     EventBus.off('reinforcements-incoming', this.onReinforcementsIncoming, this);
     EventBus.off('game-paused', this.onGamePaused, this);
     EventBus.off('game-resumed', this.onGameResumed, this);
+    EventBus.off('pack-collected', this.onPackCollected, this);
+    EventBus.off('pack-card-taken', this.onPackCardTaken, this);
+    EventBus.off('ship-ordnance-select', this.onShipOrdnanceSelect, this);
+    EventBus.off('ship-ordnance-fired', this.onShipOrdnanceFired, this);
+    EventBus.off('card-drag-cancel', this.onShipOrdnanceCancel, this);
+    this.packPickupUI?.destroy();
+    if (this.shipOrdnanceBar) { this.shipOrdnanceBar.destroy(); this.shipOrdnanceBar = null; }
     if (this.pauseOverlay) { this.pauseOverlay.remove(); this.pauseOverlay = null; }
 
     document.removeEventListener('keydown', this.onKeyDown);
@@ -1755,7 +1801,6 @@ export class UIScene implements GameSceneInterface {
     if (this.commandPanel) { this.commandPanel.destroy(); this.commandPanel = null; }
     if (this.hotkeyGrid) { this.hotkeyGrid.destroy(); this.hotkeyGrid = null; }
     if (this.objectiveDisplay) { this.objectiveDisplay.destroy(); this.objectiveDisplay = null; }
-    if (this.doctrinePanel) { this.doctrinePanel.destroy(); this.doctrinePanel = null; }
     if (this.shopUI) { this.shopUI.destroy(); this.shopUI = null; }
     if (this.minimap) { this.minimap.destroy(); this.minimap = null; }
     if (this.cardTooltip) { this.cardTooltip.destroy(); this.cardTooltip = null; }

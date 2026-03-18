@@ -6,9 +6,12 @@ import { MoverComponent } from '../components/MoverComponent';
 import { CombatComponent } from '../components/CombatComponent';
 import { GathererComponent } from '../components/GathererComponent';
 import { ProductionComponent } from '../components/ProductionComponent';
+import { FogOfWarSystem } from './FogOfWarSystem';
 import { Unit } from '../entities/Unit';
 import { EventBus } from '../EventBus';
 import { InputEvent } from '../renderer/InputBridge';
+import { MAP_WIDTH, MAP_HEIGHT } from '../config';
+import { IsoHelper } from '../map/IsoHelper';
 
 export class CommandSystem {
   private selection: SelectionSystem;
@@ -16,6 +19,7 @@ export class CommandSystem {
   private entityManager: EntityManager;
   private mapManager: MapManager;
   private attackMoveMode: boolean = false;
+  private patrolMode: boolean = false;
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(
@@ -34,11 +38,17 @@ export class CommandSystem {
     EventBus.on('request-path', this.handlePathRequest, this);
     EventBus.on('command-stop', this.handleStopCommand, this);
 
-    // Keyboard: Escape cancels attack-move mode
+    // Keyboard: Escape cancels attack-move / patrol mode
     this.keyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && this.attackMoveMode) {
-        this.attackMoveMode = false;
-        EventBus.emit('attack-move-cursor', { active: false });
+      if (e.key === 'Escape') {
+        if (this.attackMoveMode) {
+          this.attackMoveMode = false;
+          EventBus.emit('attack-move-cursor', { active: false });
+        }
+        if (this.patrolMode) {
+          this.patrolMode = false;
+          EventBus.emit('patrol-mode-cursor', { active: false });
+        }
       }
     };
     document.addEventListener('keydown', this.keyHandler);
@@ -46,6 +56,30 @@ export class CommandSystem {
     // Listen for events from HotkeyGrid
     EventBus.on('attack-move-cursor', this.onAttackMoveCursor, this);
     EventBus.on('command-hold', this.handleHoldCommand, this);
+    EventBus.on('patrol-mode-cursor', this.onPatrolModeCursor, this);
+    EventBus.on('command-explore', this.handleExploreCommand, this);
+    EventBus.on('command-explore-resume', this.handleExploreResume, this);
+  }
+
+  /** Called each frame to advance patrol/explore behaviors. */
+  update(_delta: number): void {
+    for (const unit of this.entityManager.getUnits('player')) {
+      if (!unit.active) continue;
+      const mover = unit.getComponent<MoverComponent>('mover');
+      if (!mover || mover.isMoving()) continue;
+      const combat = unit.getComponent<CombatComponent>('combat');
+      if (combat?.target) continue; // busy fighting
+
+      if (mover.behaviorMode === 'patrol' && mover.patrolPoints.length >= 2) {
+        // Arrived at current waypoint — advance to next
+        mover.patrolIndex = (mover.patrolIndex + 1) % mover.patrolPoints.length;
+        const next = mover.patrolPoints[mover.patrolIndex];
+        this.moveUnitToward(unit, next.x, next.y);
+      } else if (mover.behaviorMode === 'explore') {
+        // Arrived at explore destination — pick a new one
+        this.sendToRandomUnexplored(unit);
+      }
+    }
   }
 
   // ── 3D Input Path ──
@@ -74,9 +108,17 @@ export class CommandSystem {
 
   private onInputDown3D(evt: InputEvent): void {
     if (evt.button !== 0) return;
-    if (!this.attackMoveMode) return;
     if (this.selection.selectedUnits.length === 0) return;
     if (evt.tileX < 0) return;
+
+    if (this.patrolMode) {
+      this.patrolMode = false;
+      EventBus.emit('patrol-mode-cursor', { active: false });
+      this.handlePatrolCommand(evt.tileX, evt.tileY);
+      return;
+    }
+
+    if (!this.attackMoveMode) return;
 
     this.attackMoveMode = false;
     EventBus.emit('attack-move-cursor', { active: false });
@@ -143,6 +185,8 @@ export class CommandSystem {
       const offsets = this.computeFormationOffsets(units.length);
       for (let i = 0; i < units.length; i++) {
         const unit = units[i];
+        const mover = unit.getComponent<MoverComponent>('mover');
+        if (mover) mover.behaviorMode = 'none';
         const combat = unit.getComponent<CombatComponent>('combat');
         if (combat) combat.setTarget(null);
         const gatherer = unit.getComponent<GathererComponent>('gatherer');
@@ -176,6 +220,74 @@ export class CommandSystem {
     }
     this.showCommandIndicator(tileX, tileY, 'attack');
     EventBus.emit('command-issued', { type: 'attack-move', tileX, tileY });
+  }
+
+  private onPatrolModeCursor = (data: { active: boolean }): void => {
+    this.patrolMode = data.active;
+  };
+
+  private handlePatrolCommand(tileX: number, tileY: number): void {
+    const units = this.selection.selectedUnits;
+    for (const unit of units) {
+      const mover = unit.getComponent<MoverComponent>('mover');
+      if (!mover) continue;
+      const combat = unit.getComponent<CombatComponent>('combat');
+      if (combat) combat.setTarget(null);
+      const gatherer = unit.getComponent<GathererComponent>('gatherer');
+      if (gatherer) gatherer.state = 'idle' as any;
+
+      mover.behaviorMode = 'patrol';
+      mover.patrolPoints = [
+        { x: unit.tileX, y: unit.tileY },
+        { x: tileX, y: tileY },
+      ];
+      mover.patrolIndex = 1; // start by walking to the target
+      this.moveUnitToward(unit, tileX, tileY);
+    }
+    this.showCommandIndicator(tileX, tileY, 'move');
+    EventBus.emit('command-issued', { type: 'patrol', tileX, tileY });
+  }
+
+  private handleExploreCommand({ units }: { units: Unit[] }): void {
+    for (const unit of units) {
+      const mover = unit.getComponent<MoverComponent>('mover');
+      if (!mover) continue;
+      const combat = unit.getComponent<CombatComponent>('combat');
+      if (combat) combat.setTarget(null);
+      const gatherer = unit.getComponent<GathererComponent>('gatherer');
+      if (gatherer) gatherer.state = 'idle' as any;
+
+      mover.behaviorMode = 'explore';
+      this.sendToRandomUnexplored(unit);
+    }
+    if (units.length > 0) {
+      EventBus.emit('command-issued', { type: 'explore', tileX: units[0].tileX, tileY: units[0].tileY });
+    }
+  }
+
+  private handleExploreResume({ unit }: { unit: Unit }): void {
+    if (unit.active) this.sendToRandomUnexplored(unit);
+  }
+
+  private sendToRandomUnexplored(unit: Unit): void {
+    // Pick a random tile on the map, biased toward the edges and areas far from the unit
+    const attempts = 15;
+    let bestX = -1, bestY = -1, bestDist = -1;
+    for (let i = 0; i < attempts; i++) {
+      const rx = Math.floor(Math.random() * MAP_WIDTH);
+      const ry = Math.floor(Math.random() * MAP_HEIGHT);
+      if (!IsoHelper.isInBounds(rx, ry)) continue;
+      const dist = Math.abs(rx - unit.tileX) + Math.abs(ry - unit.tileY);
+      // Prefer tiles that are far away from the unit
+      if (dist > bestDist) {
+        bestDist = dist;
+        bestX = rx;
+        bestY = ry;
+      }
+    }
+    if (bestX >= 0) {
+      this.moveUnitToward(unit, bestX, bestY);
+    }
   }
 
   private showCommandIndicator(tileX: number, tileY: number, type: 'move' | 'attack' | 'gather'): void {
@@ -228,6 +340,9 @@ export class CommandSystem {
     EventBus.off('command-stop', this.handleStopCommand, this);
     EventBus.off('attack-move-cursor', this.onAttackMoveCursor, this);
     EventBus.off('command-hold', this.handleHoldCommand, this);
+    EventBus.off('patrol-mode-cursor', this.onPatrolModeCursor, this);
+    EventBus.off('command-explore', this.handleExploreCommand, this);
+    EventBus.off('command-explore-resume', this.handleExploreResume, this);
     if (this.keyHandler) {
       document.removeEventListener('keydown', this.keyHandler);
       this.keyHandler = null;

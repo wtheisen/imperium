@@ -3,7 +3,7 @@ import { CardEffects } from '../cards/CardEffects';
 
 const TYPE_COLORS: Record<string, string> = {
   unit: '#4488ff', building: '#44aa44', ordnance: '#8844cc',
-  doctrine: '#ffaa00', equipment: '#44dddd',
+  equipment: '#44dddd',
 };
 
 const STYLE_ID = 'card-tooltip-styles';
@@ -117,9 +117,6 @@ export class CardTooltip {
       case 'equipment':
         statsHtml = this.buildEquipmentStats(card);
         break;
-      case 'doctrine':
-        statsHtml = this.buildDoctrineStats(card);
-        break;
     }
 
     this.el.innerHTML = `
@@ -229,12 +226,4 @@ export class CardTooltip {
     return `<div class="card-tooltip__grid">${lines.join('')}</div>`;
   }
 
-  private buildDoctrineStats(card: Card): string {
-    const lines: string[] = [];
-    if (card.doctrineEffect) lines.push(this.stat('Effect', card.doctrineEffect.replace(/_/g, ' ')));
-    if (card.doctrineValue) lines.push(this.stat('Value', card.doctrineValue));
-    if (card.doctrineFilter) lines.push(this.stat('Target', card.doctrineFilter));
-    lines.push(this.stat('Limit', 'Max 3 active'));
-    return `<div class="card-tooltip__grid">${lines.join('')}</div>`;
-  }
 }

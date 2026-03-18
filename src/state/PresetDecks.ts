@@ -12,7 +12,7 @@ export const PRESET_DECKS: SavedDeck[] = [
       'guardsman', 'guardsman',
       'rhino',
       'tarantula',
-      'narthecium',
+      'aegis',
     ],
   },
   {
@@ -25,7 +25,7 @@ export const PRESET_DECKS: SavedDeck[] = [
       'scout', 'scout',
       'rhino',
       'sentinel',
-      'lance_strike',
+      'barracks',
     ],
   },
   {
@@ -38,8 +38,7 @@ export const PRESET_DECKS: SavedDeck[] = [
       'rhino', 'rhino',
       'leman_russ',
       'sentinel',
-      'aegis',
-      'narthecium',
+      'aegis', 'aegis',
     ],
   },
   {
@@ -51,7 +50,7 @@ export const PRESET_DECKS: SavedDeck[] = [
       'guardsman', 'guardsman', 'guardsman',
       'tarantula', 'tarantula',
       'aegis', 'aegis',
-      'narthecium',
+      'barracks',
     ],
   },
 ];
