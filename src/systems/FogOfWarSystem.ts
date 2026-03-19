@@ -90,11 +90,23 @@ export class FogOfWarSystem {
       this.revealAround(entity.tileX, entity.tileY, sight);
     }
 
-    // Emit fog grid for 3D FogRenderer
-    EventBus.emit('fog-updated', this.fogGrid);
+    // Check if any tile changed
+    let dirty = false;
+    for (let y = 0; y < MAP_HEIGHT && !dirty; y++) {
+      for (let x = 0; x < MAP_WIDTH && !dirty; x++) {
+        if (this.fogGrid[y][x] !== this.prevFogGrid[y][x]) {
+          dirty = true;
+        }
+      }
+    }
 
-    // Hide/show enemy entities
-    this.updateEnemyVisibility();
+    if (dirty) {
+      // Emit fog grid for 3D FogRenderer
+      EventBus.emit('fog-updated', this.fogGrid);
+
+      // Hide/show enemy entities
+      this.updateEnemyVisibility();
+    }
   }
 
   private revealAround(cx: number, cy: number, radius: number): void {
