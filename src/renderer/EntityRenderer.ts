@@ -66,10 +66,24 @@ export class EntityRenderer {
   private shakes = new Map<string, ShakeState>();
   private attackAnims = new Map<string, AttackAnimState>();
 
+  // Shared shadow geometry & material (one instance reused by all shadow blobs)
+  private shadowGeo: THREE.CircleGeometry;
+  private shadowMat: THREE.MeshBasicMaterial;
+
   constructor(scene: THREE.Scene, cameraController?: CameraController) {
     this.scene = scene;
     this.factory = new EntityMeshFactory();
     this.cameraController = cameraController ?? null;
+
+    // Pre-create shared shadow geometry & material
+    this.shadowGeo = new THREE.CircleGeometry(0.25, 12);
+    this.shadowGeo.rotateX(-Math.PI / 2);
+    this.shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.25,
+      depthWrite: false,
+    });
 
     // Listen for combat events
     EventBus.on('damage-dealt', this.onDamageDealt, this);
@@ -313,15 +327,7 @@ export class EntityRenderer {
 
   /** Add a flat dark ellipse shadow under a sprite mesh. */
   private addShadowBlob(parentMesh: THREE.Mesh): void {
-    const shadowGeo = new THREE.CircleGeometry(0.25, 12);
-    shadowGeo.rotateX(-Math.PI / 2);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0.25,
-      depthWrite: false,
-    });
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    const shadow = new THREE.Mesh(this.shadowGeo, this.shadowMat);
     shadow.position.y = 0.01; // Just above ground
     shadow.scale.set(1, 1, 0.6); // Ellipse shape
     parentMesh.add(shadow);
@@ -749,5 +755,9 @@ export class EntityRenderer {
     }
     this.meshes.clear();
     this.factory.dispose();
+
+    // Dispose shared shadow resources
+    this.shadowGeo.dispose();
+    this.shadowMat.dispose();
   }
 }
