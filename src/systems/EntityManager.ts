@@ -19,6 +19,23 @@ export class EntityManager {
   private validator: PlacementValidator;
   /** Cached array of all entities, invalidated on add/remove. */
   private cachedAll: Entity[] | null = null;
+  /** Team-partitioned caches, invalidated alongside cachedAll. */
+  private cachedPlayerUnits: Unit[] | null = null;
+  private cachedEnemyUnits: Unit[] | null = null;
+  private cachedPlayerBuildings: Building[] | null = null;
+  private cachedEnemyBuildings: Building[] | null = null;
+  private cachedPlayerEntities: Entity[] | null = null;
+  private cachedEnemyEntities: Entity[] | null = null;
+
+  private invalidateCaches(): void {
+    this.cachedAll = null;
+    this.cachedPlayerUnits = null;
+    this.cachedEnemyUnits = null;
+    this.cachedPlayerBuildings = null;
+    this.cachedEnemyBuildings = null;
+    this.cachedPlayerEntities = null;
+    this.cachedEnemyEntities = null;
+  }
 
   constructor(validator: PlacementValidator) {
     this.validator = validator;
@@ -64,7 +81,7 @@ export class EntityManager {
     }
 
     this.entities.set(unit.entityId, unit);
-    this.cachedAll = null;
+    this.invalidateCaches();
     return unit;
   }
 
@@ -132,7 +149,7 @@ export class EntityManager {
 
     this.validator.occupyTiles(tileX, tileY, stats.tileWidth, stats.tileHeight);
     this.entities.set(building.entityId, building);
-    this.cachedAll = null;
+    this.invalidateCaches();
 
     EventBus.emit('building-placed', { building, tiles: this.getTilesForBuilding(tileX, tileY, stats.tileWidth, stats.tileHeight) });
 
@@ -165,7 +182,7 @@ export class EntityManager {
       this.validator.freeTiles(entity.tileX, entity.tileY, entity.tileWidth, entity.tileHeight);
     }
     this.entities.delete(entity.entityId);
-    this.cachedAll = null;
+    this.invalidateCaches();
     entity.destroyEntity();
   }
 
@@ -181,19 +198,56 @@ export class EntityManager {
   }
 
   getUnits(team?: EntityTeam): Unit[] {
-    return this.getAllEntities().filter(
-      (e): e is Unit => e instanceof Unit && (!team || e.team === team)
-    );
+    if (!team) {
+      return this.getAllEntities().filter((e): e is Unit => e instanceof Unit);
+    }
+    if (team === 'player') {
+      if (!this.cachedPlayerUnits) {
+        this.cachedPlayerUnits = this.getAllEntities().filter(
+          (e): e is Unit => e instanceof Unit && e.team === 'player'
+        );
+      }
+      return this.cachedPlayerUnits;
+    }
+    if (!this.cachedEnemyUnits) {
+      this.cachedEnemyUnits = this.getAllEntities().filter(
+        (e): e is Unit => e instanceof Unit && e.team === 'enemy'
+      );
+    }
+    return this.cachedEnemyUnits;
   }
 
   getBuildings(team?: EntityTeam): Building[] {
-    return this.getAllEntities().filter(
-      (e): e is Building => e instanceof Building && (!team || e.team === team)
-    );
+    if (!team) {
+      return this.getAllEntities().filter((e): e is Building => e instanceof Building);
+    }
+    if (team === 'player') {
+      if (!this.cachedPlayerBuildings) {
+        this.cachedPlayerBuildings = this.getAllEntities().filter(
+          (e): e is Building => e instanceof Building && e.team === 'player'
+        );
+      }
+      return this.cachedPlayerBuildings;
+    }
+    if (!this.cachedEnemyBuildings) {
+      this.cachedEnemyBuildings = this.getAllEntities().filter(
+        (e): e is Building => e instanceof Building && e.team === 'enemy'
+      );
+    }
+    return this.cachedEnemyBuildings;
   }
 
   getEntitiesByTeam(team: EntityTeam): Entity[] {
-    return this.getAllEntities().filter((e) => e.team === team);
+    if (team === 'player') {
+      if (!this.cachedPlayerEntities) {
+        this.cachedPlayerEntities = this.getAllEntities().filter((e) => e.team === 'player');
+      }
+      return this.cachedPlayerEntities;
+    }
+    if (!this.cachedEnemyEntities) {
+      this.cachedEnemyEntities = this.getAllEntities().filter((e) => e.team === 'enemy');
+    }
+    return this.cachedEnemyEntities;
   }
 
   getEntitiesAtTile(tileX: number, tileY: number): Entity[] {
@@ -201,14 +255,13 @@ export class EntityManager {
   }
 
   getNearestEnemy(entity: Entity): Entity | null {
-    const enemies = this.getAllEntities().filter(
-      (e) => e.team !== entity.team && e.active
-    );
-    if (enemies.length === 0) return null;
+    const enemyTeam: EntityTeam = entity.team === 'player' ? 'enemy' : 'player';
+    const enemies = this.getEntitiesByTeam(enemyTeam);
 
     let nearest: Entity | null = null;
     let minDist = Infinity;
     for (const enemy of enemies) {
+      if (!enemy.active) continue;
       const dist = Math.abs(entity.tileX - enemy.tileX) + Math.abs(entity.tileY - enemy.tileY);
       if (dist < minDist) {
         minDist = dist;
@@ -233,6 +286,6 @@ export class EntityManager {
       entity.destroyEntity();
     }
     this.entities.clear();
-    this.cachedAll = null;
+    this.invalidateCaches();
   }
 }
