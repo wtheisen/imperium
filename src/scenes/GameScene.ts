@@ -656,6 +656,7 @@ export class GameScene implements GameSceneInterface {
     this.missionSystem?.destroy();
     this.selectionSystem?.destroy();
     this.commandSystem?.destroy();
+    this.combatSystem?.destroy();
 
     TimerManager.get().clear();
   }

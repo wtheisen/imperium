@@ -4,7 +4,7 @@ import { HealthComponent } from './HealthComponent';
 import { CombatComponent } from './CombatComponent';
 import { MoverComponent } from './MoverComponent';
 import { IsoHelper } from '../map/IsoHelper';
-import { Projectile } from '../entities/Projectile';
+import { TimerManager } from '../utils/TimerManager';
 import { EntityManager } from '../systems/EntityManager';
 import { getPlayerState } from '../state/PlayerState';
 import { TECH_TREES } from '../state/TechTreeData';
@@ -208,17 +208,17 @@ export class AbilityComponent implements Component {
 
     if (targets.length === 0) return false;
 
+    const duration = 300;
     for (const target of targets) {
-      new Projectile(
-        this.unit.tileX, this.unit.tileY,
-        target.tileX, target.tileY,
-        () => {
-          if (target.active) {
-            const health = target.getComponent<HealthComponent>('health');
-            if (health) health.takeDamage(dmg, this.unit);
-          }
-        }
-      );
+      EventBus.emit('projectile-spawned', {
+        fromTileX: this.unit.tileX, fromTileY: this.unit.tileY,
+        toTileX: target.tileX, toTileY: target.tileY, duration,
+      });
+      const targetId = target.entityId;
+      const attackerId = this.unit.entityId;
+      TimerManager.get().schedule(duration, () => {
+        EventBus.emit('projectile-hit', { targetId, attackerId, damage: dmg });
+      });
     }
 
     return true;
@@ -448,23 +448,20 @@ export class AbilityComponent implements Component {
     const targetY = target.tileY;
 
     // Fire projectile
-    new Projectile(
-      this.unit.tileX, this.unit.tileY,
-      targetX, targetY,
-      () => {
-        // AoE on arrival
-        const allEnemies = this.entityManager.getEntitiesByTeam(this.unit.team === 'player' ? 'enemy' : 'player');
-        for (const e of allEnemies) {
-          if (!e.active) continue;
-          if (IsoHelper.tileDistance(targetX, targetY, e.tileX, e.tileY) <= radius) {
-            const health = e.getComponent<HealthComponent>('health');
-            if (health) health.takeDamage(dmg, this.unit);
-          }
-        }
-        // Explosion VFX via EventBus
-        EventBus.emit('ordnance-vfx-3d', { type: 'ability', tileX: targetX, tileY: targetY, radius });
-      }
-    );
+    const duration = 300;
+    EventBus.emit('projectile-spawned', {
+      fromTileX: this.unit.tileX, fromTileY: this.unit.tileY,
+      toTileX: targetX, toTileY: targetY, duration,
+    });
+    const attackerId = this.unit.entityId;
+    const enemyTeam = this.unit.team === 'player' ? 'enemy' : 'player';
+    TimerManager.get().schedule(duration, () => {
+      EventBus.emit('projectile-hit-aoe', {
+        attackerId, tileX: targetX, tileY: targetY,
+        radius, damage: dmg, enemyTeam,
+      });
+      EventBus.emit('ordnance-vfx-3d', { type: 'ability', tileX: targetX, tileY: targetY, radius });
+    });
 
     return true;
   }

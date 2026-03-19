@@ -1,8 +1,8 @@
 import { Component, Entity } from '../entities/Entity';
 import { HealthComponent } from './HealthComponent';
 import { IsoHelper } from '../map/IsoHelper';
-import { Projectile } from '../entities/Projectile';
 import { EventBus } from '../EventBus';
+import { TimerManager } from '../utils/TimerManager';
 
 export class CombatComponent implements Component {
   private entity: Entity;
@@ -94,15 +94,21 @@ export class CombatComponent implements Component {
     });
 
     if (this.isRanged) {
-      new Projectile(
-        this.entity.tileX, this.entity.tileY,
-        target.tileX, target.tileY,
-        () => {
-          if (target.active) {
-            health.takeDamage(this.damage, this.entity);
-          }
-        }
-      );
+      const duration = 300;
+      EventBus.emit('projectile-spawned', {
+        fromTileX: this.entity.tileX,
+        fromTileY: this.entity.tileY,
+        toTileX: target.tileX,
+        toTileY: target.tileY,
+        duration,
+      });
+      // Capture only IDs and damage value — avoid holding entity refs in the closure
+      const targetId = target.entityId;
+      const attackerId = this.entity.entityId;
+      const damage = this.damage;
+      TimerManager.get().schedule(duration, () => {
+        EventBus.emit('projectile-hit', { targetId, attackerId, damage });
+      });
     } else {
       health.takeDamage(this.damage, this.entity);
     }
