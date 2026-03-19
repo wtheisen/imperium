@@ -243,7 +243,6 @@ export class CardEffects {
           if (IsoHelper.isInBounds(newX, newY)) {
             entity.tileX = newX;
             entity.tileY = newY;
-            entity.updateScreenPosition();
           }
         }
       }

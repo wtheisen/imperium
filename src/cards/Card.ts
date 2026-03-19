@@ -1,8 +1,5 @@
 export type CardType = 'unit' | 'building' | 'ordnance' | 'equipment';
 
-/** @deprecated Kept for backwards compat with saved data. */
-export type LegacyCardType = 'joker';
-
 export interface WargearStatBoost {
   stat: 'damage' | 'hp' | 'speed' | 'range' | 'armor' | 'vision';
   value: number;

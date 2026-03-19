@@ -258,8 +258,6 @@ export class AbilityComponent implements Component {
     // Teleport
     this.unit.tileX = targetX;
     this.unit.tileY = targetY;
-    this.unit.updateScreenPosition();
-    this.unit.updateDepth();
     mover.stop();
 
     // Speed buff
@@ -402,8 +400,6 @@ export class AbilityComponent implements Component {
     // Teleport
     this.unit.tileX = targetX;
     this.unit.tileY = targetY;
-    this.unit.updateScreenPosition();
-    this.unit.updateDepth();
     const mover = this.unit.getComponent<MoverComponent>('mover');
     if (mover) mover.stop();
 

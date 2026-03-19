@@ -1,5 +1,3 @@
-import { IsoHelper } from '../map/IsoHelper';
-
 export interface Component {
   update(delta: number): void;
   destroy(): void;
@@ -18,11 +16,6 @@ export class Entity {
   public visible: boolean = true;
   /** Facing direction in radians (0 = +Z / south, increases clockwise) */
   public facing: number = 0;
-  /** Screen-space position (used by EntityRenderer for smooth interpolation) */
-  public screenX: number;
-  public screenY: number;
-  /** Depth for sorting (no longer used for Phaser but kept for logic) */
-  public depth: number = 0;
   protected components: Map<string, Component> = new Map();
 
   constructor(
@@ -34,9 +27,6 @@ export class Entity {
     this.tileX = tileX;
     this.tileY = tileY;
     this.team = team;
-    const { x, y } = IsoHelper.tileToScreen(tileX, tileY);
-    this.screenX = x;
-    this.screenY = y;
   }
 
   addComponent(name: string, component: Component): void {
@@ -63,12 +53,6 @@ export class Entity {
     for (const component of this.components.values()) {
       component.update(delta);
     }
-  }
-
-  updateScreenPosition(): void {
-    const { x, y } = IsoHelper.tileToScreen(this.tileX, this.tileY);
-    this.screenX = x;
-    this.screenY = y;
   }
 
   /** Arbitrary data store (replaces Phaser's getData/setData) */
