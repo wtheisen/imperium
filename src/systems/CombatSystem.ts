@@ -8,6 +8,8 @@ import { EventBus } from '../EventBus';
 
 export class CombatSystem {
   private entityManager: EntityManager;
+  private retargetTimer = 0;
+  private retargetInterval = 250; // ms between auto-target scans
 
   constructor(entityManager: EntityManager) {
     this.entityManager = entityManager;
@@ -44,7 +46,12 @@ export class CombatSystem {
     EventBus.off('projectile-hit-aoe', this.onProjectileHitAoe, this);
   }
 
-  update(_delta: number): void {
+  update(delta: number): void {
+    // Throttle auto-targeting to avoid O(N^2) scans every frame
+    this.retargetTimer += delta;
+    if (this.retargetTimer < this.retargetInterval) return;
+    this.retargetTimer = 0;
+
     // Auto-target for entities without targets
     const allEntities = this.entityManager.getAllEntities();
 
