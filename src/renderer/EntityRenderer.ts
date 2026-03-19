@@ -66,6 +66,9 @@ export class EntityRenderer {
   private shakes = new Map<string, ShakeState>();
   private attackAnims = new Map<string, AttackAnimState>();
 
+  // Reusable set for syncAll() to avoid per-frame allocation
+  private activeIds = new Set<string>();
+
   // Shared shadow geometry & material (one instance reused by all shadow blobs)
   private shadowGeo: THREE.CircleGeometry;
   private shadowMat: THREE.MeshBasicMaterial;
@@ -107,13 +110,13 @@ export class EntityRenderer {
 
   /** Called each frame — syncs all entities to 3D meshes or sprite billboards. */
   syncAll(entities: Entity[], deltaMs: number = 16): void {
-    const activeIds = new Set<string>();
+    this.activeIds.clear();
     const cameraPos = this.cameraController?.camera.position;
     const cameraAzimuth = this.cameraController?.azimuth ?? 0;
 
     for (const entity of entities) {
       if (!entity.active) continue;
-      activeIds.add(entity.entityId);
+      this.activeIds.add(entity.entityId);
 
       let mesh = this.meshes.get(entity.entityId);
 
@@ -213,7 +216,7 @@ export class EntityRenderer {
 
     // Remove meshes for dead/despawned entities
     for (const [id, mesh] of this.meshes) {
-      if (!activeIds.has(id)) {
+      if (!this.activeIds.has(id)) {
         this.scene.remove(mesh);
         this.meshes.delete(id);
         // Clean up sprite state
