@@ -1,7 +1,9 @@
 import { EntityManager } from './EntityManager';
 import { CombatComponent } from '../components/CombatComponent';
 import { MoverComponent } from '../components/MoverComponent';
-import { Entity } from '../entities/Entity';
+import { HealthComponent } from '../components/HealthComponent';
+import { Entity, EntityTeam } from '../entities/Entity';
+import { IsoHelper } from '../map/IsoHelper';
 import { EventBus } from '../EventBus';
 
 export class CombatSystem {
@@ -9,6 +11,37 @@ export class CombatSystem {
 
   constructor(entityManager: EntityManager) {
     this.entityManager = entityManager;
+    EventBus.on('projectile-hit', this.onProjectileHit, this);
+    EventBus.on('projectile-hit-aoe', this.onProjectileHitAoe, this);
+  }
+
+  private onProjectileHit = (data: { targetId: string; attackerId: string; damage: number }): void => {
+    const target = this.entityManager.getEntity(data.targetId);
+    if (!target || !target.active) return;
+    const health = target.getComponent<HealthComponent>('health');
+    if (!health) return;
+    const attacker = this.entityManager.getEntity(data.attackerId);
+    health.takeDamage(data.damage, attacker);
+  };
+
+  private onProjectileHitAoe = (data: {
+    attackerId: string; tileX: number; tileY: number;
+    radius: number; damage: number; enemyTeam: string;
+  }): void => {
+    const attacker = this.entityManager.getEntity(data.attackerId);
+    const enemies = this.entityManager.getEntitiesByTeam(data.enemyTeam as EntityTeam);
+    for (const e of enemies) {
+      if (!e.active) continue;
+      if (IsoHelper.tileDistance(data.tileX, data.tileY, e.tileX, e.tileY) <= data.radius) {
+        const health = e.getComponent<HealthComponent>('health');
+        if (health) health.takeDamage(data.damage, attacker);
+      }
+    }
+  };
+
+  destroy(): void {
+    EventBus.off('projectile-hit', this.onProjectileHit, this);
+    EventBus.off('projectile-hit-aoe', this.onProjectileHitAoe, this);
   }
 
   update(_delta: number): void {
