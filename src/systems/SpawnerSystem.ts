@@ -3,7 +3,7 @@ import { EntityManager } from './EntityManager';
 import { EnemyCampDefinition } from '../missions/MissionDefinition';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { getActiveModifiers } from '../state/PlayerState';
-import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import {
   ROAM_PATROL_INTERVAL,
   ROAM_PATROL_SIZE,
@@ -105,7 +105,7 @@ export class SpawnerSystem {
         continue;
       }
 
-      const effects = getMergedEffects(getActiveModifiers());
+      const effects = getCachedMergedEffects(getActiveModifiers);
       const spawnRateMult = effects.spawnRateMult ?? 1;
       const effectiveInterval = (spawner.config.spawnInterval * spawnRateMult) / this.pressureMultiplier;
       spawner.timer += delta;
