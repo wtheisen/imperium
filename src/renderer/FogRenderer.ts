@@ -30,6 +30,7 @@ export class FogRenderer {
   private fogGrid: number[][] = [];
   private targetAlpha: Float32Array; // per-tile target opacity
   private currentAlpha: Float32Array; // per-tile current opacity (smoothed)
+  private fogImageData: ImageData; // pre-allocated, reused every frame
   private elapsed = 0;
 
   constructor(tileMap: TileMapMesh, scene?: THREE.Scene, decorations?: TerrainDecorations) {
@@ -56,6 +57,9 @@ export class FogRenderer {
     this.blurCanvas.width = canvasW;
     this.blurCanvas.height = canvasH;
     this.blurCtx = this.blurCanvas.getContext('2d')!;
+
+    // Pre-allocate ImageData for fog texture (reused every frame)
+    this.fogImageData = this.fogCtx.createImageData(canvasW, canvasH);
 
     // Fill solid black initially
     this.fogCtx.fillStyle = '#000';
@@ -133,8 +137,8 @@ export class FogRenderer {
     const ctx = this.fogCtx;
     const t = this.elapsed / 1000;
 
-    // Get pixel data for direct manipulation
-    const imageData = ctx.createImageData(w, h);
+    // Reuse pre-allocated ImageData (pixel array is overwritten completely each frame)
+    const imageData = this.fogImageData;
     const data = imageData.data;
 
     for (let ty = 0; ty < MAP_HEIGHT; ty++) {
