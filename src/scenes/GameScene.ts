@@ -28,6 +28,7 @@ import { TutorialSystem } from '../systems/TutorialSystem';
 import { TimerManager } from '../utils/TimerManager';
 import { InputEvent } from '../renderer/InputBridge';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
+import { getGameRenderer } from '../renderer/GameRenderer';
 import { getActiveModifiers } from '../state/PlayerState';
 import { getMergedEffects } from '../state/DifficultyModifiers';
 import { POIManager } from '../systems/POIManager';
@@ -357,8 +358,7 @@ export class GameScene implements GameSceneInterface {
   private onCardDragReleased(data: { card: any; cardIndex: number; screenX: number; screenY: number; isShipOrdnance?: boolean; slotIndex?: number }): void {
     EventBus.emit('placement-preview-3d', { tileX: 0, tileY: 0, valid: false, visible: false });
 
-    const gameRenderer = (window as any).__gameRenderer;
-    const tile = gameRenderer?.inputBridge?.screenToTile(data.screenX, data.screenY);
+    const tile = getGameRenderer().inputBridge.screenToTile(data.screenX, data.screenY);
     if (!tile || !IsoHelper.isInBounds(tile.tileX, tile.tileY)) {
       if (!data.isShipOrdnance) {
         EventBus.emit('card-play-failed', { reason: 'out-of-bounds', cardIndex: data.cardIndex });
@@ -391,8 +391,7 @@ export class GameScene implements GameSceneInterface {
 
   private onCardDragMove(data: any): void {
     this.pendingCard = data;
-    const gameRenderer = (window as any).__gameRenderer;
-    const tile = gameRenderer?.inputBridge?.screenToTile(data.screenX, data.screenY);
+    const tile = getGameRenderer().inputBridge.screenToTile(data.screenX, data.screenY);
     if (tile && IsoHelper.isInBounds(tile.tileX, tile.tileY)) {
       const card = data.card;
       const w = card.tileWidth || 1;
@@ -527,10 +526,7 @@ export class GameScene implements GameSceneInterface {
   }
 
   private onOrdnanceVfx(_data: any): void {
-    const gameRenderer = (window as any).__gameRenderer;
-    if (gameRenderer?.cameraController) {
-      gameRenderer.cameraController.shake(0.15, 300);
-    }
+    getGameRenderer().cameraController.shake(0.15, 300);
   }
 
   private onEntityDiedCameraShake({ entity }: { entity: any }): void {
@@ -538,10 +534,7 @@ export class GameScene implements GameSceneInterface {
     if (entity?.team === 'enemy') {
       const health = entity.getComponent?.('health');
       if (health && health.maxHp >= 80) {
-        const gameRenderer = (window as any).__gameRenderer;
-        if (gameRenderer?.cameraController) {
-          gameRenderer.cameraController.shake(0.1, 200);
-        }
+        getGameRenderer().cameraController.shake(0.1, 200);
       }
     }
   }
@@ -562,10 +555,7 @@ export class GameScene implements GameSceneInterface {
   }
 
   private onPanToObjective({ tileX, tileY }: { tileX: number; tileY: number }): void {
-    const gameRenderer = (window as any).__gameRenderer;
-    if (gameRenderer?.cameraController) {
-      gameRenderer.cameraController.panTo(tileX, tileY);
-    }
+    getGameRenderer().cameraController.panTo(tileX, tileY);
   }
 
   update(delta: number): void {

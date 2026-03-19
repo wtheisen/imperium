@@ -166,7 +166,7 @@ export class GameRenderer {
       this.cameraController.tick();
 
       // Sync entity meshes
-      this.entityRenderer.syncAll(this.currentEntities);
+      this.entityRenderer.syncAll(this.currentEntities, deltaMs);
 
       // Update entity VFX (hit flash, shakes, attack anims)
       this.entityRenderer.updateEffects(deltaMs);
@@ -242,4 +242,16 @@ export class GameRenderer {
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
+}
+
+/** Singleton GameRenderer — set from main.ts */
+let _gameRenderer: GameRenderer | null = null;
+
+export function setGameRenderer(gr: GameRenderer): void {
+  _gameRenderer = gr;
+}
+
+export function getGameRenderer(): GameRenderer {
+  if (!_gameRenderer) throw new Error('GameRenderer not initialized');
+  return _gameRenderer;
 }

@@ -17,6 +17,8 @@ import { getMergedEffects } from '../state/DifficultyModifiers';
 export class EntityManager {
   private entities: Map<string, Entity> = new Map();
   private validator: PlacementValidator;
+  /** Cached array of all entities, invalidated on add/remove. */
+  private cachedAll: Entity[] | null = null;
 
   constructor(validator: PlacementValidator) {
     this.validator = validator;
@@ -62,6 +64,7 @@ export class EntityManager {
     }
 
     this.entities.set(unit.entityId, unit);
+    this.cachedAll = null;
     return unit;
   }
 
@@ -129,6 +132,7 @@ export class EntityManager {
 
     this.validator.occupyTiles(tileX, tileY, stats.tileWidth, stats.tileHeight);
     this.entities.set(building.entityId, building);
+    this.cachedAll = null;
 
     EventBus.emit('building-placed', { building, tiles: this.getTilesForBuilding(tileX, tileY, stats.tileWidth, stats.tileHeight) });
 
@@ -161,6 +165,7 @@ export class EntityManager {
       this.validator.freeTiles(entity.tileX, entity.tileY, entity.tileWidth, entity.tileHeight);
     }
     this.entities.delete(entity.entityId);
+    this.cachedAll = null;
     entity.destroyEntity();
   }
 
@@ -169,7 +174,10 @@ export class EntityManager {
   }
 
   getAllEntities(): Entity[] {
-    return Array.from(this.entities.values());
+    if (!this.cachedAll) {
+      this.cachedAll = Array.from(this.entities.values());
+    }
+    return this.cachedAll;
   }
 
   getUnits(team?: EntityTeam): Unit[] {
@@ -225,5 +233,6 @@ export class EntityManager {
       entity.destroyEntity();
     }
     this.entities.clear();
+    this.cachedAll = null;
   }
 }

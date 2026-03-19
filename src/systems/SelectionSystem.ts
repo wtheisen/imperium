@@ -4,6 +4,7 @@ import { Building } from '../entities/Building';
 import { EntityManager } from './EntityManager';
 import { EventBus } from '../EventBus';
 import { InputEvent } from '../renderer/InputBridge';
+import { getGameRenderer } from '../renderer/GameRenderer';
 
 export class SelectionSystem {
   private entityManager: EntityManager;
@@ -134,8 +135,7 @@ export class SelectionSystem {
     let clickedUnit: Unit | null = null;
     let clickedBuilding: Building | null = null;
 
-    const gameRenderer = (window as any).__gameRenderer;
-    const hitIds: string[] = gameRenderer?.inputBridge?.raycastEntities(evt.screenX, evt.screenY) || [];
+    const hitIds: string[] = getGameRenderer().inputBridge.raycastEntities(evt.screenX, evt.screenY) || [];
 
     if (hitIds.length > 0) {
       const allEntities = this.entityManager.getAllEntities();
@@ -193,11 +193,9 @@ export class SelectionSystem {
 
   /** Select all player units of the given type visible on screen */
   private selectAllOfTypeOnScreen(unitType: string): void {
-    const gameRenderer = (window as any).__gameRenderer;
-    if (!gameRenderer) return;
-
-    const camera = gameRenderer.cameraController.camera;
-    const canvas = gameRenderer.renderer.domElement;
+    const gr = getGameRenderer();
+    const camera = gr.cameraController.camera;
+    const canvas = gr.renderer.domElement;
     const rect = canvas.getBoundingClientRect();
     const tempVec = new THREE.Vector3();
 
@@ -226,11 +224,9 @@ export class SelectionSystem {
     const sx2 = Math.max(start.screenX, end.screenX);
     const sy2 = Math.max(start.screenY, end.screenY);
 
-    const gameRenderer = (window as any).__gameRenderer;
-    if (!gameRenderer) return;
-
-    const camera = gameRenderer.cameraController.camera;
-    const canvas = gameRenderer.renderer.domElement;
+    const gr = getGameRenderer();
+    const camera = gr.cameraController.camera;
+    const canvas = gr.renderer.domElement;
     const rect = canvas.getBoundingClientRect();
 
     const units = this.entityManager.getUnits('player');

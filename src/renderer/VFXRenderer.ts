@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { EventBus } from '../EventBus';
 import { Entity } from '../entities/Entity';
 import { EntityMeshFactory } from './EntityMeshFactory';
+import { SQUAD_FORMATIONS } from './SquadFormations';
 
 interface VFXParticle {
   mesh: THREE.Mesh;
@@ -29,14 +30,14 @@ export class VFXRenderer {
   private particles: VFXParticle[] = [];
   private projectiles: ProjectileVFX[] = [];
 
-  // Persistent markers
-  private objectiveMarkers = new Map<string, THREE.Group>();
-  private supplyPodMeshes = new Map<string, THREE.Group>();
-  private packMarkers = new Map<string, THREE.Group>();
-  private poiMarkers = new Map<string, THREE.Group>();
+  // Persistent markers — store direct refs to animated children to avoid traverse() per frame
+  private objectiveMarkers = new Map<string, { group: THREE.Group; spinMesh: THREE.Mesh | null }>();
+  private supplyPodMeshes = new Map<string, { group: THREE.Group; pulseMesh: THREE.Mesh | null }>();
+  private packMarkers = new Map<string, { group: THREE.Group; pulseMesh: THREE.Mesh | null }>();
+  private poiMarkers = new Map<string, { group: THREE.Group; pulseMesh: THREE.Mesh | null; floatMesh: THREE.Mesh | null; ringMesh: THREE.Mesh | null }>();
 
   // Gold mine models
-  private goldMines = new Map<string, { group: THREE.Group; barFill: THREE.Mesh; barBg: THREE.Mesh; label: THREE.Mesh; labelCanvas: HTMLCanvasElement; labelTexture: THREE.CanvasTexture; remaining: number; maxGold: number }>();
+  private goldMines = new Map<string, { group: THREE.Group; barFill: THREE.Mesh; barBg: THREE.Mesh; label: THREE.Mesh; labelCanvas: HTMLCanvasElement; labelTexture: THREE.CanvasTexture; remaining: number; maxGold: number; glowMesh: THREE.Mesh | null }>();
 
   // Reusable geometries
   private sphereGeo = new THREE.SphereGeometry(0.1, 8, 6);
@@ -395,18 +396,9 @@ export class VFXRenderer {
     }
   }
 
-  /** Squad formation offsets (same as EntityRenderer). */
-  private static SQUAD_FORMATIONS: Record<number, { x: number; z: number }[]> = {
-    2: [{ x: -0.25, z: 0 }, { x: 0.25, z: 0 }],
-    3: [{ x: 0, z: -0.25 }, { x: -0.28, z: 0.18 }, { x: 0.28, z: 0.18 }],
-    4: [{ x: -0.25, z: -0.25 }, { x: 0.25, z: -0.25 }, { x: -0.25, z: 0.25 }, { x: 0.25, z: 0.25 }],
-    5: [{ x: 0, z: -0.3 }, { x: -0.3, z: -0.05 }, { x: 0.3, z: -0.05 }, { x: -0.18, z: 0.28 }, { x: 0.18, z: 0.28 }],
-    6: [{ x: -0.22, z: -0.3 }, { x: 0.22, z: -0.3 }, { x: -0.35, z: 0 }, { x: 0.35, z: 0 }, { x: -0.22, z: 0.3 }, { x: 0.22, z: 0.3 }],
-  };
-
   private createGhostSquad(meshType: string, squadSize: number): THREE.Group {
     const squad = new THREE.Group();
-    const positions = VFXRenderer.SQUAD_FORMATIONS[squadSize] || VFXRenderer.SQUAD_FORMATIONS[4]!;
+    const positions = SQUAD_FORMATIONS[squadSize] || SQUAD_FORMATIONS[4]!;
     const modelScale = squadSize <= 3 ? 0.55 : squadSize <= 4 ? 0.5 : 0.42;
 
     for (let i = 0; i < squadSize; i++) {
@@ -602,7 +594,6 @@ export class VFXRenderer {
     const glowGeo = new THREE.SphereGeometry(0.35, 8, 6);
     const glow = new THREE.Mesh(glowGeo, glowMat);
     glow.position.y = 0.22;
-    glow.userData.mineGlow = true;
     group.add(glow);
 
     // Gold bar (background)
@@ -639,7 +630,7 @@ export class VFXRenderer {
     group.position.set(data.tileX, 0, data.tileY);
     this.scene.add(group);
 
-    const entry = { group, barFill, barBg, label, labelCanvas, labelTexture, remaining: data.remaining, maxGold: data.maxGold };
+    const entry = { group, barFill, barBg, label, labelCanvas, labelTexture, remaining: data.remaining, maxGold: data.maxGold, glowMesh: glow };
     this.goldMines.set(key, entry);
 
     this.updateGoldMineVisual(entry);
@@ -808,20 +799,19 @@ export class VFXRenderer {
     const diamondMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3 });
     const diamond = new THREE.Mesh(diamondGeo, diamondMat);
     diamond.position.y = 2.2;
-    diamond.userData.spin = true;
     group.add(diamond);
 
     group.position.set(data.tileX, 0, data.tileY);
     this.scene.add(group);
-    this.objectiveMarkers.set(data.id, group);
+    this.objectiveMarkers.set(data.id, { group, spinMesh: diamond });
   };
 
   private onObjectiveCompleted = (data: { objectiveId: string }): void => {
-    const group = this.objectiveMarkers.get(data.objectiveId);
-    if (!group) return;
+    const entry = this.objectiveMarkers.get(data.objectiveId);
+    if (!entry) return;
 
     // Turn green and fade
-    group.traverse((child) => {
+    entry.group.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material instanceof THREE.MeshBasicMaterial) {
           child.material.color.set(0x44ff44);
@@ -860,7 +850,6 @@ export class VFXRenderer {
     const beaconMat = new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.3 });
     const beacon = new THREE.Mesh(beaconGeo, beaconMat);
     beacon.position.y = 0.6;
-    beacon.userData.pulse = true;
     group.add(beacon);
 
     // Start high up for drop animation
@@ -870,7 +859,7 @@ export class VFXRenderer {
     group.userData.dropTarget = 0;
     group.userData.dropSpeed = 0;
     this.scene.add(group);
-    this.supplyPodMeshes.set(data.id, group);
+    this.supplyPodMeshes.set(data.id, { group, pulseMesh: beacon });
 
     // Sky beam — vertical light pillar from sky to ground
     const beamGeo = new THREE.CylinderGeometry(0.03, 0.06, dropHeight + 2, 6);
@@ -947,8 +936,9 @@ export class VFXRenderer {
   };
 
   private onSupplyPodOpened = (data: { id: string }): void => {
-    const group = this.supplyPodMeshes.get(data.id);
-    if (!group) return;
+    const entry = this.supplyPodMeshes.get(data.id);
+    if (!entry) return;
+    const group = entry.group;
 
     // Burst particles
     const pos = group.position;
@@ -1000,20 +990,19 @@ export class VFXRenderer {
     const beaconMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 });
     const beacon = new THREE.Mesh(beaconGeo, beaconMat);
     beacon.position.y = 0.5;
-    beacon.userData.pulse = true;
     group.add(beacon);
 
     group.position.set(data.tileX, 0, data.tileY);
     this.scene.add(group);
-    this.packMarkers.set(data.id, group);
+    this.packMarkers.set(data.id, { group, pulseMesh: beacon });
   };
 
   private onPackOpened = (data: { id: string }): void => {
-    const group = this.packMarkers.get(data.id);
-    if (!group) return;
+    const entry = this.packMarkers.get(data.id);
+    if (!entry) return;
 
     // Burst particles
-    const pos = group.position;
+    const pos = entry.group.position;
     for (let i = 0; i < 6; i++) {
       const angle = Math.random() * Math.PI * 2;
       const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
@@ -1030,7 +1019,7 @@ export class VFXRenderer {
       });
     }
 
-    this.scene.remove(group);
+    this.scene.remove(entry.group);
     this.packMarkers.delete(data.id);
   };
 
@@ -1060,8 +1049,6 @@ export class VFXRenderer {
     const iconMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 });
     const icon = new THREE.Mesh(iconGeo, iconMat);
     icon.position.y = 0.8;
-    icon.userData.pulse = true;
-    icon.userData.float = true;
     group.add(icon);
 
     // Ground glow ring
@@ -1070,20 +1057,19 @@ export class VFXRenderer {
     const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.position.y = 0.02;
-    ring.userData.pulse = true;
     group.add(ring);
 
     group.position.set(data.tileX, 0, data.tileY);
     this.scene.add(group);
-    this.poiMarkers.set(data.id, group);
+    this.poiMarkers.set(data.id, { group, pulseMesh: icon, floatMesh: icon, ringMesh: ring });
   };
 
   private onPOICollected = (data: { id: string; tileX: number; tileY: number }): void => {
-    const group = this.poiMarkers.get(data.id);
-    if (!group) return;
+    const entry = this.poiMarkers.get(data.id);
+    if (!entry) return;
 
     // Burst particles
-    const pos = group.position;
+    const pos = entry.group.position;
     for (let i = 0; i < 8; i++) {
       const angle = Math.random() * Math.PI * 2;
       const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
@@ -1100,7 +1086,7 @@ export class VFXRenderer {
       });
     }
 
-    this.scene.remove(group);
+    this.scene.remove(entry.group);
     this.poiMarkers.delete(data.id);
   };
 
@@ -1265,32 +1251,30 @@ export class VFXRenderer {
     }
 
     // Billboard gold mine bars + shimmer glow
+    const now = Date.now();
     if (this.camera) {
       for (const entry of this.goldMines.values()) {
         entry.barFill.quaternion.copy(this.camera.quaternion);
         entry.barBg.quaternion.copy(this.camera.quaternion);
         entry.label.quaternion.copy(this.camera.quaternion);
 
-        // Shimmer glow pulse
-        entry.group.traverse((child) => {
-          if (child.userData.mineGlow && child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
-            child.material.opacity = 0.1 + 0.08 * Math.sin(Date.now() / 500);
-          }
-        });
+        // Shimmer glow pulse (direct ref, no traverse)
+        if (entry.glowMesh) {
+          (entry.glowMesh.material as THREE.MeshBasicMaterial).opacity = 0.1 + 0.08 * Math.sin(now / 500);
+        }
       }
     }
 
-    // Spin objective marker diamonds
-    for (const group of this.objectiveMarkers.values()) {
-      group.traverse((child) => {
-        if (child.userData.spin) {
-          child.rotation.y += 1.5 * dt;
-        }
-      });
+    // Spin objective marker diamonds (direct ref, no traverse)
+    for (const entry of this.objectiveMarkers.values()) {
+      if (entry.spinMesh) {
+        entry.spinMesh.rotation.y += 1.5 * dt;
+      }
     }
 
     // Animate supply pod drops + pulse beacons
-    for (const group of this.supplyPodMeshes.values()) {
+    for (const entry of this.supplyPodMeshes.values()) {
+      const group = entry.group;
       // Drop animation — accelerate downward until landing
       if (group.userData.dropping) {
         group.userData.dropSpeed += 18 * dt; // gravity acceleration
@@ -1316,36 +1300,30 @@ export class VFXRenderer {
         }
       }
 
-      // Pulse beacon glow
-      group.traverse((child) => {
-        if (child.userData.pulse && child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
-          child.material.opacity = 0.15 + 0.15 * Math.sin(Date.now() / 400);
-        }
-      });
+      // Pulse beacon glow (direct ref, no traverse)
+      if (entry.pulseMesh) {
+        (entry.pulseMesh.material as THREE.MeshBasicMaterial).opacity = 0.15 + 0.15 * Math.sin(now / 400);
+      }
     }
 
-    // Pulse pack marker beacons
-    for (const group of this.packMarkers.values()) {
-      group.traverse((child) => {
-        if (child.userData.pulse && child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
-          child.material.opacity = 0.2 + 0.2 * Math.sin(Date.now() / 500);
-        }
-      });
+    // Pulse pack marker beacons (direct ref, no traverse)
+    for (const entry of this.packMarkers.values()) {
+      if (entry.pulseMesh) {
+        (entry.pulseMesh.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.2 * Math.sin(now / 500);
+      }
     }
 
-    // Pulse and float PoI marker beacons
-    const poiTime = Date.now();
-    for (const group of this.poiMarkers.values()) {
-      group.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
-          if (child.userData.pulse) {
-            child.material.opacity = 0.15 + 0.25 * Math.sin(poiTime / 400);
-          }
-          if (child.userData.float) {
-            child.position.y = 0.8 + 0.08 * Math.sin(poiTime / 600);
-          }
-        }
-      });
+    // Pulse and float PoI marker beacons (direct refs, no traverse)
+    for (const entry of this.poiMarkers.values()) {
+      if (entry.pulseMesh) {
+        (entry.pulseMesh.material as THREE.MeshBasicMaterial).opacity = 0.15 + 0.25 * Math.sin(now / 400);
+      }
+      if (entry.floatMesh) {
+        entry.floatMesh.position.y = 0.8 + 0.08 * Math.sin(now / 600);
+      }
+      if (entry.ringMesh) {
+        (entry.ringMesh.material as THREE.MeshBasicMaterial).opacity = 0.15 + 0.25 * Math.sin(now / 400);
+      }
     }
 
     // Rotate ordnance reticule slowly
@@ -1387,23 +1365,23 @@ export class VFXRenderer {
     }
     this.projectiles = [];
 
-    for (const group of this.objectiveMarkers.values()) {
-      this.scene.remove(group);
+    for (const entry of this.objectiveMarkers.values()) {
+      this.scene.remove(entry.group);
     }
     this.objectiveMarkers.clear();
 
-    for (const group of this.supplyPodMeshes.values()) {
-      this.scene.remove(group);
+    for (const entry of this.supplyPodMeshes.values()) {
+      this.scene.remove(entry.group);
     }
     this.supplyPodMeshes.clear();
 
-    for (const group of this.packMarkers.values()) {
-      this.scene.remove(group);
+    for (const entry of this.packMarkers.values()) {
+      this.scene.remove(entry.group);
     }
     this.packMarkers.clear();
 
-    for (const group of this.poiMarkers.values()) {
-      this.scene.remove(group);
+    for (const entry of this.poiMarkers.values()) {
+      this.scene.remove(entry.group);
     }
     this.poiMarkers.clear();
 

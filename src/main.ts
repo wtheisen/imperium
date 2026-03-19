@@ -1,4 +1,4 @@
-import { GameRenderer } from './renderer/GameRenderer';
+import { GameRenderer, setGameRenderer } from './renderer/GameRenderer';
 import { EventBus } from './EventBus';
 import { SceneManager, setSceneManager } from './scenes/SceneManager';
 import { BootScene } from './scenes/BootScene';
@@ -19,8 +19,8 @@ const container = document.getElementById('game-container')!;
 const gameRenderer = new GameRenderer(container);
 gameRenderer.start();
 
-// Expose globally for systems that need InputBridge / CameraController access
-(window as any).__gameRenderer = gameRenderer;
+// Register singleton for systems that need InputBridge / CameraController access
+setGameRenderer(gameRenderer);
 
 // When GameScene builds its map, build the 3D tile map
 EventBus.on('terrain-ready', (data: any) => {

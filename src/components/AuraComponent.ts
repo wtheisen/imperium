@@ -31,6 +31,8 @@ export class AuraComponent implements Component {
   private slowedEntities: Map<string, number> = new Map(); // entityId → original speed
   private armorBoostedEntities: Set<string> = new Set();
   private repairTimer: number = 0;
+  private auraTimer: number = 0;
+  private static readonly AURA_INTERVAL = 500; // ms between boost/slow/armor recalcs
   private getEntitiesFn: () => Entity[];
 
   constructor(entity: Entity, config: AuraConfig, getEntitiesFn: () => Entity[]) {
@@ -64,19 +66,25 @@ export class AuraComponent implements Component {
       }
     }
 
-    // Damage boost aura
-    if (this.config.damageBoost && this.config.boostRadius) {
-      this.tickDamageBoost();
-    }
+    // Throttled aura effects (boost/slow/armor)
+    this.auraTimer += delta;
+    if (this.auraTimer >= AuraComponent.AURA_INTERVAL) {
+      this.auraTimer = 0;
 
-    // Slow aura (enemies)
-    if (this.config.slowPercent && this.config.slowRadius) {
-      this.tickSlow();
-    }
+      // Damage boost aura
+      if (this.config.damageBoost && this.config.boostRadius) {
+        this.tickDamageBoost();
+      }
 
-    // Armor boost aura (friendlies)
-    if (this.config.armorBoost && this.config.armorRadius) {
-      this.tickArmorBoost();
+      // Slow aura (enemies)
+      if (this.config.slowPercent && this.config.slowRadius) {
+        this.tickSlow();
+      }
+
+      // Armor boost aura (friendlies)
+      if (this.config.armorBoost && this.config.armorRadius) {
+        this.tickArmorBoost();
+      }
     }
 
     // Self-repair
@@ -136,15 +144,13 @@ export class AuraComponent implements Component {
       }
     }
 
-    // Remove boost from entities no longer present
-    for (const id of this.boostedEntities) {
-      if (!currentNearby.has(id)) {
-        const e = entities.find(en => en.entityId === id);
-        if (e) {
-          const combat = e.getComponent<CombatComponent>('combat');
-          if (combat) combat.setDamage(Math.max(1, combat.getDamage() - boost));
+    // Remove boost from entities no longer present (dead/despawned)
+    if (this.boostedEntities.size > currentNearby.size) {
+      for (const id of this.boostedEntities) {
+        if (!currentNearby.has(id)) {
+          // Entity is gone — boost was already on a now-dead entity, just drop tracking
+          this.boostedEntities.delete(id);
         }
-        this.boostedEntities.delete(id);
       }
     }
   }
@@ -176,14 +182,9 @@ export class AuraComponent implements Component {
       }
     }
 
-    // Restore speed for entities no longer present
-    for (const [id, originalSpeed] of this.slowedEntities) {
+    // Drop tracking for entities no longer present (dead/despawned)
+    for (const [id] of this.slowedEntities) {
       if (!currentNearby.has(id)) {
-        const e = entities.find(en => en.entityId === id);
-        if (e) {
-          const mover = e.getComponent<MoverComponent>('mover');
-          if (mover) mover.setSpeed(originalSpeed);
-        }
         this.slowedEntities.delete(id);
       }
     }
@@ -215,14 +216,9 @@ export class AuraComponent implements Component {
       }
     }
 
-    // Remove boost from entities no longer present
+    // Drop tracking for entities no longer present (dead/despawned)
     for (const id of this.armorBoostedEntities) {
       if (!currentNearby.has(id)) {
-        const e = entities.find(en => en.entityId === id);
-        if (e) {
-          const health = e.getComponent<HealthComponent>('health');
-          if (health) health.armor = Math.max(0, health.armor - boost);
-        }
         this.armorBoostedEntities.delete(id);
       }
     }
@@ -239,11 +235,14 @@ export class AuraComponent implements Component {
   destroy(): void {
     try {
       const entities = this.getEntitiesFn();
+      // Build id→entity map for O(1) lookups
+      const entityMap = new Map<string, Entity>();
+      for (const e of entities) entityMap.set(e.entityId, e);
 
       // Remove damage boosts
       if (this.config.damageBoost) {
         for (const id of this.boostedEntities) {
-          const e = entities.find(en => en.entityId === id);
+          const e = entityMap.get(id);
           if (e) {
             const combat = e.getComponent<CombatComponent>('combat');
             if (combat) combat.setDamage(Math.max(1, combat.getDamage() - this.config.damageBoost));
@@ -254,7 +253,7 @@ export class AuraComponent implements Component {
       // Restore slowed entities
       if (this.config.slowPercent) {
         for (const [id, originalSpeed] of this.slowedEntities) {
-          const e = entities.find(en => en.entityId === id);
+          const e = entityMap.get(id);
           if (e) {
             const mover = e.getComponent<MoverComponent>('mover');
             if (mover) mover.setSpeed(originalSpeed);
@@ -265,7 +264,7 @@ export class AuraComponent implements Component {
       // Remove armor boosts
       if (this.config.armorBoost) {
         for (const id of this.armorBoostedEntities) {
-          const e = entities.find(en => en.entityId === id);
+          const e = entityMap.get(id);
           if (e) {
             const health = e.getComponent<HealthComponent>('health');
             if (health) health.armor = Math.max(0, health.armor - this.config.armorBoost);
@@ -279,6 +278,5 @@ export class AuraComponent implements Component {
     this.boostedEntities.clear();
     this.slowedEntities.clear();
     this.armorBoostedEntities.clear();
-
   }
 }

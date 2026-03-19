@@ -13,6 +13,7 @@ import { SPRITE_UNIT_TYPES, SPRITE_BUILDING_TYPES, facingToDirection8 } from './
 import { SpriteSheetManager } from './sprites/SpriteSheetManager';
 import { SpriteBillboard } from './sprites/SpriteBillboard';
 import { SpriteAnimator } from './sprites/SpriteAnimator';
+import { SQUAD_FORMATIONS } from './SquadFormations';
 
 interface FlashState {
   timer: number;
@@ -91,7 +92,7 @@ export class EntityRenderer {
   }
 
   /** Called each frame — syncs all entities to 3D meshes or sprite billboards. */
-  syncAll(entities: Entity[]): void {
+  syncAll(entities: Entity[], deltaMs: number = 16): void {
     const activeIds = new Set<string>();
     const cameraPos = this.cameraController?.camera.position;
     const cameraAzimuth = this.cameraController?.azimuth ?? 0;
@@ -177,7 +178,7 @@ export class EntityRenderer {
       // Update sprites per frame (animation, billboarding, direction)
       if (this.spriteEntities.has(entity.entityId)) {
         if (entity instanceof Unit) {
-          this.updateSpriteEntity(entity, mesh, cameraPos, cameraAzimuth);
+          this.updateSpriteEntity(entity, mesh, cameraPos, cameraAzimuth, deltaMs);
         } else if (entity instanceof Building) {
           this.updateBuildingSprite(entity, mesh, cameraPos, cameraAzimuth);
         }
@@ -283,15 +284,7 @@ export class EntityRenderer {
     const billboards: SpriteBillboard[] = [];
     const animators: SpriteAnimator[] = [];
 
-    const formations: Record<number, { x: number; z: number }[]> = {
-      2: [{ x: -0.25, z: 0 }, { x: 0.25, z: 0 }],
-      3: [{ x: 0, z: -0.25 }, { x: -0.28, z: 0.18 }, { x: 0.28, z: 0.18 }],
-      4: [{ x: -0.25, z: -0.25 }, { x: 0.25, z: -0.25 }, { x: -0.25, z: 0.25 }, { x: 0.25, z: 0.25 }],
-      5: [{ x: 0, z: -0.3 }, { x: -0.3, z: -0.05 }, { x: 0.3, z: -0.05 }, { x: -0.18, z: 0.28 }, { x: 0.18, z: 0.28 }],
-      6: [{ x: -0.22, z: -0.3 }, { x: 0.22, z: -0.3 }, { x: -0.35, z: 0 }, { x: 0.35, z: 0 }, { x: -0.22, z: 0.3 }, { x: 0.22, z: 0.3 }],
-    };
-
-    const positions = formations[squadSize] || formations[4]!;
+    const positions = SQUAD_FORMATIONS[squadSize] || SQUAD_FORMATIONS[4]!;
     const spriteScale = squadSize <= 3 ? 0.7 : squadSize <= 4 ? 0.6 : 0.5;
 
     for (let i = 0; i < squadSize; i++) {
@@ -339,7 +332,8 @@ export class EntityRenderer {
     unit: Unit,
     mesh: THREE.Object3D,
     cameraPos: THREE.Vector3 | undefined,
-    cameraAzimuth: number
+    cameraAzimuth: number,
+    deltaMs: number = 16
   ): void {
     const billboards = this.sprites.get(unit.entityId);
     const animatorList = this.animators.get(unit.entityId);
@@ -372,7 +366,7 @@ export class EntityRenderer {
       const animator = animatorList[i];
 
       animator.play(targetAnim);
-      animator.update(16, config);
+      animator.update(deltaMs, config);
 
       const { offsetX, offsetY } = animator.getUVOffset(direction, config);
       billboard.setFrame(offsetX, offsetY);
@@ -695,16 +689,7 @@ export class EntityRenderer {
   private createSquadMesh(meshType: string, squadSize: number): THREE.Group {
     const squad = new THREE.Group();
 
-    // Formation offsets — spread models across the tile with clear gaps
-    const formations: Record<number, { x: number; z: number }[]> = {
-      2: [{ x: -0.25, z: 0 }, { x: 0.25, z: 0 }],
-      3: [{ x: 0, z: -0.25 }, { x: -0.28, z: 0.18 }, { x: 0.28, z: 0.18 }],
-      4: [{ x: -0.25, z: -0.25 }, { x: 0.25, z: -0.25 }, { x: -0.25, z: 0.25 }, { x: 0.25, z: 0.25 }],
-      5: [{ x: 0, z: -0.3 }, { x: -0.3, z: -0.05 }, { x: 0.3, z: -0.05 }, { x: -0.18, z: 0.28 }, { x: 0.18, z: 0.28 }],
-      6: [{ x: -0.22, z: -0.3 }, { x: 0.22, z: -0.3 }, { x: -0.35, z: 0 }, { x: 0.35, z: 0 }, { x: -0.22, z: 0.3 }, { x: 0.22, z: 0.3 }],
-    };
-
-    const positions = formations[squadSize] || formations[4]!;
+    const positions = SQUAD_FORMATIONS[squadSize] || SQUAD_FORMATIONS[4]!;
 
     // Scale models down so they fit with spacing
     const modelScale = squadSize <= 3 ? 0.55 : squadSize <= 4 ? 0.5 : 0.42;
