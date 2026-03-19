@@ -225,6 +225,65 @@ describe('Projectile lifecycle', () => {
     });
   });
 
+  describe('CombatSystem retarget throttle', () => {
+    it('skips auto-targeting when delta is below the 250ms interval', () => {
+      const em = mockEntityManager(entities);
+      const system = new CombatSystem(em);
+      const spy = vi.spyOn(em, 'getNearestEnemy');
+
+      // Give attacker a combat component with no target
+      const combat = new CombatComponent(attacker, 10, 5, 1000, false);
+      attacker.addComponent('combat', combat);
+
+      // Update with small deltas — should not trigger retarget scan
+      system.update(100);
+      system.update(100);
+      expect(spy).not.toHaveBeenCalled();
+
+      system.destroy();
+    });
+
+    it('runs auto-targeting once the 250ms interval elapses', () => {
+      const em = mockEntityManager(entities);
+      const system = new CombatSystem(em);
+      const spy = vi.spyOn(em, 'getNearestEnemy');
+
+      const combat = new CombatComponent(attacker, 10, 5, 1000, false);
+      attacker.addComponent('combat', combat);
+
+      // Accumulate past the threshold
+      system.update(125);
+      system.update(125);
+      expect(spy).toHaveBeenCalled();
+
+      system.destroy();
+    });
+
+    it('resets timer after triggering, requiring another full interval', () => {
+      const em = mockEntityManager(entities);
+      const system = new CombatSystem(em);
+      const spy = vi.spyOn(em, 'getNearestEnemy');
+
+      const combat = new CombatComponent(attacker, 10, 5, 1000, false);
+      attacker.addComponent('combat', combat);
+
+      // First trigger
+      system.update(250);
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      // Small delta — should not trigger again
+      spy.mockClear();
+      system.update(50);
+      expect(spy).not.toHaveBeenCalled();
+
+      // Accumulate to next threshold
+      system.update(200);
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      system.destroy();
+    });
+  });
+
   describe('Cleanup on shutdown', () => {
     it('CombatSystem.destroy() unsubscribes event handlers', () => {
       const em = mockEntityManager(entities);
