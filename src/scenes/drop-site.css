@@ -1,0 +1,56 @@
+@keyframes ds-scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes ds-pulse-ring {
+  0%, 100% { opacity: 0.25; transform: translate(-50%,-50%) scale(1); }
+  50% { opacity: 0.5; transform: translate(-50%,-50%) scale(1.08); }
+}
+@keyframes ds-header-in {
+  from { opacity: 0; transform: translateY(-16px); letter-spacing: 14px; }
+  to { opacity: 1; transform: translateY(0); letter-spacing: 6px; }
+}
+@keyframes ds-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ds-glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(200,152,42,0.15); }
+  50% { box-shadow: 0 0 18px rgba(200,152,42,0.3); }
+}
+.ds-zone-btn {
+  transition: all 0.15s;
+}
+.ds-zone-btn:hover {
+  border-color: rgba(200,152,42,0.5) !important;
+  color: #e8dcc0 !important;
+  background: rgba(200,152,42,0.06) !important;
+}
+.ds-zone-btn[data-active="true"] {
+  border-color: rgba(200,152,42,0.5) !important;
+  background: rgba(200,152,42,0.08) !important;
+  color: #c8982a !important;
+}
+.ds-mulligan-card {
+  position: relative;
+  width: 130px;
+  height: 182px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  background: linear-gradient(170deg, #1e1c18 0%, #141210 40%, #0e0c0a 100%);
+  border: 2px solid #3a3228;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s;
+}
+.ds-mulligan-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+}
+@keyframes ds-card-in {
+  0% { transform: translateY(40px) scale(0.8); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
