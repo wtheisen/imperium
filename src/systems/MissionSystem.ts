@@ -40,6 +40,7 @@ export class MissionSystem {
   public extractionTimer: number = 0;
   public extractionTimerMax: number = 0;
   private extractionWaveTimer: number = 0;
+  private _allStatuses: ObjectiveStatus[] | null = null;
 
   constructor(entityManager: EntityManager, mission: MissionDefinition) {
     this.entityManager = entityManager;
@@ -70,7 +71,10 @@ export class MissionSystem {
   }
 
   private getAllStatuses(): ObjectiveStatus[] {
-    return [...this.objectiveStatuses, ...this.optionalObjectiveStatuses];
+    if (!this._allStatuses) {
+      this._allStatuses = [...this.objectiveStatuses, ...this.optionalObjectiveStatuses];
+    }
+    return this._allStatuses;
   }
 
   private onEntityDied({ entity }: { entity: any }): void {
