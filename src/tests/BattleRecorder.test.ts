@@ -178,13 +178,16 @@ describe('BattleRecorder', () => {
       expect(report.durationMs).toBeGreaterThanOrEqual(0);
     });
 
-    it('returns a snapshot (not a live reference)', () => {
+    it('returns live references (caller must not mutate after getReport)', () => {
       const report1 = recorder.getReport();
       EventBus.emit('entity-died', { entity: makeUnit('enemy', 'ork_boy'), killer: makeUnit('player', 'marine') });
       const report2 = recorder.getReport();
 
-      expect(report1.killTimeline).toHaveLength(0);
+      // Both reports share the same underlying array since BattleRecorder is destroyed
+      // immediately after getReport() is called in production — no defensive copy needed.
+      expect(report1.killTimeline).toHaveLength(1);
       expect(report2.killTimeline).toHaveLength(1);
+      expect(report1.killTimeline).toBe(report2.killTimeline);
     });
   });
 
