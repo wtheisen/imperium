@@ -1,5 +1,6 @@
 import { Component } from '../entities/Entity';
 import { Unit } from '../entities/Unit';
+import { Building } from '../entities/Building';
 import { MoverComponent } from './MoverComponent';
 import { EventBus } from '../EventBus';
 
@@ -18,6 +19,7 @@ export class GathererComponent implements Component {
   private dropY: number = -1;
 
   private onMineExhausted: (data: { tileX: number; tileY: number }) => void;
+  private onEntityDied: (data: { entity: any; killer: any }) => void;
 
   constructor(unit: Unit, gatherRate: number, capacity: number) {
     this.unit = unit;
@@ -38,6 +40,20 @@ export class GathererComponent implements Component {
       }
     };
     EventBus.on('mine-exhausted', this.onMineExhausted);
+
+    this.onEntityDied = (data) => {
+      const { entity } = data;
+      if (!(entity instanceof Building) || entity.team !== 'player') return;
+      const coversX = this.dropX >= entity.tileX && this.dropX <= entity.tileX + entity.tileWidth - 1;
+      const coversY = this.dropY >= entity.tileY && this.dropY <= entity.tileY + entity.tileHeight - 1;
+      if (!coversX || !coversY) return;
+      if (this.carried > 0) {
+        EventBus.emit('gold-gathered', { amount: this.carried, unit: this.unit });
+        this.carried = 0;
+      }
+      this.state = 'idle';
+    };
+    EventBus.on('entity-died', this.onEntityDied);
   }
 
   assignMine(mineX: number, mineY: number, dropX: number, dropY: number): void {
@@ -126,5 +142,6 @@ export class GathererComponent implements Component {
   destroy(): void {
     this.state = 'idle';
     EventBus.off('mine-exhausted', this.onMineExhausted);
+    EventBus.off('entity-died', this.onEntityDied);
   }
 }
