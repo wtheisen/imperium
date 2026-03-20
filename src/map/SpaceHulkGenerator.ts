@@ -1,13 +1,5 @@
 import { TerrainType } from './MapManager';
-
-/** Simple seeded PRNG (Lehmer / MINSTD) */
-function createRng(seed: number): () => number {
-  let s = Math.abs(seed) || 1;
-  return () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
+import { createRng } from '../utils/MathUtils';
 
 interface BSPNode {
   x: number;
