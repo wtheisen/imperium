@@ -269,6 +269,24 @@ export class EntityManager {
     return nearest;
   }
 
+  /** Like getNearestEnemy but returns null if no enemy is within maxRange (Manhattan distance). */
+  getNearestEnemyInRange(entity: Entity, maxRange: number): Entity | null {
+    const enemyTeam: EntityTeam = entity.team === 'player' ? 'enemy' : 'player';
+    const enemies = this.getEntitiesByTeam(enemyTeam);
+
+    let nearest: Entity | null = null;
+    let minDist = maxRange + 1;
+    for (const enemy of enemies) {
+      if (!enemy.active) continue;
+      const dist = Math.abs(entity.tileX - enemy.tileX) + Math.abs(entity.tileY - enemy.tileY);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = enemy;
+      }
+    }
+    return nearest;
+  }
+
   update(delta: number): void {
     for (const entity of this.entities.values()) {
       if (entity.active) {

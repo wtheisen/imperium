@@ -14,6 +14,7 @@ function mockEntityManager(entities: Map<string, Entity>) {
     getEntitiesByTeam: (team: string) =>
       Array.from(entities.values()).filter((e) => e.team === team),
     getNearestEnemy: () => null,
+    getNearestEnemyInRange: () => null,
   } as any;
 }
 
@@ -246,7 +247,8 @@ describe('Projectile lifecycle', () => {
     it('runs auto-targeting once the 250ms interval elapses', () => {
       const em = mockEntityManager(entities);
       const system = new CombatSystem(em);
-      const spy = vi.spyOn(em, 'getNearestEnemy');
+      // Entity has no mover, so CombatSystem calls getNearestEnemyInRange
+      const spy = vi.spyOn(em, 'getNearestEnemyInRange');
 
       const combat = new CombatComponent(attacker, 10, 5, 1000, false);
       attacker.addComponent('combat', combat);
@@ -262,7 +264,8 @@ describe('Projectile lifecycle', () => {
     it('resets timer after triggering, requiring another full interval', () => {
       const em = mockEntityManager(entities);
       const system = new CombatSystem(em);
-      const spy = vi.spyOn(em, 'getNearestEnemy');
+      // Entity has no mover, so CombatSystem calls getNearestEnemyInRange
+      const spy = vi.spyOn(em, 'getNearestEnemyInRange');
 
       const combat = new CombatComponent(attacker, 10, 5, 1000, false);
       attacker.addComponent('combat', combat);
