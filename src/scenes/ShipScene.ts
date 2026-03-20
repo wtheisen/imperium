@@ -15,19 +15,6 @@ const ROOM_THEMES: Record<string, { border: string; icon: string }> = {
   enginarium:       { border: '#60aa60', icon: '\u2699' },  // ⚙
 };
 
-// Inject fonts (shared with other scenes)
-let fontsReady = false;
-function ensureFonts(): void {
-  if (fontsReady) return;
-  fontsReady = true;
-  if (!document.querySelector('link[href*="Teko"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Share+Tech+Mono&display=swap';
-    document.head.appendChild(link);
-  }
-}
-
 let shipStylesInjected = false;
 function injectShipStyles(): void {
   if (shipStylesInjected) return;
@@ -80,7 +67,6 @@ export class ShipScene implements GameSceneInterface {
   private container: HTMLDivElement | null = null;
 
   create(): void {
-    ensureFonts();
     injectShipStyles();
 
     const container = document.createElement('div');
