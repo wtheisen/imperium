@@ -3,6 +3,7 @@ import { MissionDefinition } from '../missions/MissionDefinition';
 import { getPlayerState, toggleModifier, savePlayerState } from '../state/PlayerState';
 import { MODIFIERS, getModifierBonus } from '../state/DifficultyModifiers';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
+import { generateMission, generateSeedString, parseSeedString } from '../missions/ProceduralMissionGenerator';
 
 // Inject scoped styles once
 let stylesInjected = false;
@@ -122,6 +123,8 @@ export class MissionSelectScene implements GameSceneInterface {
   private container: HTMLDivElement | null = null;
   private selectedMissionId: string | null = null;
   private commandDropdownOpen = false;
+  private procDifficulty = 2;
+  private procSeedStr = generateSeedString();
 
   create(): void {
     injectStyles();
@@ -229,6 +232,49 @@ export class MissionSelectScene implements GameSceneInterface {
 
         <!-- Mission nodes (rendered by JS after DOM insert) -->
         <div id="cm-nodes"></div>
+
+        <!-- Procedural mission generator panel -->
+        <div id="cm-proc-panel" style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+          z-index:10;display:flex;align-items:center;gap:10px;
+          padding:10px 18px;
+          background:linear-gradient(180deg,rgba(14,12,8,0.95) 0%,rgba(10,10,14,0.95) 100%);
+          border:1px solid rgba(200,152,42,0.2);
+          box-shadow:0 0 20px rgba(0,0,0,0.6),0 0 10px rgba(200,152,42,0.05);">
+          <div style="font-family:'Teko',sans-serif;font-size:11px;font-weight:500;
+            color:rgba(200,152,42,0.5);letter-spacing:3px;">GENERATE OPERATION</div>
+          <div style="width:1px;height:18px;background:rgba(200,152,42,0.15);"></div>
+          <!-- Difficulty selector -->
+          <div style="display:flex;gap:3px;" id="cm-proc-diff">
+            ${[1,2,3,4].map(d => `<button class="cm-proc-diff-btn" data-diff="${d}" style="
+              width:22px;height:22px;
+              background:${d === 2 ? 'rgba(200,152,42,0.15)' : 'rgba(200,191,160,0.03)'};
+              border:1px solid ${d === 2 ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.1)'};
+              color:${d === 2 ? '#c8982a' : '#5a5a4a'};
+              font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;
+              transition:all 0.15s;">${d}</button>`).join('')}
+          </div>
+          <div style="width:1px;height:18px;background:rgba(200,152,42,0.15);"></div>
+          <!-- Seed input -->
+          <input id="cm-proc-seed" type="text" maxlength="6" value="${this.procSeedStr}" style="
+            width:64px;padding:3px 6px;
+            background:rgba(200,191,160,0.03);
+            border:1px solid rgba(200,191,160,0.1);
+            color:#c8982a;font-family:'Share Tech Mono',monospace;font-size:11px;
+            text-align:center;letter-spacing:2px;outline:none;
+            transition:border-color 0.15s;" />
+          <button id="cm-proc-reroll" title="New Seed" style="
+            padding:3px 8px;background:transparent;
+            border:1px solid rgba(200,191,160,0.1);
+            color:#5a7a8a;font-family:'Share Tech Mono',monospace;font-size:11px;
+            cursor:pointer;transition:all 0.15s;">&#x21bb;</button>
+          <div style="width:1px;height:18px;background:rgba(200,152,42,0.15);"></div>
+          <button id="cm-proc-generate" style="
+            padding:6px 16px;
+            background:linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%);
+            border:1px solid rgba(200,152,42,0.4);
+            color:#c8982a;font-family:'Teko',sans-serif;font-size:14px;font-weight:600;
+            letter-spacing:4px;cursor:pointer;transition:all 0.2s;">DEPLOY</button>
+        </div>
 
         <!-- Mission detail modal -->
         <div id="cm-modal" style="display:none;position:absolute;z-index:50;width:340px;
@@ -623,6 +669,47 @@ export class MissionSelectScene implements GameSceneInterface {
       });
     });
 
+    // Procedural mission generator panel
+    this.container.querySelectorAll('.cm-proc-diff-btn').forEach(el => {
+      const d = parseInt((el as HTMLElement).dataset.diff || '2');
+      el.addEventListener('click', () => {
+        this.procDifficulty = d;
+        this.updateProcDiffButtons();
+      });
+    });
+
+    this.container.querySelector('#cm-proc-reroll')?.addEventListener('click', () => {
+      this.procSeedStr = generateSeedString();
+      const seedInput = this.container?.querySelector('#cm-proc-seed') as HTMLInputElement | null;
+      if (seedInput) seedInput.value = this.procSeedStr;
+    });
+
+    this.container.querySelector('#cm-proc-seed')?.addEventListener('input', (e) => {
+      this.procSeedStr = ((e.target as HTMLInputElement).value || '').toUpperCase().slice(0, 6);
+    });
+
+    this.container.querySelector('#cm-proc-generate')?.addEventListener('click', () => {
+      const seedInput = this.container?.querySelector('#cm-proc-seed') as HTMLInputElement | null;
+      if (seedInput) this.procSeedStr = seedInput.value.toUpperCase().slice(0, 6);
+      const seed = parseSeedString(this.procSeedStr);
+      const state = getPlayerState();
+      const mission = generateMission(this.procDifficulty, seed, state.activeModifiers);
+      getSceneManager().start('DropSiteScene', { mission });
+    });
+
+    // Hover effects on proc generate button
+    const procGen = this.container.querySelector('#cm-proc-generate') as HTMLElement | null;
+    if (procGen) {
+      procGen.addEventListener('mouseenter', () => {
+        procGen.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.25) 0%,rgba(200,152,42,0.1) 100%)';
+        procGen.style.borderColor = 'rgba(200,152,42,0.7)';
+      });
+      procGen.addEventListener('mouseleave', () => {
+        procGen.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%)';
+        procGen.style.borderColor = 'rgba(200,152,42,0.4)';
+      });
+    }
+
     // Hover effects on top bar buttons
     ['#ms-edit-decks', '#ms-command-btn'].forEach(sel => {
       const btn = this.container?.querySelector(sel) as HTMLElement | null;
@@ -636,6 +723,16 @@ export class MissionSelectScene implements GameSceneInterface {
           btn.style.color = '#5a7a8a';
         });
       }
+    });
+  }
+
+  private updateProcDiffButtons(): void {
+    this.container?.querySelectorAll('.cm-proc-diff-btn').forEach(el => {
+      const d = parseInt((el as HTMLElement).dataset.diff || '0');
+      const selected = d === this.procDifficulty;
+      (el as HTMLElement).style.background = selected ? 'rgba(200,152,42,0.15)' : 'rgba(200,191,160,0.03)';
+      (el as HTMLElement).style.borderColor = selected ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.1)';
+      (el as HTMLElement).style.color = selected ? '#c8982a' : '#5a5a4a';
     });
   }
 
