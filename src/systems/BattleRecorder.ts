@@ -147,14 +147,14 @@ export class BattleRecorder {
     }
 
     return {
-      killTimeline: [...this.killTimeline],
-      damageDealt: { ...this.damageDealt },
-      damageTaken: { ...this.damageTaken },
-      goldBySource: { ...this.goldBySource },
+      killTimeline: this.killTimeline,
+      damageDealt: this.damageDealt,
+      damageTaken: this.damageTaken,
+      goldBySource: this.goldBySource,
       totalGoldEarned: this.totalGoldEarned,
-      cardPlays: JSON.parse(JSON.stringify(this.cardPlays)),
-      unitsDeployed: { ...this.unitsDeployed },
-      unitsLost: { ...this.unitsLost },
+      cardPlays: this.cardPlays,
+      unitsDeployed: this.unitsDeployed,
+      unitsLost: this.unitsLost,
       mvpUnitType,
       mvpKills,
       durationMs: Date.now() - this.startTime,
