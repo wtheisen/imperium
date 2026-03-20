@@ -28,7 +28,6 @@ export class PathfindingSystem {
   setTileWalkable(x: number, y: number, walkable: boolean): void {
     if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
       this.grid[y][x] = walkable ? 0 : 1;
-      this.easyStar.setGrid(this.grid);
     }
   }
 
