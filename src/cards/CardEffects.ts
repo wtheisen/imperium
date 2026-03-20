@@ -13,7 +13,7 @@ import { EquipmentComponent } from '../components/EquipmentComponent';
 import { EventBus } from '../EventBus';
 import { TimerManager } from '../utils/TimerManager';
 import { getActiveModifiers } from '../state/PlayerState';
-import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import { getSpawnInvulnMs, getBuildingHpBonus } from '../ship/ShipState';
 
 /** Per-model stats. Total HP/damage = per-model × squadSize. */
@@ -79,7 +79,7 @@ export class CardEffects {
 
     // Scale total HP and damage by squad size
     const sq = baseStats.squadSize || 1;
-    const effects = getMergedEffects(getActiveModifiers());
+    const effects = getCachedMergedEffects(getActiveModifiers);
     const hpMult = effects.playerHpMult ?? 1;
     const stats: UnitStats = {
       ...baseStats,

@@ -12,7 +12,7 @@ import { PlacementValidator } from '../map/PlacementValidator';
 import { applyTechTreeBonuses } from '../state/TechTreeEffects';
 import { LevelBadgeComponent } from '../components/LevelBadgeComponent';
 import { getActiveModifiers } from '../state/PlayerState';
-import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 
 export class EntityManager {
   private entities: Map<string, Entity> = new Map();
@@ -55,7 +55,7 @@ export class EntityManager {
     // Apply difficulty modifiers to enemy stats
     let effectiveStats = stats;
     if (team === 'enemy') {
-      const effects = getMergedEffects(getActiveModifiers());
+      const effects = getCachedMergedEffects(getActiveModifiers);
       if (effects.enemyHpMult || effects.enemyDamageMult || effects.enemySpeedMult) {
         effectiveStats = { ...stats };
         if (effects.enemyHpMult) effectiveStats.maxHp = Math.round(stats.maxHp * effects.enemyHpMult);

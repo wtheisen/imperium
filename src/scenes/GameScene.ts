@@ -30,7 +30,7 @@ import { InputEvent } from '../renderer/InputBridge';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { getGameRenderer } from '../renderer/GameRenderer';
 import { getActiveModifiers } from '../state/PlayerState';
-import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import { POIManager } from '../systems/POIManager';
 import { PackManager } from '../systems/PackManager';
 import { resolveEnvironmentModifiers, EnvironmentEffects } from '../systems/EnvironmentModifierSystem';
@@ -482,7 +482,7 @@ export class GameScene implements GameSceneInterface {
 
   private onSupplyPodIncoming(data: { tileX: number; tileY: number; gold: number; cardDraws: number }): void {
     // Block supply drops if modifier is active (player skulls or environment)
-    const effects = getMergedEffects(getActiveModifiers());
+    const effects = getCachedMergedEffects(getActiveModifiers);
     if (effects.noSupplyDrops) return;
     if (this.envEffects?.noSupplyDrops) return;
     const podId = `pod-${++this.supplyPodIdCounter}`;

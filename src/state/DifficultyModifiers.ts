@@ -42,6 +42,19 @@ export function getMergedEffects(activeIds: string[]): DifficultyModifier['effec
   return merged;
 }
 
+/** Cached accessor — modifiers don't change during a mission. */
+let _cachedEffects: DifficultyModifier['effects'] | null = null;
+let _cachedModifierKey: string | null = null;
+
+export function getCachedMergedEffects(getActiveModifiers: () => string[]): DifficultyModifier['effects'] {
+  const modifiers = getActiveModifiers();
+  const key = JSON.stringify(modifiers);
+  if (_cachedEffects && _cachedModifierKey === key) return _cachedEffects;
+  _cachedEffects = getMergedEffects(modifiers);
+  _cachedModifierKey = key;
+  return _cachedEffects;
+}
+
 /** Get total bonus RP from active modifier IDs. */
 export function getModifierBonus(activeIds: string[]): number {
   let total = 0;

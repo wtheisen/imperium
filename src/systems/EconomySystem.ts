@@ -1,7 +1,7 @@
 import { STARTING_GOLD, KILL_GOLD_BASE, OBJECTIVE_COMPLETION_BONUS } from '../config';
 import { EventBus } from '../EventBus';
 import { getActiveModifiers } from '../state/PlayerState';
-import { getMergedEffects } from '../state/DifficultyModifiers';
+import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import { getPassiveIncomeRate, getGoldPerKill, getGoldPerCardPlayed, getObjectiveGoldBonus } from '../ship/ShipState';
 
 export class EconomySystem {
@@ -35,7 +35,7 @@ export class EconomySystem {
   }
 
   addGold(amount: number): void {
-    const effects = getMergedEffects(getActiveModifiers());
+    const effects = getCachedMergedEffects(getActiveModifiers);
     const adjusted = effects.goldMult ? Math.round(amount * effects.goldMult) : amount;
     this.gold += adjusted;
     EventBus.emit('gold-changed', { amount: adjusted, total: this.gold });
