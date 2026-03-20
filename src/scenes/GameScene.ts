@@ -29,7 +29,10 @@ import { TimerManager } from '../utils/TimerManager';
 import { InputEvent } from '../renderer/InputBridge';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { getGameRenderer } from '../renderer/GameRenderer';
-import { getActiveModifiers } from '../state/PlayerState';
+import { getActiveModifiers, getCardInstance, resetDeployedFlags, savePlayerState } from '../state/PlayerState';
+import { generateVeteranName } from '../state/VeteranNames';
+import { VET_TIER_THRESHOLDS, MIN_VET_XP_THRESHOLD } from '../config';
+import { Unit } from '../entities/Unit';
 import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import { POIManager } from '../systems/POIManager';
 import { PackManager } from '../systems/PackManager';
@@ -70,6 +73,7 @@ export class GameScene implements GameSceneInterface {
   private packManager: PackManager | null = null;
   private takenPackCards: string[] = [];
   private envEffects: EnvironmentEffects | null = null;
+  private fallenVeterans: { name: string }[] = [];
 
   create(data?: { mission?: MissionDefinition }): void {
     this.mission = data?.mission || MISSIONS[0];
@@ -175,6 +179,9 @@ export class GameScene implements GameSceneInterface {
       }
     }
 
+    // Reset per-mission deploy tracking on all card instances
+    resetDeployedFlags();
+
     // Setup XP tracking
     this.xpTracker = new XpTracker();
 
@@ -197,6 +204,7 @@ export class GameScene implements GameSceneInterface {
     EventBus.on('wargear-orphaned', this.onWargearOrphaned, this);
     EventBus.on('objective-completed', this.onObjectiveCompleted, this);
     EventBus.on('mine-tick', this.onMineTick, this);
+    EventBus.on('veteran-killed', this.onVeteranKilled, this);
     EventBus.on('input-pointer-move', this.onInputMove3D, this);
     EventBus.on('input-pointer-down', this.onInputDown3D, this);
     EventBus.on('ordnance-vfx-3d', this.onOrdnanceVfx, this);
@@ -433,6 +441,7 @@ export class GameScene implements GameSceneInterface {
   private onEntityDied({ entity }: { entity: any }): void {
     if (entity === this.townHall) {
       this.xpTracker.commitToPlayerState();
+      const battleHonours = this.processSurvivors();
       const sm = getSceneManager();
       sm.stop('UIScene');
       sm.stop('GameScene');
@@ -445,6 +454,7 @@ export class GameScene implements GameSceneInterface {
         totalObjectives: this.missionSystem.objectiveStatuses.length,
         sessionXp: this.xpTracker.getSessionXp(),
         takenPackCards: this.takenPackCards,
+        battleHonours,
       });
       return;
     }
@@ -454,8 +464,56 @@ export class GameScene implements GameSceneInterface {
     }
   }
 
+  /**
+   * Process survivors at mission end: promote qualifying units to veterans
+   * or advance existing veterans. Returns battle honours data for GameOverScene.
+   */
+  private processSurvivors(): { promoted: { name: string; cardId: string }[]; fallen: { name: string }[] } {
+    const promoted: { name: string; cardId: string }[] = [];
+    const fallen: { name: string }[] = [];
+
+    const survivors = this.entityManager.getUnits('player')
+      .filter(u => u.active && u.cardInstanceId);
+
+    for (const unit of survivors) {
+      const inst = getCardInstance(unit.cardInstanceId!);
+      if (!inst) continue;
+
+      // Must earn minimum XP this mission to qualify
+      if (inst.xp < MIN_VET_XP_THRESHOLD) continue;
+
+      const newTier = VET_TIER_THRESHOLDS.reduce<1 | 2 | 3>(
+        (best, threshold, i) => inst.xp >= threshold && i >= 1 ? (i as 1 | 2 | 3) : best,
+        1
+      );
+
+      if (!inst.veteranData) {
+        // First promotion — generate a name
+        const name = generateVeteranName(inst.cardId);
+        inst.veteranData = {
+          name,
+          tier: newTier,
+          kills: 0,
+          missionsCompleted: 1,
+          unlockedNodes: [],
+        };
+        promoted.push({ name, cardId: inst.cardId });
+        EventBus.emit('veteran-promoted', { instanceId: inst.instanceId, name });
+      } else {
+        inst.veteranData.missionsCompleted += 1;
+        if (newTier > inst.veteranData.tier) {
+          inst.veteranData.tier = newTier;
+        }
+      }
+    }
+
+    savePlayerState();
+    return { promoted, fallen: [...this.fallenVeterans] };
+  }
+
   private onMissionComplete(data: any): void {
     this.xpTracker.commitToPlayerState();
+    const battleHonours = this.processSurvivors();
     const sm = getSceneManager();
     sm.stop('UIScene');
     sm.stop('GameScene');
@@ -471,6 +529,7 @@ export class GameScene implements GameSceneInterface {
       optionalTotal: data?.optionalTotal ?? 0,
       sessionXp: this.xpTracker.getSessionXp(),
       takenPackCards: this.takenPackCards,
+      battleHonours,
     };
 
     if (this.takenPackCards.length > 0) {
@@ -494,6 +553,10 @@ export class GameScene implements GameSceneInterface {
 
   private onObjectiveCompleted(_data: any): void {
     EventBus.emit('reset-discards', { bonus: 0 });
+  }
+
+  private onVeteranKilled({ name }: { name: string }): void {
+    this.fallenVeterans.push({ name });
   }
 
   private onMineTick({ mineX, mineY }: { mineX: number; mineY: number }): void {
@@ -628,6 +691,7 @@ export class GameScene implements GameSceneInterface {
     EventBus.off('wargear-orphaned', this.onWargearOrphaned, this);
     EventBus.off('objective-completed', this.onObjectiveCompleted, this);
     EventBus.off('mine-tick', this.onMineTick, this);
+    EventBus.off('veteran-killed', this.onVeteranKilled, this);
     EventBus.off('input-pointer-move', this.onInputMove3D, this);
     EventBus.off('input-pointer-down', this.onInputDown3D, this);
     EventBus.off('ordnance-vfx-3d', this.onOrdnanceVfx, this);

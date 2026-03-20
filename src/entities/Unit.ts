@@ -17,6 +17,8 @@ export class Unit extends Entity {
   public stats: UnitStats;
   public unitType: string;
   public xp: number = 0;
+  /** Set when this unit was deployed from a specific CardInstance. */
+  public cardInstanceId?: string;
 
   // Camp-aware AI fields (enemy units only)
   public campId?: string;

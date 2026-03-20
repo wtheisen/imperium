@@ -38,6 +38,12 @@ export const EDGE_SCROLL_SPEED = 6;
 // Discard system
 export const DISCARDS_PER_OBJECTIVE = 2;
 
+// Veterancy
+/** Minimum XP a unit must earn in a mission to qualify for veteran promotion. */
+export const MIN_VET_XP_THRESHOLD = 30;
+/** Cumulative XP thresholds for each veteran tier (0=recruit, 1=battle-hardened, 2=veteran, 3=hero). */
+export const VET_TIER_THRESHOLDS = [0, 30, 120, 300];
+
 // Audio
 export const DEFAULT_VOLUME = 0.3;
 

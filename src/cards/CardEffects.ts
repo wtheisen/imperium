@@ -12,9 +12,10 @@ import { LevelBadgeComponent } from '../components/LevelBadgeComponent';
 import { EquipmentComponent } from '../components/EquipmentComponent';
 import { EventBus } from '../EventBus';
 import { TimerManager } from '../utils/TimerManager';
-import { getActiveModifiers } from '../state/PlayerState';
+import { getActiveModifiers, getUndeployedInstance } from '../state/PlayerState';
 import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import { getSpawnInvulnMs, getBuildingHpBonus } from '../ship/ShipState';
+import { CARD_DATABASE } from './CardDatabase';
 
 /** Per-model stats. Total HP/damage = per-model × squadSize. */
 const UNIT_STATS: Record<string, UnitStats> = {
@@ -94,8 +95,36 @@ export class CardEffects {
       'player'
     );
 
-    applyTechTreeBonuses(unit, this.entityManager);
+    // Bind to CardInstance if available
+    const inst = getUndeployedInstance(card.id);
+    if (inst) {
+      inst._deployedThisMission = true;
+      unit.cardInstanceId = inst.instanceId;
+      // Sync current XP to the unit (may already have XP from prior missions)
+      unit.xp = inst.xp;
+    }
+
+    // Apply tech tree bonuses — use per-instance unlocks for veterans, global for recruits
+    const unlockedNodes = inst?.veteranData?.unlockedNodes;
+    if (unlockedNodes && unlockedNodes.length > 0) {
+      applyTechTreeBonuses(unit, unlockedNodes);
+    } else {
+      applyTechTreeBonuses(unit, this.entityManager);
+    }
     unit.addComponent('levelBadge', new LevelBadgeComponent(unit));
+
+    // Apply persistent wargear for veterans
+    if (inst?.veteranData?.equippedWargear) {
+      const wargearCard = CARD_DATABASE[inst.veteranData.equippedWargear];
+      if (wargearCard) {
+        let equip = unit.getComponent<EquipmentComponent>('equipment');
+        if (!equip) {
+          equip = new EquipmentComponent(unit, this.entityManager);
+          unit.addComponent('equipment', equip);
+        }
+        equip.equip(wargearCard);
+      }
+    }
 
     const invulnMs = getSpawnInvulnMs();
     if (invulnMs > 0) {

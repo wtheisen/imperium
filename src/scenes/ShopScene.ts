@@ -1,5 +1,5 @@
 import { GameSceneInterface, getSceneManager } from './SceneManager';
-import { getPlayerState, addToCollection, addRequisitionPoints, spendRequisitionPoints, addShipCredits, savePlayerState } from '../state/PlayerState';
+import { getPlayerState, addToCollection, addRequisitionPoints, spendRequisitionPoints, addShipCredits, savePlayerState, getCollectionCount, removeOneFromCollection } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { CardType } from '../cards/Card';
 import { SHOP_PRICE_MULTIPLIER, SALVAGE_CREDIT_BASE } from '../config';
@@ -329,7 +329,7 @@ export class ShopScene implements GameSceneInterface {
       if (!card) continue;
 
       const buyPrice = card.cost * SHOP_PRICE_MULTIPLIER;
-      const owned = state.collection[cardId] || 0;
+      const owned = getCollectionCount(cardId);
       const canAfford = state.requisitionPoints >= buyPrice;
       const theme = TYPE_THEME[card.type as CardType] || TYPE_THEME.unit;
 
@@ -404,8 +404,7 @@ export class ShopScene implements GameSceneInterface {
         });
         sellBtn.textContent = `SELL ${sellPrice} RP`;
         sellBtn.addEventListener('click', () => {
-          state.collection[cardId] = Math.max(0, (state.collection[cardId] || 0) - 1);
-          if (state.collection[cardId] === 0) delete state.collection[cardId];
+          removeOneFromCollection(cardId);
           addRequisitionPoints(sellPrice);
           savePlayerState();
           this.render();
@@ -425,8 +424,7 @@ export class ShopScene implements GameSceneInterface {
         });
         salvageBtn.textContent = `SALVAGE ${SALVAGE_CREDIT_BASE} SC`;
         salvageBtn.addEventListener('click', () => {
-          state.collection[cardId] = Math.max(0, (state.collection[cardId] || 0) - 1);
-          if (state.collection[cardId] === 0) delete state.collection[cardId];
+          removeOneFromCollection(cardId);
           addShipCredits(SALVAGE_CREDIT_BASE);
           savePlayerState();
           this.render();

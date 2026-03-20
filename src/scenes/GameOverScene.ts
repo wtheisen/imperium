@@ -32,6 +32,7 @@ export class GameOverScene implements GameSceneInterface {
   private optionalTotal = 0;
   private sessionXp: Record<string, number> = {};
   private cardStats: CardStats | null = null;
+  private battleHonours: { promoted: { name: string; cardId: string }[]; fallen: { name: string }[] } | null = null;
 
   create(data?: any): void {
     this.victory = data?.victory ?? false;
@@ -44,6 +45,7 @@ export class GameOverScene implements GameSceneInterface {
     this.optionalTotal = data?.optionalTotal ?? 0;
     this.sessionXp = data?.sessionXp ?? {};
     this.cardStats = data?.cardStats ?? null;
+    this.battleHonours = data?.battleHonours ?? null;
 
     // Listen for card-stats emitted by UIScene during its shutdown
     EventBus.on('card-stats', this.onCardStats, this);
@@ -177,6 +179,7 @@ export class GameOverScene implements GameSceneInterface {
         ${rewardsHtml}
         ${reqHtml}
         ${xpHtml}
+        ${this.renderBattleHonours()}
 
         <div id="card-stats-section"></div>
 
@@ -216,6 +219,41 @@ export class GameOverScene implements GameSceneInterface {
 
     // Render card stats if already available
     if (this.cardStats) this.renderCardStats(this.cardStats);
+  }
+
+  private renderBattleHonours(): string {
+    const bh = this.battleHonours;
+    if (!bh || (bh.promoted.length === 0 && bh.fallen.length === 0)) return '';
+
+    const CARD_LABELS: Record<string, string> = {
+      marine: 'Space Marine', guardsman: 'Guardsman', scout: 'Scout',
+      servitor: 'Servitor', ogryn: 'Ogryn', techmarine: 'Techmarine',
+      rhino: 'Rhino', leman_russ: 'Leman Russ', sentinel: 'Sentinel',
+    };
+
+    let html = `<div style="margin-top:16px;text-align:left;width:300px;">`;
+    html += `<div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">BATTLE HONOURS</div>`;
+    html += `<div style="border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">`;
+
+    for (const p of bh.promoted) {
+      const typeLabel = CARD_LABELS[p.cardId] ?? p.cardId;
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
+        <div style="width:4px;height:4px;background:#c8982a;border-radius:50%;flex-shrink:0;"></div>
+        <span style="font-size:12px;color:#c8982a;font-weight:600;">${p.name}</span>
+        <span style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">${typeLabel.toUpperCase()} · PROMOTED</span>
+      </div>`;
+    }
+
+    for (const f of bh.fallen) {
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
+        <div style="width:4px;height:4px;background:#c43030;border-radius:50%;flex-shrink:0;"></div>
+        <span style="font-size:12px;color:rgba(196,48,48,0.7);">${f.name}</span>
+        <span style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">KILLED IN ACTION</span>
+      </div>`;
+    }
+
+    html += `</div></div>`;
+    return html;
   }
 
   private onCardStats = (stats: CardStats): void => {
