@@ -946,29 +946,39 @@ export class VFXRenderer {
     }, landingDelay);
   };
 
-  private onSupplyPodOpened = (data: { id: string }): void => {
-    const entry = this.supplyPodMeshes.get(data.id);
-    if (!entry) return;
-    const group = entry.group;
-
-    // Burst particles
-    const pos = group.position;
-    for (let i = 0; i < 6; i++) {
+  private spawnBurstParticles(
+    pos: THREE.Vector3,
+    count: number,
+    color: number = 0xffd700,
+    yOffset: number = 0.3,
+    baseVelocityY: number = 2,
+    lifetime: number = 600,
+  ): void {
+    for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });
       const p = new THREE.Mesh(this.boxGeo, mat);
-      p.position.copy(pos).add(new THREE.Vector3(0, 0.3, 0));
+      p.position.copy(pos).add(new THREE.Vector3(0, yOffset, 0));
       this.scene.add(p);
       this.particles.push({
         mesh: p,
-        velocity: new THREE.Vector3(Math.cos(angle) * 2, 2 + Math.random() * 2, Math.sin(angle) * 2),
-        lifetime: 600,
+        velocity: new THREE.Vector3(Math.cos(angle) * 2, baseVelocityY + Math.random() * 2, Math.sin(angle) * 2),
+        lifetime,
         elapsed: 0,
         fadeOut: true,
         scaleSpeed: -0.3,
         disposeGeo: false,
       });
     }
+  }
+
+  private onSupplyPodOpened = (data: { id: string }): void => {
+    const entry = this.supplyPodMeshes.get(data.id);
+    if (!entry) return;
+    const group = entry.group;
+
+    // Burst particles
+    this.spawnBurstParticles(group.position, 6);
 
     // Remove pod
     this.scene.remove(group);
@@ -1014,23 +1024,7 @@ export class VFXRenderer {
     if (!entry) return;
 
     // Burst particles
-    const pos = entry.group.position;
-    for (let i = 0; i < 6; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
-      const p = new THREE.Mesh(this.boxGeo, mat);
-      p.position.copy(pos).add(new THREE.Vector3(0, 0.3, 0));
-      this.scene.add(p);
-      this.particles.push({
-        mesh: p,
-        velocity: new THREE.Vector3(Math.cos(angle) * 2, 2 + Math.random() * 2, Math.sin(angle) * 2),
-        lifetime: 600,
-        elapsed: 0,
-        fadeOut: true,
-        scaleSpeed: -0.3,
-        disposeGeo: false,
-      });
-    }
+    this.spawnBurstParticles(entry.group.position, 6);
 
     this.scene.remove(entry.group);
     this.packMarkers.delete(data.id);
@@ -1082,23 +1076,7 @@ export class VFXRenderer {
     if (!entry) return;
 
     // Burst particles
-    const pos = entry.group.position;
-    for (let i = 0; i < 8; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
-      const p = new THREE.Mesh(this.boxGeo, mat);
-      p.position.copy(pos).add(new THREE.Vector3(0, 0.4, 0));
-      this.scene.add(p);
-      this.particles.push({
-        mesh: p,
-        velocity: new THREE.Vector3(Math.cos(angle) * 2, 2.5 + Math.random() * 2, Math.sin(angle) * 2),
-        lifetime: 700,
-        elapsed: 0,
-        fadeOut: true,
-        scaleSpeed: -0.3,
-        disposeGeo: false,
-      });
-    }
+    this.spawnBurstParticles(entry.group.position, 8, 0xffd700, 0.4, 2.5, 700);
 
     this.scene.remove(entry.group);
     this.poiMarkers.delete(data.id);
