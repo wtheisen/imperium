@@ -145,6 +145,49 @@ describe('TacticalPauseManager', () => {
     });
   });
 
+  describe('projected gold tracking', () => {
+    it('starts with full gold remaining', () => {
+      expect(manager.getProjectedGoldRemaining(50)).toBe(50);
+    });
+
+    it('deducts card cost from projected gold', () => {
+      manager.queueCardPlay({ card: { id: 'marine', cost: 10 }, cardIndex: 0, tileX: 5, tileY: 5 });
+      expect(manager.getProjectedGoldRemaining(50)).toBe(40);
+    });
+
+    it('accumulates costs across multiple queued cards', () => {
+      manager.queueCardPlay({ card: { id: 'marine', cost: 10 }, cardIndex: 0, tileX: 5, tileY: 5 });
+      manager.queueCardPlay({ card: { id: 'marine', cost: 10 }, cardIndex: 1, tileX: 6, tileY: 5 });
+      manager.queueCardPlay({ card: { id: 'marine', cost: 10 }, cardIndex: 2, tileX: 7, tileY: 5 });
+      expect(manager.getProjectedGoldRemaining(20)).toBe(-10);
+    });
+
+    it('does not deduct cost for ship ordnance (free)', () => {
+      manager.queueCardPlay({
+        card: { id: 'lance_strike', cost: 0 }, cardIndex: -1, tileX: 10, tileY: 10,
+        isShipOrdnance: true, slotIndex: 0,
+      });
+      expect(manager.getProjectedGoldRemaining(30)).toBe(30);
+    });
+
+    it('treats missing cost as zero', () => {
+      manager.queueCardPlay({ card: { id: 'marine' }, cardIndex: 0, tileX: 5, tileY: 5 });
+      expect(manager.getProjectedGoldRemaining(25)).toBe(25);
+    });
+
+    it('resets projected gold on flush', () => {
+      manager.queueCardPlay({ card: { id: 'marine', cost: 10 }, cardIndex: 0, tileX: 5, tileY: 5 });
+      manager.flush();
+      expect(manager.getProjectedGoldRemaining(50)).toBe(50);
+    });
+
+    it('resets projected gold on clear', () => {
+      manager.queueCardPlay({ card: { id: 'marine', cost: 10 }, cardIndex: 0, tileX: 5, tileY: 5 });
+      manager.clear();
+      expect(manager.getProjectedGoldRemaining(50)).toBe(50);
+    });
+  });
+
   describe('all order types', () => {
     it.each(['move', 'attack', 'attack-move', 'patrol', 'gather'] as const)(
       'queues %s orders',

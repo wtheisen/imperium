@@ -26,6 +26,7 @@ export class TacticalPauseManager {
   private _paused = false;
   private _orderQueue: QueuedOrder[] = [];
   private _cardPlayQueue: QueuedCardPlay[] = [];
+  private _projectedGoldSpent = 0;
 
   get paused(): boolean { return this._paused; }
 
@@ -49,9 +50,16 @@ export class TacticalPauseManager {
   }
 
   queueCardPlay(play: QueuedCardPlay): void {
+    if (!play.isShipOrdnance) {
+      this._projectedGoldSpent += play.card.cost ?? 0;
+    }
     this._cardPlayQueue.push(play);
     EventBus.emit('tactical-card-queued', play);
     EventBus.emit('tactical-queue-changed', { count: this.orderCount });
+  }
+
+  getProjectedGoldRemaining(currentGold: number): number {
+    return currentGold - this._projectedGoldSpent;
   }
 
   /** Flush all queued orders. Returns the queues for the caller to execute. */
@@ -60,6 +68,7 @@ export class TacticalPauseManager {
     const cardPlays = [...this._cardPlayQueue];
     this._orderQueue = [];
     this._cardPlayQueue = [];
+    this._projectedGoldSpent = 0;
     EventBus.emit('tactical-queue-cleared');
     EventBus.emit('tactical-queue-changed', { count: 0 });
     return { orders, cardPlays };
@@ -68,6 +77,7 @@ export class TacticalPauseManager {
   clear(): void {
     this._orderQueue = [];
     this._cardPlayQueue = [];
+    this._projectedGoldSpent = 0;
     EventBus.emit('tactical-queue-cleared');
     EventBus.emit('tactical-queue-changed', { count: 0 });
   }

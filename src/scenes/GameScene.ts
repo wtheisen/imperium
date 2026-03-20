@@ -364,7 +364,13 @@ export class GameScene implements GameSceneInterface {
     const ci = this.pendingCard.cardIndex;
 
     if (this.tacticalPause.paused) {
-      // Queue the card play for execution on unpause
+      // Queue the card play for execution on unpause, checking projected gold
+      if (this.tacticalPause.getProjectedGoldRemaining(this.economySystem.getGold()) < (card.cost ?? 0)) {
+        EventBus.emit('card-play-failed', { reason: 'insufficient-gold', cardIndex: ci });
+        this.pendingCard = null;
+        this.pendingFromKeyboard = false;
+        return;
+      }
       this.tacticalPause.queueCardPlay({ card, cardIndex: ci, tileX: evt.tileX, tileY: evt.tileY });
       this.pendingCard = null;
       this.pendingFromKeyboard = false;
@@ -441,6 +447,11 @@ export class GameScene implements GameSceneInterface {
     }
 
     if (this.tacticalPause.paused) {
+      if (this.tacticalPause.getProjectedGoldRemaining(this.economySystem.getGold()) < (data.card.cost ?? 0)) {
+        EventBus.emit('card-play-failed', { reason: 'insufficient-gold', cardIndex: data.cardIndex });
+        this.pendingCard = null;
+        return;
+      }
       this.tacticalPause.queueCardPlay({
         card: data.card, cardIndex: data.cardIndex, tileX: tile.tileX, tileY: tile.tileY,
       });
