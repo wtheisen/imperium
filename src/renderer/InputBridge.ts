@@ -29,6 +29,11 @@ export class InputBridge {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private entityRenderer: EntityRenderer;
 
+  // Pre-allocated reusable vectors to avoid per-event heap allocations.
+  private _ndc = new THREE.Vector2();
+  private _intersection = new THREE.Vector3();
+  private _intersection2 = new THREE.Vector3();
+
   /** Track mouse-down position to distinguish clicks from drags. */
   private downPos: { x: number; y: number; button: number } | null = null;
   private static DRAG_THRESHOLD = 5;
@@ -50,7 +55,7 @@ export class InputBridge {
     const ndc = this.screenToNDC(screenX, screenY);
     this.raycaster.setFromCamera(ndc, this.camera);
 
-    const intersection = new THREE.Vector3();
+    const intersection = this._intersection;
     const hit = this.raycaster.ray.intersectPlane(this.groundPlane, intersection);
     if (!hit) return null;
 
@@ -95,7 +100,7 @@ export class InputBridge {
 
   private screenToNDC(screenX: number, screenY: number): THREE.Vector2 {
     const rect = this.canvas.getBoundingClientRect();
-    return new THREE.Vector2(
+    return this._ndc.set(
       ((screenX - rect.left) / rect.width) * 2 - 1,
       -((screenY - rect.top) / rect.height) * 2 + 1
     );
@@ -114,7 +119,7 @@ export class InputBridge {
     // Get precise world hit for fractional coords
     const ndc = this.screenToNDC(e.clientX, e.clientY);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const intersection = new THREE.Vector3();
+    const intersection = this._intersection2;
     this.raycaster.ray.intersectPlane(this.groundPlane, intersection);
 
     return {
