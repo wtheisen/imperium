@@ -16,19 +16,6 @@ const TYPE_THEME: Record<CardType, { bg: string; border: string; label: string; 
 
 const TYPE_ORDER: CardType[] = ['unit', 'building', 'equipment'];
 
-// Inject fonts (shared with MissionSelectScene)
-let fontsReady = false;
-function ensureFonts(): void {
-  if (fontsReady) return;
-  fontsReady = true;
-  if (!document.querySelector('link[href*="Teko"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Share+Tech+Mono&display=swap';
-    document.head.appendChild(link);
-  }
-}
-
 // ── Scene ───────────────────────────────────────────────────────
 
 export class DeckEditScene implements GameSceneInterface {
@@ -39,7 +26,6 @@ export class DeckEditScene implements GameSceneInterface {
   private filterType: CardType | 'all' = 'all';
 
   create(_data?: any): void {
-    ensureFonts();
     const state = getPlayerState();
     this.activeDeckIndex = state.selectedDeckIndex;
 

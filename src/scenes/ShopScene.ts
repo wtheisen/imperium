@@ -27,19 +27,6 @@ const PACK_SHOP: { type: PackType; label: string; price: number; color: string }
   { type: 'ordnance', label: 'Ordnance Pack',  price: 40, color: '#a070cc' },
 ];
 
-// Inject fonts (shared with other scenes)
-let fontsReady = false;
-function ensureFonts(): void {
-  if (fontsReady) return;
-  fontsReady = true;
-  if (!document.querySelector('link[href*="Teko"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Share+Tech+Mono&display=swap';
-    document.head.appendChild(link);
-  }
-}
-
 // ── Scene ───────────────────────────────────────────────────────
 
 export class ShopScene implements GameSceneInterface {
@@ -50,8 +37,6 @@ export class ShopScene implements GameSceneInterface {
   private notification: HTMLDivElement | null = null;
 
   create(): void {
-    ensureFonts();
-
     const container = document.createElement('div');
     this.container = container;
     Object.assign(container.style, {

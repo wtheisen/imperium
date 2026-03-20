@@ -4,17 +4,6 @@ import { getPlayerState, toggleModifier, savePlayerState } from '../state/Player
 import { MODIFIERS, getModifierBonus } from '../state/DifficultyModifiers';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 
-// Inject Google Fonts once
-let fontsInjected = false;
-function injectFonts(): void {
-  if (fontsInjected) return;
-  fontsInjected = true;
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Share+Tech+Mono&display=swap';
-  document.head.appendChild(link);
-}
-
 // Inject scoped styles once
 let stylesInjected = false;
 function injectStyles(): void {
@@ -81,7 +70,6 @@ export class MissionSelectScene implements GameSceneInterface {
   private selectedMissionIdx = 0;
 
   create(): void {
-    injectFonts();
     injectStyles();
     const state = getPlayerState();
 

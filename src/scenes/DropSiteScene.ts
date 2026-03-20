@@ -23,19 +23,6 @@ const TERRAIN_COLORS: Record<number, string> = {
   [TerrainType.HULL_WALL]: '#23252a',
 };
 
-// Ensure shared fonts are loaded
-let fontsReady = false;
-function ensureFonts(): void {
-  if (fontsReady) return;
-  fontsReady = true;
-  if (!document.querySelector('link[href*="Teko"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Share+Tech+Mono&display=swap';
-    document.head.appendChild(link);
-  }
-}
-
 let stylesInjected = false;
 function injectDropStyles(): void {
   if (stylesInjected) return;
@@ -133,7 +120,6 @@ export class DropSiteScene implements GameSceneInterface {
   private scannerLevel: number = 0;
 
   create(data?: { mission?: MissionDefinition }): void {
-    ensureFonts();
     injectDropStyles();
 
     if (!data?.mission) {
