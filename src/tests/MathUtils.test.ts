@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MathUtils } from '../utils/MathUtils';
+import { MathUtils, createRng } from '../utils/MathUtils';
 
 describe('MathUtils', () => {
   describe('clamp', () => {
@@ -82,5 +82,45 @@ describe('MathUtils', () => {
         expect(val).toBeLessThan(2.0);
       }
     });
+  });
+});
+
+describe('createRng', () => {
+  it('produces deterministic sequence for same seed', () => {
+    const rng1 = createRng(42);
+    const rng2 = createRng(42);
+    const seq1 = Array.from({ length: 10 }, () => rng1());
+    const seq2 = Array.from({ length: 10 }, () => rng2());
+    expect(seq1).toEqual(seq2);
+  });
+
+  it('produces different sequences for different seeds', () => {
+    const rng1 = createRng(1);
+    const rng2 = createRng(2);
+    const v1 = rng1();
+    const v2 = rng2();
+    expect(v1).not.toBe(v2);
+  });
+
+  it('returns values in [0, 1)', () => {
+    const rng = createRng(123);
+    for (let i = 0; i < 1000; i++) {
+      const v = rng();
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+
+  it('handles seed of 0 (falls back to 1)', () => {
+    const rng = createRng(0);
+    const v = rng();
+    expect(v).toBeGreaterThanOrEqual(0);
+    expect(v).toBeLessThan(1);
+  });
+
+  it('handles negative seed', () => {
+    const rngPos = createRng(42);
+    const rngNeg = createRng(-42);
+    expect(rngPos()).toBe(rngNeg());
   });
 });
