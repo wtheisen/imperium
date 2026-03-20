@@ -69,6 +69,7 @@ export class VFXRenderer {
 
   // HP bars — billboard sprites per entity
   private hpBars = new Map<string, { bg: THREE.Mesh; fill: THREE.Mesh; border: THREE.Mesh }>();
+  private _hpBarActiveIds = new Set<string>();
   private hpBarGeo = new THREE.PlaneGeometry(1, 0.08);
   private hpBarBorderGeo = new THREE.PlaneGeometry(1.06, 0.12);
 
@@ -1096,7 +1097,8 @@ export class VFXRenderer {
   syncHpBars(entities: Entity[]): void {
     if (!this.camera) return;
 
-    const activeIds = new Set<string>();
+    const activeIds = this._hpBarActiveIds;
+    activeIds.clear();
 
     for (const entity of entities) {
       if (!entity.active) continue;
