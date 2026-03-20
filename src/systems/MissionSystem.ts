@@ -7,6 +7,7 @@ import { MoverComponent } from '../components/MoverComponent';
 import {
   MAP_WIDTH, MAP_HEIGHT, SUPPLY_DROP_GOLD, SUPPLY_DROP_CARD_DRAWS,
   EXTRACTION_ZONE_RADIUS, SURVIVE_WAVE_INTERVAL_MS, SURVIVE_WAVE_SIZE_BASE,
+  EXTRACTION_WAVE_INTERVAL_MS,
 } from '../config';
 import { getSupplyDropInterval } from '../ship/ShipState';
 
@@ -291,7 +292,7 @@ export class MissionSystem {
 
     // Spawn extraction waves
     this.extractionWaveTimer += delta;
-    if (this.extractionWaveTimer >= 10000) {
+    if (this.extractionWaveTimer >= EXTRACTION_WAVE_INTERVAL_MS) {
       this.extractionWaveTimer = 0;
       EventBus.emit('extraction-wave-spawn', {
         tileX: this.mission.playerStartX,
