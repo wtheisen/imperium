@@ -157,4 +157,35 @@ describe('EntityManager cached entity lists', () => {
 
     expect(em.getNearestEnemy(enemy)).toBe(player);
   });
+
+  it('getNearestEnemyInRange returns null when no enemies are within range', () => {
+    const player = em.spawnUnit(0, 0, 'marine', baseUnitStats, 'player');
+    em.spawnUnit(10, 10, 'ork', baseUnitStats, 'enemy');
+
+    // maxRange 5 — enemy is at Manhattan distance 20
+    expect(em.getNearestEnemyInRange(player, 5)).toBeNull();
+  });
+
+  it('getNearestEnemyInRange returns nearest enemy when one is in range', () => {
+    const player = em.spawnUnit(0, 0, 'marine', baseUnitStats, 'player');
+    const close = em.spawnUnit(2, 1, 'ork1', baseUnitStats, 'enemy');
+    em.spawnUnit(10, 10, 'ork2', baseUnitStats, 'enemy');
+
+    // maxRange 5 — close enemy is at distance 3, far enemy at 20
+    expect(em.getNearestEnemyInRange(player, 5)).toBe(close);
+  });
+
+  it('getNearestEnemyInRange skips inactive enemies', () => {
+    const player = em.spawnUnit(0, 0, 'marine', baseUnitStats, 'player');
+    const close = em.spawnUnit(1, 0, 'ork1', baseUnitStats, 'enemy');
+    const far = em.spawnUnit(3, 0, 'ork2', baseUnitStats, 'enemy');
+
+    close.active = false;
+    expect(em.getNearestEnemyInRange(player, 5)).toBe(far);
+  });
+
+  it('getNearestEnemyInRange returns null when no enemies exist', () => {
+    const player = em.spawnUnit(0, 0, 'marine', baseUnitStats, 'player');
+    expect(em.getNearestEnemyInRange(player, 10)).toBeNull();
+  });
 });

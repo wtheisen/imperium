@@ -63,7 +63,10 @@ export class CombatSystem {
       // If no target or target dead, find nearest enemy
       if (!combat.target || !combat.target.active) {
         const hadTarget = !!combat.target;
-        const nearest = this.entityManager.getNearestEnemy(entity);
+        // Buildings can't move — only scan within their attack range
+        const nearest = mover
+          ? this.entityManager.getNearestEnemy(entity)
+          : this.entityManager.getNearestEnemyInRange(entity, combat.getRange());
         if (nearest && combat.isInRange(nearest)) {
           combat.setTarget(nearest);
           // Stop moving units when they engage
