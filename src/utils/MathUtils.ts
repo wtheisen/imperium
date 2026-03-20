@@ -1,3 +1,12 @@
+/** Simple seeded PRNG (Lehmer / MINSTD) */
+export function createRng(seed: number): () => number {
+  let s = Math.abs(seed) || 1;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
 export class MathUtils {
   static clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));

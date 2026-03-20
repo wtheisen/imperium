@@ -9,6 +9,7 @@ import { MissionDefinition, TerrainParams, POIDefinition, POIType } from '../mis
 import { PackDefinition, PackType } from '../packs/PackTypes';
 import { EventBus } from '../EventBus';
 import { generateSpaceHulk } from './SpaceHulkGenerator';
+import { createRng } from '../utils/MathUtils';
 
 export enum TerrainType {
   GRASS = 0,
@@ -24,15 +25,6 @@ export enum TerrainType {
 interface MineData {
   remaining: number;
   maxGold: number;
-}
-
-/** Simple seeded PRNG (Lehmer / MINSTD) */
-function createRng(seed: number): () => number {
-  let s = Math.abs(seed) || 1;
-  return () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
 }
 
 /** Value noise at integer lattice point */
