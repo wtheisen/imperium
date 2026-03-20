@@ -46,30 +46,31 @@ export class EntityMeshFactory {
     }
   }
 
-  private buildMarine(): THREE.Group {
+  /** Shared builder for humanoid units with a box body + sphere head. */
+  private buildHumanoid(cfg: {
+    color: number;
+    bodyW: number; bodyH: number; bodyD: number;
+    headR: number;
+    extras?: (group: THREE.Group, mat: THREE.MeshStandardMaterial) => void;
+  }): THREE.Group {
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2244aa });
-    // Body
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 0.3), mat);
-    body.position.y = 0.35;
+    const mat = new THREE.MeshStandardMaterial({ color: cfg.color });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(cfg.bodyW, cfg.bodyH, cfg.bodyD), mat);
+    body.position.y = cfg.bodyH / 2;
     group.add(body);
-    // Head
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), mat);
-    head.position.y = 0.82;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(cfg.headR, 8, 6), mat);
+    head.position.y = cfg.bodyH + cfg.headR;
     group.add(head);
+    cfg.extras?.(group, mat);
     return group;
   }
 
+  private buildMarine(): THREE.Group {
+    return this.buildHumanoid({ color: 0x2244aa, bodyW: 0.4, bodyH: 0.7, bodyD: 0.3, headR: 0.12 });
+  }
+
   private buildGuardsman(): THREE.Group {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0xaa8844 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.25), mat);
-    body.position.y = 0.25;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat);
-    head.position.y = 0.6;
-    group.add(head);
-    return group;
+    return this.buildHumanoid({ color: 0xaa8844, bodyW: 0.3, bodyH: 0.5, bodyD: 0.25, headR: 0.1 });
   }
 
   private buildScout(): THREE.Group {
@@ -85,32 +86,15 @@ export class EntityMeshFactory {
   }
 
   private buildServitor(): THREE.Group {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.4, 0.3), mat);
-    body.position.y = 0.2;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat);
-    head.position.y = 0.5;
-    group.add(head);
-    return group;
+    return this.buildHumanoid({ color: 0x666666, bodyW: 0.35, bodyH: 0.4, bodyD: 0.3, headR: 0.1 });
   }
 
   private buildOrkBoy(): THREE.Group {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x44aa22 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.4), mat);
-    body.position.y = 0.3;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), mat);
-    head.position.y = 0.74;
-    group.add(head);
-    return group;
+    return this.buildHumanoid({ color: 0x44aa22, bodyW: 0.5, bodyH: 0.6, bodyD: 0.4, headR: 0.14 });
   }
 
   private buildOrkShoota(): THREE.Group {
     const group = this.buildOrkBoy();
-    // Add gun cylinder
     const gunMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
     const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 6), gunMat);
     gun.rotation.z = Math.PI / 2;
@@ -120,15 +104,7 @@ export class EntityMeshFactory {
   }
 
   private buildOrkNob(): THREE.Group {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x44aa22 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.5), mat);
-    body.position.y = 0.4;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), mat);
-    head.position.y = 0.97;
-    group.add(head);
-    return group;
+    return this.buildHumanoid({ color: 0x44aa22, bodyW: 0.6, bodyH: 0.8, bodyD: 0.5, headR: 0.17 });
   }
 
   private buildDropShip(): THREE.Group {
@@ -229,42 +205,28 @@ export class EntityMeshFactory {
   }
 
   private buildOgryn(): THREE.Group {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x8b7355 });
-    // Massive body
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.45), mat);
-    body.position.y = 0.425;
-    group.add(body);
-    // Small head
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), mat);
-    head.position.y = 0.98;
-    group.add(head);
-    // Shield arm
-    const shieldMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
-    const shield = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.35), shieldMat);
-    shield.position.set(-0.32, 0.45, 0);
-    group.add(shield);
-    return group;
+    return this.buildHumanoid({
+      color: 0x8b7355, bodyW: 0.55, bodyH: 0.85, bodyD: 0.45, headR: 0.13,
+      extras: (group) => {
+        const shieldMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+        const shield = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.35), shieldMat);
+        shield.position.set(-0.32, 0.45, 0);
+        group.add(shield);
+      },
+    });
   }
 
   private buildTechmarine(): THREE.Group {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0xaa2222 });
-    // Body
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.65, 0.3), mat);
-    body.position.y = 0.325;
-    group.add(body);
-    // Head
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), mat);
-    head.position.y = 0.76;
-    group.add(head);
-    // Servo arm (cylinder on back)
-    const servoMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), servoMat);
-    arm.rotation.z = Math.PI / 4;
-    arm.position.set(0, 0.7, -0.2);
-    group.add(arm);
-    return group;
+    return this.buildHumanoid({
+      color: 0xaa2222, bodyW: 0.38, bodyH: 0.65, bodyD: 0.3, headR: 0.11,
+      extras: (group) => {
+        const servoMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), servoMat);
+        arm.rotation.z = Math.PI / 4;
+        arm.position.set(0, 0.7, -0.2);
+        group.add(arm);
+      },
+    });
   }
 
   private buildSanctum(): THREE.Group {
