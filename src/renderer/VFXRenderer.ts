@@ -11,6 +11,8 @@ interface VFXParticle {
   elapsed: number;
   fadeOut: boolean;
   scaleSpeed: number;
+  /** If true, geometry is one-off and must be disposed when particle expires */
+  disposeGeo: boolean;
 }
 
 interface ProjectileVFX {
@@ -175,6 +177,7 @@ export class VFXRenderer {
       elapsed: 0,
       fadeOut: true,
       scaleSpeed,
+      disposeGeo: true,
     });
 
     // Central flash
@@ -697,6 +700,7 @@ export class VFXRenderer {
       elapsed: 0,
       fadeOut: true,
       scaleSpeed: 4,
+      disposeGeo: true,
     });
   };
 
@@ -743,6 +747,7 @@ export class VFXRenderer {
           elapsed: 0,
           fadeOut: true,
           scaleSpeed: -1,
+          disposeGeo: false,
         });
       }
     }
@@ -768,6 +773,7 @@ export class VFXRenderer {
         elapsed: 0,
         fadeOut: true,
         scaleSpeed: -0.5,
+        disposeGeo: false,
       });
     }
   };
@@ -884,6 +890,7 @@ export class VFXRenderer {
       elapsed: 0,
       fadeOut: true,
       scaleSpeed: 0,
+      disposeGeo: true,
     });
     this.particles.push({
       mesh: glow,
@@ -892,6 +899,7 @@ export class VFXRenderer {
       elapsed: 0,
       fadeOut: true,
       scaleSpeed: 0,
+      disposeGeo: true,
     });
 
     // Ground impact ring — spawns when pod lands (delayed)
@@ -911,6 +919,7 @@ export class VFXRenderer {
         elapsed: 0,
         fadeOut: true,
         scaleSpeed: 3,
+        disposeGeo: true,
       });
 
       // Dirt/debris particles
@@ -928,6 +937,7 @@ export class VFXRenderer {
           elapsed: 0,
           fadeOut: true,
           scaleSpeed: -0.5,
+          disposeGeo: false,
         });
       }
 
@@ -956,6 +966,7 @@ export class VFXRenderer {
         elapsed: 0,
         fadeOut: true,
         scaleSpeed: -0.3,
+        disposeGeo: false,
       });
     }
 
@@ -1017,6 +1028,7 @@ export class VFXRenderer {
         elapsed: 0,
         fadeOut: true,
         scaleSpeed: -0.3,
+        disposeGeo: false,
       });
     }
 
@@ -1084,6 +1096,7 @@ export class VFXRenderer {
         elapsed: 0,
         fadeOut: true,
         scaleSpeed: -0.3,
+        disposeGeo: false,
       });
     }
 
@@ -1197,6 +1210,7 @@ export class VFXRenderer {
       elapsed: 0,
       fadeOut: true,
       scaleSpeed,
+      disposeGeo: true,
     });
   }
 
@@ -1214,6 +1228,7 @@ export class VFXRenderer {
       if (t >= 1) {
         this.scene.remove(p.mesh);
         (p.mesh.material as THREE.Material).dispose();
+        if (p.disposeGeo) p.mesh.geometry.dispose();
         this.particles.splice(i, 1);
         continue;
       }
@@ -1358,6 +1373,7 @@ export class VFXRenderer {
     for (const p of this.particles) {
       this.scene.remove(p.mesh);
       (p.mesh.material as THREE.Material).dispose();
+      if (p.disposeGeo) p.mesh.geometry.dispose();
     }
     this.particles = [];
 
