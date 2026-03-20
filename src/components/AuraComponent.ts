@@ -233,46 +233,52 @@ export class AuraComponent implements Component {
   }
 
   destroy(): void {
+    let entities: Entity[];
     try {
-      const entities = this.getEntitiesFn();
-      // Build id→entity map for O(1) lookups
-      const entityMap = new Map<string, Entity>();
-      for (const e of entities) entityMap.set(e.entityId, e);
-
-      // Remove damage boosts
-      if (this.config.damageBoost) {
-        for (const id of this.boostedEntities) {
-          const e = entityMap.get(id);
-          if (e) {
-            const combat = e.getComponent<CombatComponent>('combat');
-            if (combat) combat.setDamage(Math.max(1, combat.getDamage() - this.config.damageBoost));
-          }
-        }
-      }
-
-      // Restore slowed entities
-      if (this.config.slowPercent) {
-        for (const [id, originalSpeed] of this.slowedEntities) {
-          const e = entityMap.get(id);
-          if (e) {
-            const mover = e.getComponent<MoverComponent>('mover');
-            if (mover) mover.setSpeed(originalSpeed);
-          }
-        }
-      }
-
-      // Remove armor boosts
-      if (this.config.armorBoost) {
-        for (const id of this.armorBoostedEntities) {
-          const e = entityMap.get(id);
-          if (e) {
-            const health = e.getComponent<HealthComponent>('health');
-            if (health) health.armor = Math.max(0, health.armor - this.config.armorBoost);
-          }
-        }
-      }
+      entities = this.getEntitiesFn();
     } catch (_e) {
-      // Entity manager may be destroyed already
+      // Entity manager may be destroyed already — nothing to clean up
+      this.boostedEntities.clear();
+      this.slowedEntities.clear();
+      this.armorBoostedEntities.clear();
+      return;
+    }
+
+    // Build id→entity map for O(1) lookups
+    const entityMap = new Map<string, Entity>();
+    for (const e of entities) entityMap.set(e.entityId, e);
+
+    // Remove damage boosts
+    if (this.config.damageBoost) {
+      for (const id of this.boostedEntities) {
+        const e = entityMap.get(id);
+        if (e) {
+          const combat = e.getComponent<CombatComponent>('combat');
+          if (combat) combat.setDamage(Math.max(1, combat.getDamage() - this.config.damageBoost));
+        }
+      }
+    }
+
+    // Restore slowed entities
+    if (this.config.slowPercent) {
+      for (const [id, originalSpeed] of this.slowedEntities) {
+        const e = entityMap.get(id);
+        if (e) {
+          const mover = e.getComponent<MoverComponent>('mover');
+          if (mover) mover.setSpeed(originalSpeed);
+        }
+      }
+    }
+
+    // Remove armor boosts
+    if (this.config.armorBoost) {
+      for (const id of this.armorBoostedEntities) {
+        const e = entityMap.get(id);
+        if (e) {
+          const health = e.getComponent<HealthComponent>('health');
+          if (health) health.armor = Math.max(0, health.armor - this.config.armorBoost);
+        }
+      }
     }
 
     this.boostedEntities.clear();
