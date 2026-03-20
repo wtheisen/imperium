@@ -37,7 +37,4 @@ export class Unit extends Entity {
     this.stats = { ...stats };
   }
 
-  updateDepth(): void {
-    // No-op: depth sorting is handled by 3D renderer
-  }
 }

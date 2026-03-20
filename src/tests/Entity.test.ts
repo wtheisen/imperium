@@ -23,9 +23,6 @@ describe('Entity', () => {
     expect(e.tileX).toBe(3);
     expect(e.tileY).toBe(7);
     expect(e.team).toBe('enemy');
-    // Screen position should be set by IsoHelper
-    expect(typeof e.screenX).toBe('number');
-    expect(typeof e.screenY).toBe('number');
   });
 
   describe('components', () => {
@@ -92,15 +89,4 @@ describe('Entity', () => {
     });
   });
 
-  describe('updateScreenPosition', () => {
-    it('syncs screen position from tile coords', () => {
-      const e = new Entity(0, 0);
-      e.tileX = 10;
-      e.tileY = 5;
-      e.updateScreenPosition();
-      // Just verify it changed from the initial (0,0) -> (0,0)
-      expect(typeof e.screenX).toBe('number');
-      expect(typeof e.screenY).toBe('number');
-    });
-  });
 });

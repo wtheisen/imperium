@@ -1,7 +1,5 @@
 import { Component } from '../entities/Entity';
 import { Unit } from '../entities/Unit';
-import { IsoHelper } from '../map/IsoHelper';
-
 export class MoverComponent implements Component {
   private unit: Unit;
   private path: { x: number; y: number }[] = [];
@@ -118,10 +116,6 @@ export class MoverComponent implements Component {
       this.unit.tileY = Math.round(this.fracTileY);
     }
 
-    // Update screen position for any legacy systems that read it
-    const screen = IsoHelper.tileToScreen(this.fracTileX, this.fracTileY);
-    this.unit.screenX = screen.x;
-    this.unit.screenY = screen.y;
   }
 
   destroy(): void {
