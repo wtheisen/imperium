@@ -19,7 +19,7 @@ GitHub Pages via Actions workflow (`.github/workflows/deploy.yml`). Pushes to `m
 TypeScript + Three.js isometric card-based RTS/tower defense game with a Warhammer 40K theme. Built with Vite. Phaser has been removed — the game uses a custom `SceneManager` and Three.js for all 3D rendering.
 
 ### Scene Flow
-BootScene → MissionSelectScene → DropSiteScene → GameScene + UIScene (overlay) → GameOverScene
+BootScene → MissionSelectScene (full-screen campaign map) → DropSiteScene → GameScene + UIScene (overlay) → GameOverScene
 Side scenes: ShopScene, DeckEditScene, TechTreeScene
 
 ### Core Patterns
@@ -90,6 +90,8 @@ Key UI files:
 - `src/missions/MissionDatabase.ts` — Mission definitions with terrain, objectives, enemy camps.
 - `src/state/PlayerState.ts` — Persistent player progression (XP, unlocks).
 - `PLAN_building_economy_redesign.md` — Active design doc for planned building/economy changes.
+- `PLAN_procedural_missions.md` — Design doc for procedural mission generator (7 archetypes, difficulty scaling).
+- `PLAN_campaign_map.md` — Design doc for campaign progression map (planet surface theater-of-war).
 
 ## Useful Skills
 
