@@ -43,6 +43,10 @@ export class CameraController {
   private shakeTimer = 0;
   private shakeIntensity = 0;
 
+  // Reusable vectors to avoid per-frame allocations
+  private _panRight = new THREE.Vector3();
+  private _panForward = new THREE.Vector3();
+
   private domElement: HTMLElement;
 
   constructor(domElement: HTMLElement, aspect: number) {
@@ -135,8 +139,8 @@ export class CameraController {
     if (this.isPanning) {
       // Pan along the camera's local XZ plane
       const panSpeed = this.distance * 0.002;
-      const right = new THREE.Vector3();
-      const forward = new THREE.Vector3();
+      const right = this._panRight;
+      const forward = this._panForward;
       this.camera.getWorldDirection(forward);
       right.crossVectors(forward, this.camera.up).normalize();
       // Project forward onto XZ plane for panning
@@ -207,8 +211,8 @@ export class CameraController {
       else if (this.mouseScreenY >= vh - margin) edgeDY = speed;
 
       if (edgeDX !== 0 || edgeDY !== 0) {
-        const right = new THREE.Vector3();
-        const forward = new THREE.Vector3();
+        const right = this._panRight;
+        const forward = this._panForward;
         this.camera.getWorldDirection(forward);
         right.crossVectors(forward, this.camera.up).normalize();
         forward.y = 0;
