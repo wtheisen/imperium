@@ -78,7 +78,7 @@ export class GameScene implements GameSceneInterface {
     this.mapManager = new MapManager();
     this.mapManager.loadMissionTerrain(this.mission);
     this.validator = new PlacementValidator(this.mapManager);
-    this.mapManager.render();
+
 
     // Feed terrain data to the 3D renderer (include protected positions for decorations)
     const protectedPositions: { x: number; y: number; radius: number }[] = [];
@@ -240,7 +240,7 @@ export class GameScene implements GameSceneInterface {
   private spawnLandingCraft(): void {
     this.townHall = this.entityManager.spawnBuilding(
       this.mission.playerStartX, this.mission.playerStartY,
-      'building-drop_ship', 'drop_ship',
+      'drop_ship',
       { maxHp: 200, tileWidth: 2, tileHeight: 2 },
       'player'
     );

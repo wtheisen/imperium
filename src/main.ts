@@ -24,12 +24,7 @@ setGameRenderer(gameRenderer);
 
 // When GameScene builds its map, build the 3D tile map
 EventBus.on('terrain-ready', (data: any) => {
-  if (data.terrainGrid) {
-    gameRenderer.buildTileMap(data.terrainGrid, data.protectedPositions, data.mapType);
-  } else {
-    // Legacy: just terrain grid array
-    gameRenderer.buildTileMap(data);
-  }
+  gameRenderer.buildTileMap(data.terrainGrid, data.protectedPositions, data.mapType);
 });
 
 // ── Scene Manager ──

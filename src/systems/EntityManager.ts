@@ -47,7 +47,6 @@ export class EntityManager {
   spawnUnit(
     tileX: number,
     tileY: number,
-    _texture: string,
     unitType: string,
     stats: UnitStats,
     team: EntityTeam = 'player'
@@ -88,7 +87,6 @@ export class EntityManager {
   spawnBuilding(
     tileX: number,
     tileY: number,
-    _texture: string,
     buildingType: string,
     stats: BuildingStats,
     team: EntityTeam = 'player'
@@ -166,11 +164,11 @@ export class EntityManager {
     return tiles;
   }
 
-  private handleUnitTrained({ unitType, texture, stats, tileX, tileY, rallyX, rallyY }: {
-    unitType: string; texture: string; stats: UnitStats;
+  private handleUnitTrained({ unitType, stats, tileX, tileY, rallyX, rallyY }: {
+    unitType: string; stats: UnitStats;
     tileX: number; tileY: number; rallyX?: number; rallyY?: number;
   }): void {
-    const unit = this.spawnUnit(tileX, tileY, texture, unitType, stats, 'player');
+    const unit = this.spawnUnit(tileX, tileY, unitType, stats, 'player');
     // Move to rally point if set
     if (rallyX != null && rallyY != null) {
       EventBus.emit('request-path', { unit, targetX: rallyX, targetY: rallyY });

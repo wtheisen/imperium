@@ -133,7 +133,7 @@ export class SpawnerSystem {
         const sx = Math.max(0, Math.min(MAP_WIDTH - 1, spawner.config.tileX + offsetX));
         const sy = Math.max(0, Math.min(MAP_HEIGHT - 1, spawner.config.tileY + offsetY));
 
-        const unit = this.entityManager.spawnUnit(sx, sy, def.texture, def.type, def.stats, 'enemy');
+        const unit = this.entityManager.spawnUnit(sx, sy, def.type, def.stats, 'enemy');
         unit.campId = spawner.config.campId;
 
         // Random home position within patrol radius
@@ -185,7 +185,7 @@ export class SpawnerSystem {
       const unit = this.entityManager.spawnUnit(
         Math.max(0, Math.min(MAP_WIDTH - 1, sx + Math.floor(Math.random() * 3) - 1)),
         Math.max(0, Math.min(MAP_HEIGHT - 1, sy + Math.floor(Math.random() * 3) - 1)),
-        'unit-enemy', 'enemy_grunt', ENEMY_GRUNT, 'enemy'
+        'enemy_grunt', ENEMY_GRUNT, 'enemy'
       );
       // Patrol to opposite side
       unit.homeX = tx;
@@ -219,7 +219,7 @@ export class SpawnerSystem {
         const unit = this.entityManager.spawnUnit(
           Math.max(0, Math.min(MAP_WIDTH - 1, edge.x + Math.floor(Math.random() * 3) - 1)),
           Math.max(0, Math.min(MAP_HEIGHT - 1, edge.y + Math.floor(Math.random() * 3) - 1)),
-          'unit-enemy', 'enemy_grunt', ENEMY_GRUNT, 'enemy'
+          'enemy_grunt', ENEMY_GRUNT, 'enemy'
         );
         unit.homeX = targetX;
         unit.homeY = targetY;
@@ -229,7 +229,7 @@ export class SpawnerSystem {
         const unit = this.entityManager.spawnUnit(
           Math.max(0, Math.min(MAP_WIDTH - 1, edge.x + Math.floor(Math.random() * 3) - 1)),
           Math.max(0, Math.min(MAP_HEIGHT - 1, edge.y + Math.floor(Math.random() * 3) - 1)),
-          'unit-enemy-ranged', 'enemy_archer', ENEMY_ARCHER, 'enemy'
+          'enemy_archer', ENEMY_ARCHER, 'enemy'
         );
         unit.homeX = targetX;
         unit.homeY = targetY;
@@ -291,7 +291,7 @@ export class SpawnerSystem {
       const unit = this.entityManager.spawnUnit(
         Math.max(0, Math.min(MAP_WIDTH - 1, edge.x + Math.floor(Math.random() * 3) - 1)),
         Math.max(0, Math.min(MAP_HEIGHT - 1, edge.y + Math.floor(Math.random() * 3) - 1)),
-        'unit-enemy', 'enemy_grunt', ENEMY_GRUNT, 'enemy'
+        'enemy_grunt', ENEMY_GRUNT, 'enemy'
       );
       unit.homeX = targetX;
       unit.homeY = targetY;
@@ -301,7 +301,7 @@ export class SpawnerSystem {
       const unit = this.entityManager.spawnUnit(
         Math.max(0, Math.min(MAP_WIDTH - 1, edge.x + Math.floor(Math.random() * 3) - 1)),
         Math.max(0, Math.min(MAP_HEIGHT - 1, edge.y + Math.floor(Math.random() * 3) - 1)),
-        'unit-enemy-ranged', 'enemy_archer', ENEMY_ARCHER, 'enemy'
+        'enemy_archer', ENEMY_ARCHER, 'enemy'
       );
       unit.homeX = targetX;
       unit.homeY = targetY;

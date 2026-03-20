@@ -11,7 +11,6 @@ export class EnemyPlacement {
       if (camp.building) {
         const building = entityManager.spawnBuilding(
           camp.tileX, camp.tileY,
-          camp.building.texture,
           camp.building.buildingType,
           camp.building.stats,
           'enemy'
@@ -32,7 +31,6 @@ export class EnemyPlacement {
 
           const unit = entityManager.spawnUnit(
             spawnX, spawnY,
-            unitDef.texture,
             unitDef.type,
             unitDef.stats,
             'enemy'

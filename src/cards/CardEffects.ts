@@ -89,7 +89,6 @@ export class CardEffects {
 
     const unit = this.entityManager.spawnUnit(
       tileX, tileY,
-      card.texture || 'unit-default',
       card.entityType || 'unit',
       stats,
       'player'
@@ -123,7 +122,6 @@ export class CardEffects {
 
     const building = this.entityManager.spawnBuilding(
       tileX, tileY,
-      card.texture || 'building-default',
       card.entityType || 'building',
       stats,
       'player'
