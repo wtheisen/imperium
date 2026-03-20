@@ -807,6 +807,13 @@ export class GameScene implements GameSceneInterface {
     for (const pod of this.supplyPods) pod.destroy();
     this.supplyPods = [];
 
+    if (this.tacticalPause?.paused) {
+      this.tacticalPause.resume();
+      EventBus.emit('game-resumed');
+    }
+    this.tacticalPause?.clear();
+    this.paused = false;
+
     this.poiManager?.destroy();
     this.tutorialSystem?.destroy();
     this.audioManager?.destroy();

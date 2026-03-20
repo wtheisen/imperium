@@ -188,6 +188,56 @@ describe('TacticalPauseManager', () => {
     });
   });
 
+  describe('shutdown sequence', () => {
+    it('resume before clear leaves manager unpaused with empty queues', () => {
+      manager.pause();
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 5, targetY: 5 });
+      manager.queueCardPlay({ card: { id: 'marine' }, cardIndex: 0, tileX: 3, tileY: 3 });
+
+      manager.resume();
+      manager.clear();
+
+      expect(manager.paused).toBe(false);
+      expect(manager.orderCount).toBe(0);
+    });
+
+    it('emits game-resumed before clearing when shutdown while paused', () => {
+      const events: string[] = [];
+      EventBus.on('game-resumed', () => events.push('game-resumed'));
+      EventBus.on('tactical-queue-cleared', () => events.push('tactical-queue-cleared'));
+
+      manager.pause();
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 5, targetY: 5 });
+
+      // simulate the shutdown sequence from GameScene
+      if (manager.paused) {
+        manager.resume();
+        EventBus.emit('game-resumed');
+      }
+      manager.clear();
+
+      expect(events[0]).toBe('game-resumed');
+      expect(events[1]).toBe('tactical-queue-cleared');
+    });
+
+    it('clear is safe to call when not paused', () => {
+      manager.queueOrder({ unitId: 'u1', type: 'patrol', targetX: 0, targetY: 0 });
+      expect(() => manager.clear()).not.toThrow();
+      expect(manager.orderCount).toBe(0);
+    });
+
+    it('resume+clear on already-unpaused manager does not throw', () => {
+      expect(manager.paused).toBe(false);
+      expect(() => {
+        if (manager.paused) {
+          manager.resume();
+          EventBus.emit('game-resumed');
+        }
+        manager.clear();
+      }).not.toThrow();
+    });
+  });
+
   describe('all order types', () => {
     it.each(['move', 'attack', 'attack-move', 'patrol', 'gather'] as const)(
       'queues %s orders',
