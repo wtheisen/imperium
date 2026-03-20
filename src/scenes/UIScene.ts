@@ -128,6 +128,7 @@ export class UIScene implements GameSceneInterface {
     EventBus.on('reinforcements-incoming', this.onReinforcementsIncoming, this);
     EventBus.on('game-paused', this.onGamePaused, this);
     EventBus.on('game-resumed', this.onGameResumed, this);
+    EventBus.on('scout-alert', this.onScoutAlert, this);
     EventBus.on('pack-collected', this.onPackCollected, this);
     EventBus.on('pack-card-taken', this.onPackCardTaken, this);
     EventBus.on('ship-ordnance-select', this.onShipOrdnanceSelect, this);
@@ -1083,6 +1084,10 @@ export class UIScene implements GameSceneInterface {
     this.showBanner('ENEMY REINFORCEMENTS INCOMING', '#c43030', 3000, true);
   }
 
+  private onScoutAlert = (data: { text: string; color: string }): void => {
+    this.showBanner(data.text, data.color, 2500);
+  };
+
   private onPackCollected = (data: { packId: string; type: string; cards: string[] }): void => {
     // Create pack pickup UI overlay
     this.packPickupUI = new PackPickupUI(data.packId, data.type as any, data.cards);
@@ -1457,6 +1462,7 @@ export class UIScene implements GameSceneInterface {
     EventBus.off('reinforcements-incoming', this.onReinforcementsIncoming, this);
     EventBus.off('game-paused', this.onGamePaused, this);
     EventBus.off('game-resumed', this.onGameResumed, this);
+    EventBus.off('scout-alert', this.onScoutAlert, this);
     EventBus.off('pack-collected', this.onPackCollected, this);
     EventBus.off('pack-card-taken', this.onPackCardTaken, this);
     EventBus.off('ship-ordnance-select', this.onShipOrdnanceSelect, this);
