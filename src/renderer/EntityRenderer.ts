@@ -229,12 +229,16 @@ export class EntityRenderer {
           this.animators.delete(id);
           this.spriteEntities.delete(id);
         }
-        // Clean up selection ring
+        // Clean up selection ring (traverse to dispose border sub-mesh too)
         const ring = this.selectionRings.get(id);
         if (ring) {
+          ring.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.dispose();
+              if (child.material instanceof THREE.Material) child.material.dispose();
+            }
+          });
           this.scene.remove(ring);
-          ring.geometry.dispose();
-          (ring.material as THREE.Material).dispose();
           this.selectionRings.delete(id);
         }
         // Clean up VFX state
@@ -431,12 +435,16 @@ export class EntityRenderer {
     for (const id of this.selectedIds) {
       const mesh = this.meshes.get(id);
       if (mesh) this.setHighlight(mesh, false, id);
-      // Remove ring
+      // Remove ring (traverse to dispose border sub-mesh too)
       const ring = this.selectionRings.get(id);
       if (ring) {
+        ring.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.geometry.dispose();
+            if (child.material instanceof THREE.Material) child.material.dispose();
+          }
+        });
         this.scene.remove(ring);
-        ring.geometry.dispose();
-        (ring.material as THREE.Material).dispose();
         this.selectionRings.delete(id);
       }
     }
