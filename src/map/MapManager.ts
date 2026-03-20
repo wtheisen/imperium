@@ -449,8 +449,6 @@ export class MapManager {
     }
   }
 
-  /** No-op: 3D tile map is built by GameRenderer via 'terrain-ready' event */
-  render(): void {}
 
   getTerrain(tileX: number, tileY: number): TerrainType {
     if (!IsoHelper.isInBounds(tileX, tileY)) return TerrainType.WATER;
