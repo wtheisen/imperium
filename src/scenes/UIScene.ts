@@ -798,134 +798,9 @@ export class UIScene implements GameSceneInterface {
     for (let i = 0; i < hand.length; i++) {
       const card = hand[i];
 
-      // Empty slot — show ghost frame
-      if (!card) {
-        const emptySlot = document.createElement('div');
-        emptySlot.className = 'card-slot';
-        emptySlot.style.animationDelay = `${i * 70}ms`;
-        const emptyFrame = document.createElement('div');
-        emptyFrame.className = 'card-frame';
-        Object.assign(emptyFrame.style, {
-          opacity: '0.15',
-          border: '2px dashed #3a3228',
-          background: 'transparent',
-          boxShadow: 'none',
-        });
-        // Hotkey label in center
-        const emptyLabel = document.createElement('div');
-        Object.assign(emptyLabel.style, {
-          position: 'absolute', inset: '0',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: "'Cinzel', serif", fontSize: '16px', color: '#3a3228',
-        });
-        emptyLabel.textContent = `${i + 1}`;
-        emptyFrame.appendChild(emptyLabel);
-        emptySlot.appendChild(emptyFrame);
-        this.slotEls[i] = emptySlot;
-        this.handEl.appendChild(emptySlot);
-        continue;
-      }
-
-      const color = UIScene.TYPE_COLORS[card.type] || '#666';
-      const icon = UIScene.TYPE_ICONS[card.type] || '';
-
-      const slot = document.createElement('div');
-      slot.className = 'card-slot';
+      const slot = card ? this.buildCardSlot(card, i) : this.buildEmptySlot(i);
       slot.style.animationDelay = `${i * 70}ms`;
-
-      const frame = document.createElement('div');
-      frame.className = 'card-frame';
-
-      // Title bar (name + cost)
-      const titleBar = document.createElement('div');
-      titleBar.className = 'card-title-bar';
-      const titleEl = document.createElement('span');
-      titleEl.className = 'card-title';
-      titleEl.textContent = card.name;
-      titleBar.appendChild(titleEl);
-      const manaEl = document.createElement('span');
-      manaEl.className = 'card-mana';
-      manaEl.textContent = `${card.cost}`;
-      titleBar.appendChild(manaEl);
-      frame.appendChild(titleBar);
-
-      // Art window
-      const artBox = document.createElement('div');
-      artBox.className = 'card-art';
-      const artImg = document.createElement('img');
-      artImg.src = getCardArtRenderer().getArt(card.texture, card.type);
-      artBox.appendChild(artImg);
-      const vignette = document.createElement('div');
-      vignette.className = 'card-art-vignette';
-      // Tint the bottom edge of vignette with the type color
-      vignette.style.background = `linear-gradient(180deg, transparent 40%, ${color}22 100%)`;
-      artBox.appendChild(vignette);
-      frame.appendChild(artBox);
-
-      // Type line
-      const typeLine = document.createElement('div');
-      typeLine.className = 'card-type-line';
-      typeLine.style.color = color;
-      typeLine.innerHTML = `<span class="card-type-icon">${icon}</span> ${card.type}`;
-      frame.appendChild(typeLine);
-
-      // Text box
-      const textBox = document.createElement('div');
-      textBox.className = 'card-text-box';
-      const textEl = document.createElement('div');
-      textEl.className = 'card-text';
-      textEl.textContent = card.description;
-      textBox.appendChild(textEl);
-      frame.appendChild(textBox);
-
-      // Bottom info bar
-      const bottomBar = document.createElement('div');
-      bottomBar.className = 'card-bottom-bar';
-      const hotkeyEl = document.createElement('span');
-      hotkeyEl.className = 'card-hotkey';
-      hotkeyEl.textContent = `${i + 1}`;
-      bottomBar.appendChild(hotkeyEl);
-      if (card.singleUse) {
-        const singleEl = document.createElement('span');
-        singleEl.className = 'card-singleuse-badge';
-        singleEl.textContent = 'SINGLE USE';
-        bottomBar.appendChild(singleEl);
-      }
-      frame.appendChild(bottomBar);
-
-      slot.appendChild(frame);
       this.slotEls[i] = slot;
-
-      // Hover effects
-      slot.addEventListener('mouseenter', () => {
-        if (!this.dragState.isDragging) {
-          frame.style.boxShadow = `0 8px 28px rgba(0,0,0,0.8), 0 0 20px ${color}30`;
-          frame.style.borderColor = color;
-          this.cardTooltip?.show(card, slot.getBoundingClientRect());
-        }
-      });
-      slot.addEventListener('mouseleave', () => {
-        if (!this.dragState.isDragging) {
-          frame.style.boxShadow = '';
-          frame.style.borderColor = '';
-          slot.style.transform = '';
-        }
-        this.cardTooltip?.hide();
-      });
-
-      // Drag start
-      slot.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        this.cardTooltip?.hide();
-        this.startCardDrag(card, i, slot, e.clientX, e.clientY, color);
-      });
-
-      // Right-click to discard
-      slot.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.handleRightClickDiscard(i);
-      });
-
       this.handEl.appendChild(slot);
     }
 
@@ -1109,6 +984,129 @@ export class UIScene implements GameSceneInterface {
     setTimeout(() => label.remove(), 900);
   }
 
+  /** Build an empty ghost-frame slot for a hand position with no card. */
+  private buildEmptySlot(index: number): HTMLElement {
+    const slot = document.createElement('div');
+    slot.className = 'card-slot';
+    const emptyFrame = document.createElement('div');
+    emptyFrame.className = 'card-frame';
+    Object.assign(emptyFrame.style, {
+      opacity: '0.15', border: '2px dashed #3a3228',
+      background: 'transparent', boxShadow: 'none',
+    });
+    const emptyLabel = document.createElement('div');
+    Object.assign(emptyLabel.style, {
+      position: 'absolute', inset: '0',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: "'Cinzel', serif", fontSize: '16px', color: '#3a3228',
+    });
+    emptyLabel.textContent = `${index + 1}`;
+    emptyFrame.appendChild(emptyLabel);
+    slot.appendChild(emptyFrame);
+    return slot;
+  }
+
+  /** Build a fully-wired card slot element with art, hover, drag, and discard listeners. */
+  private buildCardSlot(card: Card, index: number): HTMLElement {
+    const color = UIScene.TYPE_COLORS[card.type] || '#666';
+    const icon = UIScene.TYPE_ICONS[card.type] || '';
+
+    const slot = document.createElement('div');
+    slot.className = 'card-slot';
+
+    const frame = document.createElement('div');
+    frame.className = 'card-frame';
+
+    // Title bar (name + cost)
+    const titleBar = document.createElement('div');
+    titleBar.className = 'card-title-bar';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'card-title';
+    titleEl.textContent = card.name;
+    titleBar.appendChild(titleEl);
+    const manaEl = document.createElement('span');
+    manaEl.className = 'card-mana';
+    manaEl.textContent = `${card.cost}`;
+    titleBar.appendChild(manaEl);
+    frame.appendChild(titleBar);
+
+    // Art window
+    const artBox = document.createElement('div');
+    artBox.className = 'card-art';
+    const artImg = document.createElement('img');
+    artImg.src = getCardArtRenderer().getArt(card.texture, card.type);
+    artBox.appendChild(artImg);
+    const vignette = document.createElement('div');
+    vignette.className = 'card-art-vignette';
+    vignette.style.background = `linear-gradient(180deg, transparent 40%, ${color}22 100%)`;
+    artBox.appendChild(vignette);
+    frame.appendChild(artBox);
+
+    // Type line
+    const typeLine = document.createElement('div');
+    typeLine.className = 'card-type-line';
+    typeLine.style.color = color;
+    typeLine.innerHTML = `<span class="card-type-icon">${icon}</span> ${card.type}`;
+    frame.appendChild(typeLine);
+
+    // Text box
+    const textBox = document.createElement('div');
+    textBox.className = 'card-text-box';
+    const textEl = document.createElement('div');
+    textEl.className = 'card-text';
+    textEl.textContent = card.description;
+    textBox.appendChild(textEl);
+    frame.appendChild(textBox);
+
+    // Bottom info bar
+    const bottomBar = document.createElement('div');
+    bottomBar.className = 'card-bottom-bar';
+    const hotkeyEl = document.createElement('span');
+    hotkeyEl.className = 'card-hotkey';
+    hotkeyEl.textContent = `${index + 1}`;
+    bottomBar.appendChild(hotkeyEl);
+    if (card.singleUse) {
+      const singleEl = document.createElement('span');
+      singleEl.className = 'card-singleuse-badge';
+      singleEl.textContent = 'SINGLE USE';
+      bottomBar.appendChild(singleEl);
+    }
+    frame.appendChild(bottomBar);
+    slot.appendChild(frame);
+
+    // Hover effects
+    slot.addEventListener('mouseenter', () => {
+      if (!this.dragState.isDragging) {
+        frame.style.boxShadow = `0 8px 28px rgba(0,0,0,0.8), 0 0 20px ${color}30`;
+        frame.style.borderColor = color;
+        this.cardTooltip?.show(card, slot.getBoundingClientRect());
+      }
+    });
+    slot.addEventListener('mouseleave', () => {
+      if (!this.dragState.isDragging) {
+        frame.style.boxShadow = '';
+        frame.style.borderColor = '';
+        slot.style.transform = '';
+      }
+      this.cardTooltip?.hide();
+    });
+
+    // Drag start
+    slot.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      this.cardTooltip?.hide();
+      this.startCardDrag(card, index, slot, e.clientX, e.clientY, color);
+    });
+
+    // Right-click to discard
+    slot.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.handleRightClickDiscard(index);
+    });
+
+    return slot;
+  }
+
   /** Update a single hand slot without rebuilding the whole hand. */
   private updateSlot(index: number): void {
     if (!this.handEl || index < 0 || index >= this.slotEls.length) return;
@@ -1116,122 +1114,7 @@ export class UIScene implements GameSceneInterface {
     if (!oldEl) return;
 
     const card = this.deck.hand[index];
-    const artRenderer = getCardArtRenderer();
-
-    const newSlot = document.createElement('div');
-    newSlot.className = 'card-slot';
-
-    if (!card) {
-      // Empty slot ghost
-      const emptyFrame = document.createElement('div');
-      emptyFrame.className = 'card-frame';
-      Object.assign(emptyFrame.style, {
-        opacity: '0.15', border: '2px dashed #3a3228',
-        background: 'transparent', boxShadow: 'none',
-      });
-      const emptyLabel = document.createElement('div');
-      Object.assign(emptyLabel.style, {
-        position: 'absolute', inset: '0',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: "'Cinzel', serif", fontSize: '16px', color: '#3a3228',
-      });
-      emptyLabel.textContent = `${index + 1}`;
-      emptyFrame.appendChild(emptyLabel);
-      newSlot.appendChild(emptyFrame);
-    } else {
-      const color = UIScene.TYPE_COLORS[card.type] || '#666';
-      const icon = UIScene.TYPE_ICONS[card.type] || '';
-
-      const frame = document.createElement('div');
-      frame.className = 'card-frame';
-
-      // Title bar
-      const titleBar = document.createElement('div');
-      titleBar.className = 'card-title-bar';
-      const titleEl = document.createElement('span');
-      titleEl.className = 'card-title';
-      titleEl.textContent = card.name;
-      titleBar.appendChild(titleEl);
-      const manaEl = document.createElement('span');
-      manaEl.className = 'card-mana';
-      manaEl.textContent = `${card.cost}`;
-      titleBar.appendChild(manaEl);
-      frame.appendChild(titleBar);
-
-      // Art
-      const artBox = document.createElement('div');
-      artBox.className = 'card-art';
-      const artImg = document.createElement('img');
-      artImg.src = artRenderer.getArt(card.texture, card.type);
-      artBox.appendChild(artImg);
-      const vignette = document.createElement('div');
-      vignette.className = 'card-art-vignette';
-      vignette.style.background = `linear-gradient(180deg, transparent 40%, ${color}22 100%)`;
-      artBox.appendChild(vignette);
-      frame.appendChild(artBox);
-
-      // Type line
-      const typeLine = document.createElement('div');
-      typeLine.className = 'card-type-line';
-      typeLine.style.color = color;
-      typeLine.innerHTML = `<span class="card-type-icon">${icon}</span> ${card.type}`;
-      frame.appendChild(typeLine);
-
-      // Text box
-      const textBox = document.createElement('div');
-      textBox.className = 'card-text-box';
-      const textEl = document.createElement('div');
-      textEl.className = 'card-text';
-      textEl.textContent = card.description;
-      textBox.appendChild(textEl);
-      frame.appendChild(textBox);
-
-      // Bottom bar
-      const bottomBar = document.createElement('div');
-      bottomBar.className = 'card-bottom-bar';
-      const hotkeyEl = document.createElement('span');
-      hotkeyEl.className = 'card-hotkey';
-      hotkeyEl.textContent = `${index + 1}`;
-      bottomBar.appendChild(hotkeyEl);
-      if (card.singleUse) {
-        const singleEl = document.createElement('span');
-        singleEl.className = 'card-singleuse-badge';
-        singleEl.textContent = 'SINGLE USE';
-        bottomBar.appendChild(singleEl);
-      }
-      frame.appendChild(bottomBar);
-      newSlot.appendChild(frame);
-
-      // Hover
-      newSlot.addEventListener('mouseenter', () => {
-        if (!this.dragState.isDragging) {
-          frame.style.boxShadow = `0 8px 28px rgba(0,0,0,0.8), 0 0 20px ${color}30`;
-          frame.style.borderColor = color;
-          this.cardTooltip?.show(card, newSlot.getBoundingClientRect());
-        }
-      });
-      newSlot.addEventListener('mouseleave', () => {
-        if (!this.dragState.isDragging) {
-          frame.style.boxShadow = '';
-          frame.style.borderColor = '';
-          newSlot.style.transform = '';
-        }
-        this.cardTooltip?.hide();
-      });
-
-      // Drag
-      newSlot.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        this.cardTooltip?.hide();
-        this.startCardDrag(card, index, newSlot, e.clientX, e.clientY, color);
-      });
-
-      // Right-click to discard
-      newSlot.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.handleRightClickDiscard(index);
-      });
-    }
+    const newSlot = card ? this.buildCardSlot(card, index) : this.buildEmptySlot(index);
 
     // Apply draw-reveal animation when a card appears in a previously empty slot
     const wasEmpty = !oldEl.querySelector('.card-title-bar');
