@@ -4,6 +4,7 @@ import { MissionDefinition } from '../missions/MissionDefinition';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { getModifierBonus } from '../state/DifficultyModifiers';
 import { EventBus } from '../EventBus';
+import { BattleReport } from '../systems/BattleRecorder';
 import {
   MISSION_REWARD_BASE,
   MISSION_REWARD_PER_DIFFICULTY,
@@ -16,6 +17,25 @@ interface CardStats {
   cardsDrawn: number;
   cardsDiscarded: number;
   reshuffleCount: number;
+}
+
+const UNIT_LABELS: Record<string, string> = {
+  marine: 'Space Marine', guardsman: 'Guardsman', scout: 'Scout',
+  servitor: 'Servitor', ogryn: 'Ogryn', techmarine: 'Techmarine',
+  rhino: 'Rhino', leman_russ: 'Leman Russ', sentinel: 'Sentinel',
+  ork_boy: 'Ork Boy', ork_shoota: 'Ork Shoota', ork_nob: 'Ork Nob',
+  drop_ship: 'Drop Ship', barracks: 'Barracks', tarantula: 'Tarantula', aegis: 'Aegis',
+};
+
+function labelFor(type: string): string {
+  return UNIT_LABELS[type] ?? type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
+}
+
+function formatDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toString().padStart(2, '0')}`;
 }
 
 export class GameOverScene implements GameSceneInterface {
@@ -33,6 +53,7 @@ export class GameOverScene implements GameSceneInterface {
   private sessionXp: Record<string, number> = {};
   private cardStats: CardStats | null = null;
   private battleHonours: { promoted: { name: string; cardId: string }[]; fallen: { name: string }[] } | null = null;
+  private battleReport: BattleReport | null = null;
 
   create(data?: any): void {
     this.victory = data?.victory ?? false;
@@ -46,6 +67,7 @@ export class GameOverScene implements GameSceneInterface {
     this.sessionXp = data?.sessionXp ?? {};
     this.cardStats = data?.cardStats ?? null;
     this.battleHonours = data?.battleHonours ?? null;
+    this.battleReport = data?.battleReport ?? null;
 
     // Listen for card-stats emitted by UIScene during its shutdown
     EventBus.on('card-stats', this.onCardStats, this);
@@ -80,10 +102,11 @@ export class GameOverScene implements GameSceneInterface {
     this.container.id = 'game-over-ui';
     Object.assign(this.container.style, {
       position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
-      background: 'linear-gradient(160deg, rgba(10,10,14,0.95) 0%, rgba(14,12,8,0.95) 100%)',
+      background: 'linear-gradient(160deg, rgba(10,10,14,0.97) 0%, rgba(14,12,8,0.97) 100%)',
       zIndex: '10', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
+      alignItems: 'center',
       fontFamily: '"Share Tech Mono","Courier New",monospace', color: '#c8bfa0',
+      overflowY: 'auto',
     });
 
     const accentColor = this.victory ? '#4a9e4a' : '#c43030';
@@ -146,14 +169,14 @@ export class GameOverScene implements GameSceneInterface {
     }
 
     this.container.innerHTML = `
-      <div style="position:absolute;inset:0;pointer-events:none;overflow:hidden;">
+      <div style="position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:-1;">
         <div style="position:absolute;inset:0;opacity:0.015;
           background:repeating-linear-gradient(45deg,transparent,transparent 18px,${accentColor} 18px,${accentColor} 20px);"></div>
         <div style="position:absolute;inset:0;
           background:radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,0.5) 100%);"></div>
       </div>
 
-      <div style="position:relative;text-align:center;">
+      <div style="position:relative;text-align:center;padding:40px 20px 60px;max-width:700px;width:100%;">
         <div style="font-size:10px;letter-spacing:4px;color:rgba(200,152,42,0.4);margin-bottom:8px;">
           ${subtitleText}</div>
         <div style="font-family:'Teko',sans-serif;font-size:56px;font-weight:700;
@@ -174,6 +197,13 @@ export class GameOverScene implements GameSceneInterface {
               color:${this.objectivesCompleted === this.totalObjectives ? '#4a9e4a' : '#c8982a'};
               margin-top:2px;">${this.objectivesCompleted}/${this.totalObjectives}${this.optionalTotal > 0 ? `<span style="font-size:16px;color:#50b0b0;margin-left:6px;">+${this.optionalCompleted}/${this.optionalTotal}</span>` : ''}</div>
           </div>
+          ${this.battleReport ? `
+          <div style="width:1px;height:30px;background:rgba(200,152,42,0.1);"></div>
+          <div style="text-align:center;">
+            <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.3);">DURATION</div>
+            <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
+              color:#c8bfa0;margin-top:2px;">${formatDuration(this.battleReport.durationMs)}</div>
+          </div>` : ''}
         </div>
 
         ${rewardsHtml}
@@ -183,7 +213,9 @@ export class GameOverScene implements GameSceneInterface {
 
         <div id="card-stats-section"></div>
 
-        <div id="game-over-buttons" style="display:flex;gap:16px;margin-top:32px;justify-content:center;"></div>
+        ${this.renderBattleReport()}
+
+        <div id="game-over-buttons" style="display:flex;gap:16px;margin-top:32px;justify-content:center;flex-wrap:wrap;"></div>
       </div>
     `;
 
@@ -221,22 +253,204 @@ export class GameOverScene implements GameSceneInterface {
     if (this.cardStats) this.renderCardStats(this.cardStats);
   }
 
+  // ── Battle Report Sections ─────────────────────────────────
+
+  private renderBattleReport(): string {
+    const r = this.battleReport;
+    if (!r) return '';
+
+    return `
+      <div style="margin-top:24px;width:100%;border-top:1px solid rgba(200,152,42,0.1);padding-top:24px;">
+        <div style="font-family:'Teko',sans-serif;font-size:24px;font-weight:600;letter-spacing:6px;
+          color:rgba(200,152,42,0.5);text-align:center;margin-bottom:20px;">AFTER-ACTION REPORT</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+          ${this.renderCombatStats(r)}
+          ${this.renderEconomyReport(r)}
+        </div>
+        ${this.renderCardEfficiency(r)}
+      </div>`;
+  }
+
+  private renderCombatStats(r: BattleReport): string {
+    // Total kills by player
+    const playerKills = r.killTimeline.filter(k => k.killerTeam === 'player').length;
+    const playerLosses = r.killTimeline.filter(k => k.victimTeam === 'player').length;
+
+    // Kills by unit type (player kills)
+    const killsByType: Record<string, number> = {};
+    for (const k of r.killTimeline) {
+      if (k.killerTeam === 'player') {
+        killsByType[k.killerType] = (killsByType[k.killerType] || 0) + 1;
+      }
+    }
+    const sortedKills = Object.entries(killsByType).sort((a, b) => b[1] - a[1]);
+
+    // Damage dealt totals
+    const totalDmgDealt = Object.values(r.damageDealt).reduce((a, b) => a + b, 0);
+    const totalDmgTaken = Object.values(r.damageTaken).reduce((a, b) => a + b, 0);
+
+    // MVP
+    const mvpHtml = r.mvpUnitType
+      ? `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid rgba(200,152,42,0.08);margin-top:4px;">
+          <span style="color:#c8982a;font-weight:600;">MVP</span>
+          <span style="color:#c8982a;">${labelFor(r.mvpUnitType)} (${r.mvpKills} kills)</span>
+        </div>`
+      : '';
+
+    // Kills breakdown
+    const killLines = sortedKills.slice(0, 5).map(([type, count]) =>
+      `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+        <span style="color:rgba(200,191,160,0.4);">${labelFor(type)}</span>
+        <span style="color:#c8bfa0;">${count}</span>
+      </div>`
+    ).join('');
+
+    // Units deployed vs lost
+    const allTypes = new Set([...Object.keys(r.unitsDeployed), ...Object.keys(r.unitsLost)]);
+    const survivalLines = [...allTypes].map(type => {
+      const deployed = r.unitsDeployed[type] || 0;
+      const lost = r.unitsLost[type] || 0;
+      const survived = deployed - lost;
+      const color = lost === 0 ? '#4a9e4a' : lost >= deployed ? '#c43030' : '#c8982a';
+      return `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+        <span style="color:rgba(200,191,160,0.4);">${labelFor(type)}</span>
+        <span style="color:${color};">${survived}/${deployed}</span>
+      </div>`;
+    }).join('');
+
+    return `
+      <div style="text-align:left;">
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">COMBAT STATISTICS</div>
+        <div style="font-size:11px;border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">
+          <div style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span style="color:rgba(200,191,160,0.4);">Enemies Killed</span>
+            <span style="color:#4a9e4a;">${playerKills}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span style="color:rgba(200,191,160,0.4);">Units Lost</span>
+            <span style="color:#c43030;">${playerLosses}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span style="color:rgba(200,191,160,0.4);">Damage Dealt</span>
+            <span style="color:#c8bfa0;">${totalDmgDealt}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span style="color:rgba(200,191,160,0.4);">Damage Taken</span>
+            <span style="color:#c43030;">${totalDmgTaken}</span>
+          </div>
+          ${mvpHtml}
+        </div>
+
+        ${sortedKills.length > 0 ? `
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin:12px 0 8px;">KILLS BY UNIT TYPE</div>
+        <div style="font-size:11px;border-left:2px solid rgba(74,158,74,0.2);padding-left:10px;">
+          ${killLines}
+        </div>` : ''}
+
+        ${survivalLines ? `
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin:12px 0 8px;">UNIT SURVIVAL</div>
+        <div style="font-size:11px;border-left:2px solid rgba(96,144,204,0.2);padding-left:10px;">
+          ${survivalLines}
+        </div>` : ''}
+      </div>`;
+  }
+
+  private renderEconomyReport(r: BattleReport): string {
+    const sources = [
+      { label: 'Mining', value: r.goldBySource.mines, color: '#c8982a' },
+      { label: 'Objectives', value: r.goldBySource.objectives, color: '#4a9e4a' },
+      { label: 'Supply Drops', value: r.goldBySource.supplyDrops, color: '#50b0b0' },
+      { label: 'Other', value: r.goldBySource.other, color: '#8a6a4e' },
+    ].filter(s => s.value > 0);
+
+    const maxVal = Math.max(...sources.map(s => s.value), 1);
+
+    const barLines = sources.map(s => {
+      const pct = Math.round((s.value / maxVal) * 100);
+      return `<div style="margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">
+          <span style="color:rgba(200,191,160,0.4);">${s.label}</span>
+          <span style="color:${s.color};">${s.value}g</span>
+        </div>
+        <div style="height:4px;background:rgba(200,191,160,0.06);border-radius:2px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${s.color};border-radius:2px;
+            transition:width 0.5s ease;"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+      <div style="text-align:left;">
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">ECONOMY REPORT</div>
+        <div style="border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px;">
+            <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;color:#c8982a;line-height:1;">
+              ${r.totalGoldEarned}</div>
+            <div style="font-size:10px;color:rgba(200,152,42,0.5);letter-spacing:1px;">TOTAL REQUISITION EARNED</div>
+          </div>
+          ${barLines}
+        </div>
+      </div>`;
+  }
+
+  private renderCardEfficiency(r: BattleReport): string {
+    const entries = Object.entries(r.cardPlays);
+    if (entries.length === 0) return '';
+
+    // Sort by play count descending
+    entries.sort((a, b) => b[1].count - a[1].count);
+
+    const totalPlayed = entries.reduce((sum, [_, v]) => sum + v.count, 0);
+    const totalSpent = entries.reduce((sum, [_, v]) => sum + v.totalCost, 0);
+    const playerKills = r.killTimeline.filter(k => k.killerTeam === 'player').length;
+    const costPerKill = playerKills > 0 ? (totalSpent / playerKills).toFixed(1) : '—';
+
+    const cardLines = entries.slice(0, 6).map(([id, stats]) => {
+      const card = CARD_DATABASE[id];
+      const name = card ? card.name : id;
+      return `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+        <span style="color:rgba(200,191,160,0.4);">${name}</span>
+        <span style="color:#c8bfa0;">${stats.count}x <span style="color:rgba(200,152,42,0.4);font-size:10px;">(${stats.totalCost}g)</span></span>
+      </div>`;
+    }).join('');
+
+    return `
+      <div style="margin-top:20px;text-align:left;">
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">CARD EFFICIENCY</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+          <div style="border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;font-size:11px;">
+            <div style="display:flex;justify-content:space-between;padding:2px 0;">
+              <span style="color:rgba(200,191,160,0.4);">Total Cards Played</span>
+              <span style="color:#c8982a;">${totalPlayed}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0;">
+              <span style="color:rgba(200,191,160,0.4);">Total Gold Spent</span>
+              <span style="color:#c8982a;">${totalSpent}g</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0;">
+              <span style="color:rgba(200,191,160,0.4);">Avg Cost Per Kill</span>
+              <span style="color:${costPerKill === '—' ? '#8a6a4e' : '#4a9e4a'};">${costPerKill}g</span>
+            </div>
+          </div>
+          <div style="border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;font-size:11px;">
+            ${cardLines}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Existing Sections ──────────────────────────────────────
+
   private renderBattleHonours(): string {
     const bh = this.battleHonours;
     if (!bh || (bh.promoted.length === 0 && bh.fallen.length === 0)) return '';
-
-    const CARD_LABELS: Record<string, string> = {
-      marine: 'Space Marine', guardsman: 'Guardsman', scout: 'Scout',
-      servitor: 'Servitor', ogryn: 'Ogryn', techmarine: 'Techmarine',
-      rhino: 'Rhino', leman_russ: 'Leman Russ', sentinel: 'Sentinel',
-    };
 
     let html = `<div style="margin-top:16px;text-align:left;width:300px;">`;
     html += `<div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">BATTLE HONOURS</div>`;
     html += `<div style="border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">`;
 
     for (const p of bh.promoted) {
-      const typeLabel = CARD_LABELS[p.cardId] ?? p.cardId;
+      const typeLabel = labelFor(p.cardId);
       html += `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
         <div style="width:4px;height:4px;background:#c8982a;border-radius:50%;flex-shrink:0;"></div>
         <span style="font-size:12px;color:#c8982a;font-weight:600;">${p.name}</span>

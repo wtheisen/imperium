@@ -41,6 +41,7 @@ import { CARD_DATABASE } from '../cards/CardDatabase';
 import { PACK_BURN_GOLD_MULTIPLIER } from '../config';
 import { TacticalPauseManager } from '../systems/TacticalPauseManager';
 import { ScoutRevealSystem } from '../systems/ScoutRevealSystem';
+import { BattleRecorder } from '../systems/BattleRecorder';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -78,6 +79,7 @@ export class GameScene implements GameSceneInterface {
   private fallenVeterans: { name: string }[] = [];
   private tacticalPause!: TacticalPauseManager;
   private scoutReveal: ScoutRevealSystem | null = null;
+  private battleRecorder!: BattleRecorder;
 
   create(data?: { mission?: MissionDefinition }): void {
     this.mission = data?.mission || MISSIONS[0];
@@ -192,6 +194,9 @@ export class GameScene implements GameSceneInterface {
 
     // Setup XP tracking
     this.xpTracker = new XpTracker();
+
+    // Setup battle recorder for after-action report
+    this.battleRecorder = new BattleRecorder();
 
     // Setup fog of war
     this.fogOfWar = new FogOfWarSystem(this.entityManager);
@@ -510,6 +515,7 @@ export class GameScene implements GameSceneInterface {
         sessionXp: this.xpTracker.getSessionXp(),
         takenPackCards: this.takenPackCards,
         battleHonours,
+        battleReport: this.battleRecorder.getReport(),
       });
       return;
     }
@@ -585,6 +591,7 @@ export class GameScene implements GameSceneInterface {
       sessionXp: this.xpTracker.getSessionXp(),
       takenPackCards: this.takenPackCards,
       battleHonours,
+      battleReport: this.battleRecorder.getReport(),
     };
 
     if (this.takenPackCards.length > 0) {
@@ -792,6 +799,7 @@ export class GameScene implements GameSceneInterface {
     this.poiManager?.destroy();
     this.tutorialSystem?.destroy();
     this.audioManager?.destroy();
+    this.battleRecorder?.destroy();
     this.xpTracker?.destroy();
     this.spawnerSystem?.destroy();
     this.scoutReveal?.destroy();
