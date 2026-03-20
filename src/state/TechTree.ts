@@ -1,4 +1,4 @@
-import { getPlayerState, savePlayerState } from './PlayerState';
+import { getPlayerState, savePlayerState, CardInstance } from './PlayerState';
 import { TECH_TREES } from './TechTreeData';
 
 export type TechNodeEffect =
@@ -76,4 +76,50 @@ export function getAvailableXp(unitType: string): number {
   const xpData = state.unitXp[unitType];
   if (!xpData) return 0;
   return xpData.earned - xpData.spent;
+}
+
+// ── Per-instance (veteran) tech tree functions ────────────────────────────────
+
+function findNode(nodeId: string): TechNode | undefined {
+  for (const tree of Object.values(TECH_TREES)) {
+    const n = tree.find(n => n.id === nodeId);
+    if (n) return n;
+  }
+  return undefined;
+}
+
+function xpSpentByInstance(inst: CardInstance): number {
+  if (!inst.veteranData) return 0;
+  return inst.veteranData.unlockedNodes
+    .map(id => findNode(id)?.xpCost ?? 0)
+    .reduce((a, b) => a + b, 0);
+}
+
+export function getAvailableXpForInstance(inst: CardInstance): number {
+  return inst.xp - xpSpentByInstance(inst);
+}
+
+export function canUnlockNodeForInstance(nodeId: string, inst: CardInstance): boolean {
+  if (!inst.veteranData) return false;
+  if (inst.veteranData.unlockedNodes.includes(nodeId)) return false;
+  const node = findNode(nodeId);
+  if (!node) return false;
+  for (const prereq of node.prerequisites) {
+    if (!inst.veteranData.unlockedNodes.includes(prereq)) return false;
+  }
+  return getAvailableXpForInstance(inst) >= node.xpCost;
+}
+
+export function unlockNodeForInstance(nodeId: string, inst: CardInstance): boolean {
+  if (!canUnlockNodeForInstance(nodeId, inst)) return false;
+  inst.veteranData!.unlockedNodes.push(nodeId);
+  savePlayerState();
+  return true;
+}
+
+export function getUnlockedNodesForInstance(inst: CardInstance): TechNode[] {
+  if (!inst.veteranData) return [];
+  const unitType = inst.cardId;
+  const tree = TECH_TREES[unitType] || [];
+  return tree.filter(n => inst.veteranData!.unlockedNodes.includes(n.id));
 }

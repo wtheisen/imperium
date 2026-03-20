@@ -10,10 +10,18 @@ import { TechPassiveComponent } from '../components/TechPassiveComponent';
 import { attachAbilities } from '../components/AbilityComponent';
 import { EntityManager } from '../systems/EntityManager';
 
-export function applyTechTreeBonuses(unit: Unit, entityManager?: EntityManager): void {
+/**
+ * Apply tech tree bonuses for a unit.
+ * @param unlockedNodeIds - If provided (per-instance veteran nodes), use this instead of the global state.
+ */
+export function applyTechTreeBonuses(unit: Unit, entityManagerOrNodes?: EntityManager | string[]): void {
+  const entityManager = Array.isArray(entityManagerOrNodes) ? undefined : entityManagerOrNodes;
+  const nodeOverride = Array.isArray(entityManagerOrNodes) ? entityManagerOrNodes : null;
+
   const state = getPlayerState();
   const tree = TECH_TREES[unit.unitType] || [];
-  const unlocked = tree.filter(n => state.unlockedNodes.has(n.id));
+  const nodeIds = nodeOverride ?? Array.from(state.unlockedNodes);
+  const unlocked = tree.filter(n => nodeIds.includes(n.id));
 
   if (unlocked.length === 0) return;
 
@@ -49,7 +57,7 @@ export function applyTechTreeBonuses(unit: Unit, entityManager?: EntityManager):
 
   // Attach active abilities if entityManager provided
   if (entityManager) {
-    attachAbilities(unit, entityManager);
+    attachAbilities(unit, entityManager, nodeOverride ?? undefined);
   }
 }
 

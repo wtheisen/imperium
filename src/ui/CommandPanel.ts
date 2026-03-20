@@ -10,8 +10,8 @@ import { EquipmentComponent } from '../components/EquipmentComponent';
 import { LevelBadgeComponent } from '../components/LevelBadgeComponent';
 import { ProductionComponent, TRAINABLE_UNITS, TrainableUnit } from '../components/ProductionComponent';
 import { AuraComponent, AuraConfig } from '../components/AuraComponent';
-import { getTechTree, canUnlockNode, unlockNode, TechNode } from '../state/TechTree';
-import { getPlayerState } from '../state/PlayerState';
+import { getTechTree, canUnlockNode, unlockNode, canUnlockNodeForInstance, unlockNodeForInstance, getAvailableXpForInstance, TechNode } from '../state/TechTree';
+import { getPlayerState, getCardInstance } from '../state/PlayerState';
 import { HotkeyGrid, HotkeyLayout, HotkeyCell } from './HotkeyGrid';
 
 interface SelectionData {
@@ -99,8 +99,17 @@ export class CommandPanel {
     const equip = unit.getComponent<EquipmentComponent>('equipment');
     const levelBadge = unit.getComponent<LevelBadgeComponent>('levelBadge');
 
+    const inst = unit.cardInstanceId ? getCardInstance(unit.cardInstanceId) : undefined;
+    const vetData = inst?.veteranData;
+    const tierLabels = ['', 'Battle-Hardened', 'Veteran', 'Hero'];
     const typeName = this.formatName(unit.unitType);
-    let s = `<div class="cp-header">${typeName}<div class="cp-header-sub">${unit.team} unit</div></div>`;
+
+    let headerSub = `${unit.team} unit`;
+    if (vetData) {
+      headerSub = `${tierLabels[vetData.tier] ?? 'Veteran'} · ${vetData.kills} kills`;
+    }
+    const headerName = vetData ? vetData.name : typeName;
+    let s = `<div class="cp-header" style="${vetData ? 'color:#c8982a;' : ''}">${headerName}<div class="cp-header-sub">${headerSub}</div></div>`;
 
     // HP
     if (health) {
@@ -250,24 +259,40 @@ export class CommandPanel {
   // ── XP & Tech Tree renderers ─────────────────────────────────
 
   private renderXpSection(unit: Unit): string {
-    const unitXp = unit.xp;
+    const inst = unit.cardInstanceId ? getCardInstance(unit.cardInstanceId) : undefined;
+    const vetData = inst?.veteranData;
+
+    const unitXp = inst ? inst.xp : unit.xp;
     const levelBadge = unit.getComponent<LevelBadgeComponent>('levelBadge');
-    const level = levelBadge?.level ?? 0;
+    const level = vetData ? (vetData.unlockedNodes.length) : (levelBadge?.level ?? 0);
     const tree = getTechTree(unit.unitType);
     const totalNodes = tree.length;
 
-    // Find next tier cost for XP bar progress
-    const tierCosts = [15, 30, 50, 75]; // approximate costs per tier
-    const nextCost = level < tierCosts.length ? tierCosts[level] : tierCosts[tierCosts.length - 1];
-    const xpBarPct = Math.min(100, (unitXp / nextCost) * 100);
+    // XP bar toward next veteran tier
+    const VET_THRESHOLDS = [30, 120, 300];
+    const nextThreshold = VET_THRESHOLDS.find(t => unitXp < t) ?? VET_THRESHOLDS[VET_THRESHOLDS.length - 1];
+    const prevThreshold = VET_THRESHOLDS[VET_THRESHOLDS.indexOf(nextThreshold) - 1] ?? 0;
+    const xpBarPct = Math.min(100, ((unitXp - prevThreshold) / (nextThreshold - prevThreshold)) * 100);
+
+    const tierLabel = vetData ? (['', 'Battle-Hardened', 'Veteran', 'Hero'][vetData.tier] ?? '') : 'Recruit';
+    const badgeColor = vetData ? '#c8982a' : '#5a7a9a';
 
     let s = `<div class="cp-section">`;
     s += `<div class="cp-xp-row">`;
-    s += `<span class="cp-level-badge">${level}</span>`;
+    s += `<span class="cp-level-badge" style="background:${badgeColor}22;border-color:${badgeColor}55;color:${badgeColor};">${level}</span>`;
     s += `<div class="cp-xp-info">`;
-    s += `<div class="cp-xp-text">${unitXp} XP · ${level}/${totalNodes} upgrades</div>`;
-    s += `<div class="cp-xp-bar-bg"><div class="cp-xp-bar" style="width:${xpBarPct}%"></div></div>`;
+    if (vetData) {
+      s += `<div class="cp-xp-text" style="color:#c8982a;">${tierLabel} · ${unitXp} XP · ${level}/${totalNodes} nodes</div>`;
+    } else {
+      s += `<div class="cp-xp-text">${unitXp} XP · ${level}/${totalNodes} upgrades</div>`;
+    }
+    s += `<div class="cp-xp-bar-bg"><div class="cp-xp-bar" style="width:${xpBarPct}%;background:${badgeColor};"></div></div>`;
     s += `</div></div>`;
+
+    if (vetData && inst) {
+      const avail = getAvailableXpForInstance(inst);
+      s += `<div style="font-size:9px;color:rgba(200,152,42,0.5);padding:2px 0;">${avail} XP available for upgrades · ${vetData.missionsCompleted} missions</div>`;
+    }
 
     // Tech tree toggle
     const label = this.showTechTree ? 'Hide Tech Tree' : 'View Tech Tree';
@@ -275,14 +300,14 @@ export class CommandPanel {
 
     // Inline tech tree
     if (this.showTechTree) {
-      s += this.renderTechTree(unit.unitType);
+      s += this.renderTechTree(unit.unitType, inst ?? undefined);
     }
 
     s += `</div>`;
     return s;
   }
 
-  private renderTechTree(unitType: string): string {
+  private renderTechTree(unitType: string, inst?: import('../state/PlayerState').CardInstance): string {
     const tree = getTechTree(unitType);
     if (tree.length === 0) return '';
 
@@ -303,7 +328,6 @@ export class CommandPanel {
       // Connector between tiers
       if (t > 0) {
         if (t === 1) {
-          // Fork connector from root to branches
           s += `<div class="cp-tech-fork"><div class="cp-tech-line"></div></div>`;
         } else {
           s += `<div class="cp-tech-connector"><div class="cp-tech-line"></div></div>`;
@@ -315,11 +339,18 @@ export class CommandPanel {
 
       s += `<div class="cp-tech-tier">`;
       for (const node of nodes) {
-        const isUnlocked = !canUnlockNode(node.id) && this.isNodeUnlocked(node.id);
-        const isAvailable = canUnlockNode(node.id);
+        let isUnlocked: boolean;
+        let isAvailable: boolean;
+        if (inst?.veteranData) {
+          isUnlocked = inst.veteranData.unlockedNodes.includes(node.id);
+          isAvailable = !isUnlocked && canUnlockNodeForInstance(node.id, inst);
+        } else {
+          isUnlocked = !canUnlockNode(node.id) && this.isNodeUnlockedGlobal(node.id);
+          isAvailable = canUnlockNode(node.id);
+        }
         const stateClass = isUnlocked ? 'unlocked' : isAvailable ? 'available' : 'locked';
 
-        s += `<div class="cp-tech-node ${stateClass}" data-node-id="${node.id}">`;
+        s += `<div class="cp-tech-node ${stateClass}" data-node-id="${node.id}" data-instance-id="${inst?.instanceId ?? ''}">`;
         s += `<div class="cp-tech-name">`;
         if (isUnlocked) s += `<span class="cp-tech-check">+</span>`;
         s += `${node.name}</div>`;
@@ -336,7 +367,7 @@ export class CommandPanel {
     return s;
   }
 
-  private isNodeUnlocked(nodeId: string): boolean {
+  private isNodeUnlockedGlobal(nodeId: string): boolean {
     return getPlayerState().unlockedNodes.has(nodeId);
   }
 
@@ -520,7 +551,12 @@ export class CommandPanel {
     techNodes.forEach((el) => {
       el.addEventListener('click', () => {
         const nodeId = (el as HTMLElement).dataset.nodeId;
-        if (nodeId && unlockNode(nodeId)) {
+        const instanceId = (el as HTMLElement).dataset.instanceId;
+        if (!nodeId) return;
+        if (instanceId) {
+          const inst = getCardInstance(instanceId);
+          if (inst && unlockNodeForInstance(nodeId, inst)) this.render();
+        } else if (unlockNode(nodeId)) {
           this.render();
         }
       });

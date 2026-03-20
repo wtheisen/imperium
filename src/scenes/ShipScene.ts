@@ -1,5 +1,5 @@
 import { GameSceneInterface, getSceneManager } from './SceneManager';
-import { getPlayerState, spendShipCredits, setShipUpgradeLevel, savePlayerState, getShipOrdnance, setShipOrdnance } from '../state/PlayerState';
+import { getPlayerState, spendShipCredits, setShipUpgradeLevel, savePlayerState, getShipOrdnance, setShipOrdnance, getCollectionCount } from '../state/PlayerState';
 import { SHIP_ROOMS } from '../ship/ShipDatabase';
 import { getShipUpgradeLevel, getShipOrdnanceSlots } from '../ship/ShipState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
@@ -427,8 +427,8 @@ export class ShipScene implements GameSceneInterface {
     // Available ordnance from collection
     const state = getPlayerState();
     const ordnanceCards: Card[] = [];
-    for (const [cardId, qty] of Object.entries(state.collection)) {
-      if (qty <= 0) continue;
+    for (const cardId of Object.keys(state.collection)) {
+      if (getCollectionCount(cardId) <= 0) continue;
       const card = CARD_DATABASE[cardId];
       if (card && card.type === 'ordnance') ordnanceCards.push(card);
     }

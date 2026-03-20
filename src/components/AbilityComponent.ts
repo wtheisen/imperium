@@ -550,18 +550,19 @@ export class AbilityComponent implements Component {
 
 // ── attachAbilities helper ──────────────────────────────────────────────
 
-export function attachAbilities(unit: Unit, entityManager: EntityManager): void {
+export function attachAbilities(unit: Unit, entityManager: EntityManager, unlockedNodeOverride?: string[]): void {
   const state = getPlayerState();
   const allDefs = ABILITY_DEFINITIONS[unit.unitType];
   if (!allDefs) return;
 
+  const nodeIds = unlockedNodeOverride ?? Array.from(state.unlockedNodes);
   const tree = TECH_TREES[unit.unitType] || [];
   const unlockedDefs: AbilityDefinition[] = [];
 
   for (const def of allDefs) {
     // Check if the corresponding active tech node is unlocked
     const node = tree.find(n => n.id === def.id);
-    if (node && state.unlockedNodes.has(node.id)) {
+    if (node && nodeIds.includes(node.id)) {
       unlockedDefs.push(def);
     }
   }

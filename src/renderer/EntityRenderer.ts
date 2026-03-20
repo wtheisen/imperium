@@ -14,6 +14,7 @@ import { SpriteSheetManager } from './sprites/SpriteSheetManager';
 import { SpriteBillboard } from './sprites/SpriteBillboard';
 import { SpriteAnimator } from './sprites/SpriteAnimator';
 import { SQUAD_FORMATIONS } from './SquadFormations';
+import { getCardInstance } from '../state/PlayerState';
 
 interface FlashState {
   timer: number;
@@ -147,6 +148,21 @@ export class EntityRenderer {
         mesh.userData.entityId = entity.entityId;
         mesh.userData.team = entity.team;
         mesh.userData.squadSize = (entity instanceof Unit) ? (entity.stats.squadSize || 1) : 1;
+
+        // Veteran gold tint
+        if (entity instanceof Unit && entity.cardInstanceId) {
+          const inst = getCardInstance(entity.cardInstanceId);
+          if (inst?.veteranData) {
+            const tierTints = [0xffffff, 0xd4a843, 0xffd700, 0xff9900];
+            const tint = tierTints[inst.veteranData.tier] ?? 0xd4a843;
+            mesh.traverse((child) => {
+              if (child instanceof THREE.Mesh && child.material && !this.spriteEntities.has(entity.entityId)) {
+                (child.material as THREE.MeshStandardMaterial).color?.setHex(tint);
+              }
+            });
+          }
+        }
+
         this.scene.add(mesh);
         this.meshes.set(entity.entityId, mesh);
       }

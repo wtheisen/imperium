@@ -1,5 +1,5 @@
 import { GameSceneInterface, getSceneManager } from './SceneManager';
-import { getPlayerState, SavedDeck, savePlayerState } from '../state/PlayerState';
+import { getPlayerState, SavedDeck, savePlayerState, getCollectionCount } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { Card, CardType } from '../cards/Card';
 import { MIN_DECK_SIZE, MAX_DECK_SIZE } from '../config';
@@ -255,7 +255,7 @@ export class DeckEditScene implements GameSceneInterface {
 
     // Sort cards by type then name
     const allIds = Object.keys(state.collection)
-      .filter(id => state.collection[id] > 0)
+      .filter(id => getCollectionCount(id) > 0)
       .filter(id => {
         const card = CARD_DATABASE[id];
         if (!card || card.type === 'ordnance') return false; // ordnance goes in ship slots, not decks
@@ -276,7 +276,7 @@ export class DeckEditScene implements GameSceneInterface {
       const card = CARD_DATABASE[cardId];
       if (!card) continue;
 
-      const owned = state.collection[cardId];
+      const owned = getCollectionCount(cardId);
       const inDeck = deckCounts[cardId] || 0;
       const canAdd = inDeck < owned && deck.cardIds.length < MAX_DECK_SIZE;
       const theme = TYPE_THEME[card.type as CardType] || TYPE_THEME.unit;

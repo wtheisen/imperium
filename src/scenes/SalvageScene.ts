@@ -1,5 +1,5 @@
 import { GameSceneInterface, getSceneManager } from './SceneManager';
-import { getPlayerState, addToCollection, addShipCredits, savePlayerState } from '../state/PlayerState';
+import { getPlayerState, addToCollection, addShipCredits, savePlayerState, getCollectionCount } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { CardType } from '../cards/Card';
 import { MissionDefinition } from '../missions/MissionDefinition';
@@ -32,7 +32,7 @@ export class SalvageScene implements GameSceneInterface {
 
     // Build decisions list
     this.decisions = takenPackCards.map(cardId => {
-      const isDuplicate = (state.collection[cardId] || 0) > 0;
+      const isDuplicate = getCollectionCount(cardId) > 0;
       const creditValue = SALVAGE_CREDIT_BASE + (isDuplicate ? SALVAGE_DUPLICATE_BONUS : 0);
       return { cardId, action: 'keep' as const, isDuplicate, creditValue };
     });
