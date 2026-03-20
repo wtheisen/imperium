@@ -1,0 +1,157 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { TacticalPauseManager, QueuedOrder, QueuedCardPlay } from '../systems/TacticalPauseManager';
+import { EventBus } from '../EventBus';
+
+describe('TacticalPauseManager', () => {
+  let manager: TacticalPauseManager;
+
+  beforeEach(() => {
+    manager = new TacticalPauseManager();
+    EventBus.removeAllListeners();
+  });
+
+  describe('pause state', () => {
+    it('starts unpaused', () => {
+      expect(manager.paused).toBe(false);
+    });
+
+    it('can be paused and resumed', () => {
+      manager.pause();
+      expect(manager.paused).toBe(true);
+      manager.resume();
+      expect(manager.paused).toBe(false);
+    });
+  });
+
+  describe('order queue', () => {
+    it('starts with zero orders', () => {
+      expect(manager.orderCount).toBe(0);
+    });
+
+    it('queues movement orders', () => {
+      const order: QueuedOrder = { unitId: 'u1', type: 'move', targetX: 10, targetY: 15 };
+      manager.queueOrder(order);
+      expect(manager.orderCount).toBe(1);
+      expect(manager.orderQueue[0]).toEqual(order);
+    });
+
+    it('queues multiple orders', () => {
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      manager.queueOrder({ unitId: 'u2', type: 'attack', targetX: 5, targetY: 5 });
+      manager.queueOrder({ unitId: 'u3', type: 'patrol', targetX: 20, targetY: 20 });
+      expect(manager.orderCount).toBe(3);
+    });
+
+    it('emits tactical-order-queued event', () => {
+      const spy = vi.fn();
+      EventBus.on('tactical-order-queued', spy);
+      const order: QueuedOrder = { unitId: 'u1', type: 'move', targetX: 10, targetY: 15 };
+      manager.queueOrder(order);
+      expect(spy).toHaveBeenCalledWith(order);
+    });
+
+    it('emits tactical-queue-changed with count', () => {
+      const spy = vi.fn();
+      EventBus.on('tactical-queue-changed', spy);
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      expect(spy).toHaveBeenCalledWith({ count: 1 });
+    });
+  });
+
+  describe('card play queue', () => {
+    it('queues card plays', () => {
+      const play: QueuedCardPlay = { card: { id: 'marine', type: 'unit' }, cardIndex: 0, tileX: 5, tileY: 5 };
+      manager.queueCardPlay(play);
+      expect(manager.orderCount).toBe(1);
+      expect(manager.cardPlayQueue[0]).toEqual(play);
+    });
+
+    it('counts card plays in total order count', () => {
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      manager.queueCardPlay({ card: { id: 'marine' }, cardIndex: 0, tileX: 5, tileY: 5 });
+      expect(manager.orderCount).toBe(2);
+    });
+
+    it('emits tactical-card-queued event', () => {
+      const spy = vi.fn();
+      EventBus.on('tactical-card-queued', spy);
+      const play: QueuedCardPlay = { card: { id: 'marine' }, cardIndex: 0, tileX: 5, tileY: 5 };
+      manager.queueCardPlay(play);
+      expect(spy).toHaveBeenCalledWith(play);
+    });
+
+    it('queues ship ordnance plays', () => {
+      const play: QueuedCardPlay = {
+        card: { id: 'lance_strike' }, cardIndex: -1, tileX: 10, tileY: 10,
+        isShipOrdnance: true, slotIndex: 0,
+      };
+      manager.queueCardPlay(play);
+      expect(manager.cardPlayQueue[0].isShipOrdnance).toBe(true);
+      expect(manager.cardPlayQueue[0].slotIndex).toBe(0);
+    });
+  });
+
+  describe('flush', () => {
+    it('returns all queued items and clears the queues', () => {
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      manager.queueOrder({ unitId: 'u2', type: 'attack', targetX: 5, targetY: 5 });
+      manager.queueCardPlay({ card: { id: 'marine' }, cardIndex: 0, tileX: 3, tileY: 3 });
+
+      const result = manager.flush();
+      expect(result.orders).toHaveLength(2);
+      expect(result.cardPlays).toHaveLength(1);
+      expect(manager.orderCount).toBe(0);
+      expect(manager.orderQueue).toHaveLength(0);
+      expect(manager.cardPlayQueue).toHaveLength(0);
+    });
+
+    it('emits tactical-queue-cleared on flush', () => {
+      const spy = vi.fn();
+      EventBus.on('tactical-queue-cleared', spy);
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      manager.flush();
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('emits tactical-queue-changed with 0 on flush', () => {
+      const spy = vi.fn();
+      EventBus.on('tactical-queue-changed', spy);
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      spy.mockClear();
+      manager.flush();
+      expect(spy).toHaveBeenCalledWith({ count: 0 });
+    });
+
+    it('returns empty arrays when nothing queued', () => {
+      const result = manager.flush();
+      expect(result.orders).toHaveLength(0);
+      expect(result.cardPlays).toHaveLength(0);
+    });
+  });
+
+  describe('clear', () => {
+    it('clears all queued items', () => {
+      manager.queueOrder({ unitId: 'u1', type: 'move', targetX: 10, targetY: 15 });
+      manager.queueCardPlay({ card: { id: 'marine' }, cardIndex: 0, tileX: 3, tileY: 3 });
+      manager.clear();
+      expect(manager.orderCount).toBe(0);
+    });
+
+    it('emits tactical-queue-cleared on clear', () => {
+      const spy = vi.fn();
+      EventBus.on('tactical-queue-cleared', spy);
+      manager.clear();
+      expect(spy).toHaveBeenCalled();
+    });
+  });
+
+  describe('all order types', () => {
+    it.each(['move', 'attack', 'attack-move', 'patrol', 'gather'] as const)(
+      'queues %s orders',
+      (type) => {
+        manager.queueOrder({ unitId: 'u1', type, targetX: 10, targetY: 10 });
+        expect(manager.orderQueue[0].type).toBe(type);
+      }
+    );
+  });
+});

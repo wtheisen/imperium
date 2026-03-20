@@ -39,6 +39,7 @@ import { PackManager } from '../systems/PackManager';
 import { resolveEnvironmentModifiers, EnvironmentEffects } from '../systems/EnvironmentModifierSystem';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { PACK_BURN_GOLD_MULTIPLIER } from '../config';
+import { TacticalPauseManager } from '../systems/TacticalPauseManager';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -74,6 +75,7 @@ export class GameScene implements GameSceneInterface {
   private takenPackCards: string[] = [];
   private envEffects: EnvironmentEffects | null = null;
   private fallenVeterans: { name: string }[] = [];
+  private tacticalPause!: TacticalPauseManager;
 
   create(data?: { mission?: MissionDefinition }): void {
     this.mission = data?.mission || MISSIONS[0];
@@ -126,6 +128,10 @@ export class GameScene implements GameSceneInterface {
     // Setup RTS controls
     this.selectionSystem = new SelectionSystem(this.entityManager);
     this.commandSystem = new CommandSystem(this.selectionSystem, this.pathfinding, this.entityManager, this.mapManager);
+
+    // Setup tactical pause
+    this.tacticalPause = new TacticalPauseManager();
+    this.commandSystem.setTacticalPause(this.tacticalPause);
 
     // Setup combat
     this.combatSystem = new CombatSystem(this.entityManager);
@@ -239,7 +245,15 @@ export class GameScene implements GameSceneInterface {
       }
       if (e.key === 'p' || e.key === 'P') {
         this.paused = !this.paused;
-        EventBus.emit(this.paused ? 'game-paused' : 'game-resumed');
+        if (this.paused) {
+          this.tacticalPause.pause();
+          EventBus.emit('game-paused');
+        } else {
+          // Flush all queued tactical orders before resuming
+          this.flushTacticalPauseQueue();
+          this.tacticalPause.resume();
+          EventBus.emit('game-resumed');
+        }
       }
     };
     document.addEventListener('keydown', this.escHandler);
@@ -313,10 +327,17 @@ export class GameScene implements GameSceneInterface {
     // Ship ordnance: bypass gold cost, use castOrdnance directly
     if (this.pendingShipOrdnance) {
       const { card, slotIndex } = this.pendingShipOrdnance;
-      const success = this.cardEffects.castOrdnance(card, evt.tileX, evt.tileY);
-      if (success) {
-        EventBus.emit('ship-ordnance-fired', { slotIndex });
-        EventBus.emit('card-played-3d-vfx', { tileX: evt.tileX, tileY: evt.tileY, cardType: 'ordnance' });
+      if (this.tacticalPause.paused) {
+        this.tacticalPause.queueCardPlay({
+          card, cardIndex: -1, tileX: evt.tileX, tileY: evt.tileY,
+          isShipOrdnance: true, slotIndex,
+        });
+      } else {
+        const success = this.cardEffects.castOrdnance(card, evt.tileX, evt.tileY);
+        if (success) {
+          EventBus.emit('ship-ordnance-fired', { slotIndex });
+          EventBus.emit('card-played-3d-vfx', { tileX: evt.tileX, tileY: evt.tileY, cardType: 'ordnance' });
+        }
       }
       this.pendingShipOrdnance = null;
       this.pendingCard = null;
@@ -326,6 +347,15 @@ export class GameScene implements GameSceneInterface {
 
     const card = this.pendingCard.card;
     const ci = this.pendingCard.cardIndex;
+
+    if (this.tacticalPause.paused) {
+      // Queue the card play for execution on unpause
+      this.tacticalPause.queueCardPlay({ card, cardIndex: ci, tileX: evt.tileX, tileY: evt.tileY });
+      this.pendingCard = null;
+      this.pendingFromKeyboard = false;
+      return;
+    }
+
     const success = this.cardEffects.execute(card, evt.tileX, evt.tileY);
     if (success) {
       EventBus.emit('card-played', { card, cardIndex: ci, tileX: evt.tileX, tileY: evt.tileY });
@@ -378,13 +408,28 @@ export class GameScene implements GameSceneInterface {
 
     // Ship ordnance via drag
     if (data.isShipOrdnance && data.slotIndex !== undefined) {
-      const success = this.cardEffects.castOrdnance(data.card, tile.tileX, tile.tileY);
-      if (success) {
-        EventBus.emit('ship-ordnance-fired', { slotIndex: data.slotIndex });
-        EventBus.emit('card-played-3d-vfx', { tileX: tile.tileX, tileY: tile.tileY, cardType: 'ordnance' });
+      if (this.tacticalPause.paused) {
+        this.tacticalPause.queueCardPlay({
+          card: data.card, cardIndex: -1, tileX: tile.tileX, tileY: tile.tileY,
+          isShipOrdnance: true, slotIndex: data.slotIndex,
+        });
+      } else {
+        const success = this.cardEffects.castOrdnance(data.card, tile.tileX, tile.tileY);
+        if (success) {
+          EventBus.emit('ship-ordnance-fired', { slotIndex: data.slotIndex });
+          EventBus.emit('card-played-3d-vfx', { tileX: tile.tileX, tileY: tile.tileY, cardType: 'ordnance' });
+        }
       }
       this.pendingCard = null;
       this.pendingShipOrdnance = null;
+      return;
+    }
+
+    if (this.tacticalPause.paused) {
+      this.tacticalPause.queueCardPlay({
+        card: data.card, cardIndex: data.cardIndex, tileX: tile.tileX, tileY: tile.tileY,
+      });
+      this.pendingCard = null;
       return;
     }
 
@@ -619,6 +664,31 @@ export class GameScene implements GameSceneInterface {
 
   private onPanToObjective({ tileX, tileY }: { tileX: number; tileY: number }): void {
     getGameRenderer().cameraController.panTo(tileX, tileY);
+  }
+
+  private flushTacticalPauseQueue(): void {
+    const { orders, cardPlays } = this.tacticalPause.flush();
+
+    // Execute queued unit orders
+    for (const order of orders) {
+      this.commandSystem.executeQueuedOrder(order);
+    }
+
+    // Execute queued card plays
+    for (const play of cardPlays) {
+      if (play.isShipOrdnance) {
+        const success = this.cardEffects.castOrdnance(play.card, play.tileX, play.tileY);
+        if (success && play.slotIndex !== undefined) {
+          EventBus.emit('ship-ordnance-fired', { slotIndex: play.slotIndex });
+          EventBus.emit('card-played-3d-vfx', { tileX: play.tileX, tileY: play.tileY, cardType: 'ordnance' });
+        }
+      } else {
+        const success = this.cardEffects.execute(play.card, play.tileX, play.tileY);
+        if (success) {
+          EventBus.emit('card-played', { card: play.card, cardIndex: play.cardIndex, tileX: play.tileX, tileY: play.tileY });
+        }
+      }
+    }
   }
 
   update(delta: number): void {
