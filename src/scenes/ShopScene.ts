@@ -5,6 +5,7 @@ import { CardType } from '../cards/Card';
 import { SHOP_PRICE_MULTIPLIER, SALVAGE_CREDIT_BASE } from '../config';
 import { generatePack } from '../packs/PackGenerator';
 import { PackType } from '../packs/PackTypes';
+import './shop.css';
 
 // ── Theme constants ─────────────────────────────────────────────
 
@@ -26,90 +27,6 @@ const PACK_SHOP: { type: PackType; label: string; price: number; color: string }
   { type: 'ordnance', label: 'Ordnance Pack',  price: 40, color: '#a070cc' },
 ];
 
-let shopStylesInjected = false;
-function injectShopStyles(): void {
-  if (shopStylesInjected) return;
-  shopStylesInjected = true;
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes shop-card-in {
-      from { opacity:0; transform:translateY(12px); }
-      to { opacity:1; transform:translateY(0); }
-    }
-    #shop-grid::-webkit-scrollbar {
-      width: 4px;
-    }
-    #shop-grid::-webkit-scrollbar-track {
-      background: rgba(200,191,160,0.03);
-    }
-    #shop-grid::-webkit-scrollbar-thumb {
-      background: rgba(200,152,42,0.2);
-      border-radius: 2px;
-    }
-    .shop-card {
-      transition: all 0.15s;
-    }
-    .shop-card:hover {
-      border-color: rgba(200,152,42,0.6) !important;
-      background: rgba(200,152,42,0.06) !important;
-    }
-    .shop-buy-btn {
-      transition: all 0.15s;
-    }
-    .shop-buy-btn:not(:disabled):hover {
-      border-color: rgba(200,152,42,0.7) !important;
-      background: rgba(200,152,42,0.15) !important;
-      color: #e8dcc0 !important;
-    }
-    .shop-buy-btn:disabled {
-      opacity: 0.3;
-      cursor: default !important;
-    }
-    .shop-filter-btn {
-      transition: all 0.15s;
-    }
-    .shop-filter-btn:hover {
-      border-color: rgba(200,191,160,0.3) !important;
-      color: #c8bfa0 !important;
-    }
-    .shop-sell-btn {
-      transition: all 0.15s;
-    }
-    .shop-sell-btn:not(:disabled):hover {
-      border-color: rgba(196,48,48,0.7) !important;
-      background: rgba(196,48,48,0.15) !important;
-      color: #e8a0a0 !important;
-    }
-    .shop-salvage-btn {
-      transition: all 0.15s;
-    }
-    .shop-salvage-btn:not(:disabled):hover {
-      border-color: rgba(80,176,176,0.7) !important;
-      background: rgba(80,176,176,0.15) !important;
-      color: #80d0d0 !important;
-    }
-    .shop-pack-btn {
-      transition: all 0.15s;
-    }
-    .shop-pack-btn:not(:disabled):hover {
-      letter-spacing: 2px !important;
-    }
-    .shop-pack-btn:disabled {
-      opacity: 0.3;
-      cursor: default !important;
-    }
-    @keyframes shop-notification-in {
-      from { opacity:0; transform:translateY(-10px); }
-      to { opacity:1; transform:translateY(0); }
-    }
-    @keyframes shop-notification-out {
-      from { opacity:1; transform:translateY(0); }
-      to { opacity:0; transform:translateY(-10px); }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
 // ── Scene ───────────────────────────────────────────────────────
 
 export class ShopScene implements GameSceneInterface {
@@ -120,8 +37,6 @@ export class ShopScene implements GameSceneInterface {
   private notification: HTMLDivElement | null = null;
 
   create(): void {
-    injectShopStyles();
-
     const container = document.createElement('div');
     this.container = container;
     Object.assign(container.style, {
