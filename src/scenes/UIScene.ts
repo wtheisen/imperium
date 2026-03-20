@@ -1323,17 +1323,16 @@ export class UIScene implements GameSceneInterface {
     this.supplyTimerEl.textContent = `${seconds}s`;
   }
 
-  private onObjectiveCompleted({ cardDraws }: { objectiveId: string; goldReward: number; cardDraws: number }): void {
+  private drawMultipleCards(count: number, staggerMs: number = 200): void {
     let drawIndex = 0;
-    for (let i = 0; i < cardDraws; i++) {
+    for (let i = 0; i < count; i++) {
       const drawn = this.deck.drawCard();
       if (drawn) {
         this.cardsDrawn++;
         if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
         const slot = this.deck.hand.indexOf(drawn);
         if (slot >= 0) {
-          // Stagger multi-draw reveal animations
-          const staggerDelay = drawIndex * 200;
+          const staggerDelay = drawIndex * staggerMs;
           setTimeout(() => {
             this.updateSlot(slot);
           }, staggerDelay);
@@ -1346,6 +1345,26 @@ export class UIScene implements GameSceneInterface {
     this.updateDiscardPile();
     this.updateDeckTension();
     this.updateAffordability();
+  }
+
+  private drawCardForCost(cost: number): void {
+    if (this.currentGold < cost) return;
+    const drawn = this.deck.drawCard();
+    if (!drawn) return;
+    this.cardsDrawn++;
+    if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
+    this.currentGold -= cost;
+    EventBus.emit('gold-changed', { amount: -cost, total: this.currentGold });
+    const slot = this.deck.hand.indexOf(drawn);
+    if (slot >= 0) this.updateSlot(slot);
+    this.updateDeckPile();
+    this.updateDiscardPile();
+    this.updateDeckTension();
+    if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
+  }
+
+  private onObjectiveCompleted({ cardDraws }: { objectiveId: string; goldReward: number; cardDraws: number }): void {
+    this.drawMultipleCards(cardDraws);
     const allCards = getAllCards();
     const randomCard = allCards[Math.floor(Math.random() * allCards.length)];
     addPendingReward(randomCard.id);
@@ -1370,27 +1389,7 @@ export class UIScene implements GameSceneInterface {
   }
 
   private onBonusDraws({ count }: { count: number }): void {
-    let drawIndex = 0;
-    for (let i = 0; i < count; i++) {
-      const drawn = this.deck.drawCard();
-      if (drawn) {
-        this.cardsDrawn++;
-        if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
-        const slot = this.deck.hand.indexOf(drawn);
-        if (slot >= 0) {
-          const staggerDelay = drawIndex * 200;
-          setTimeout(() => {
-            this.updateSlot(slot);
-          }, staggerDelay);
-          drawIndex++;
-        }
-        if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
-      }
-    }
-    this.updateDeckPile();
-    this.updateDiscardPile();
-    this.updateDeckTension();
-    this.updateAffordability();
+    this.drawMultipleCards(count);
   }
 
   private onTrainUnit({ unit, building }: { unit: TrainableUnit; building: Building }): void {
@@ -1413,35 +1412,11 @@ export class UIScene implements GameSceneInterface {
   }
 
   private onDeckDraw({ cost }: { cost: number }): void {
-    if (this.currentGold < cost) return;
-    const drawn = this.deck.drawCard();
-    if (!drawn) return;
-    this.cardsDrawn++;
-    if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
-    this.currentGold -= cost;
-    EventBus.emit('gold-changed', { amount: -cost, total: this.currentGold });
-    const slot = this.deck.hand.indexOf(drawn);
-    if (slot >= 0) this.updateSlot(slot);
-    this.updateDeckPile();
-    this.updateDiscardPile();
-    this.updateDeckTension();
-    if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
+    this.drawCardForCost(cost);
   }
 
   private onRequisitionCard({ cost }: { cost: number }): void {
-    if (this.currentGold < cost) return;
-    const drawn = this.deck.drawCard();
-    if (!drawn) return;
-    this.cardsDrawn++;
-    if (this.deck.lastDrawReshuffled) this.reshuffleCount++;
-    this.currentGold -= cost;
-    EventBus.emit('gold-changed', { amount: -cost, total: this.currentGold });
-    const slot = this.deck.hand.indexOf(drawn);
-    if (slot >= 0) this.updateSlot(slot);
-    this.updateDeckPile();
-    this.updateDiscardPile();
-    this.updateDeckTension();
-    if (this.deck.lastDrawReshuffled) this.showReshuffleAnimation();
+    this.drawCardForCost(cost);
   }
 
   private onWargearReturnToHand({ card }: { card: Card }): void {
