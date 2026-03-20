@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MathUtils, createRng } from '../utils/MathUtils';
+import { MathUtils, createRng, noise2d, smoothNoise, fbm } from '../utils/MathUtils';
 
 describe('MathUtils', () => {
   describe('clamp', () => {
@@ -122,5 +122,69 @@ describe('createRng', () => {
     const rngPos = createRng(42);
     const rngNeg = createRng(-42);
     expect(rngPos()).toBe(rngNeg());
+  });
+});
+
+describe('noise2d', () => {
+  it('returns deterministic values for same inputs', () => {
+    expect(noise2d(5, 10, 42)).toBe(noise2d(5, 10, 42));
+  });
+
+  it('returns values in [0, 1)', () => {
+    for (let i = 0; i < 100; i++) {
+      const v = noise2d(i, i * 3, 99);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+
+  it('varies with different coordinates', () => {
+    const a = noise2d(0, 0, 1);
+    const b = noise2d(10, 20, 1);
+    expect(a).not.toBe(b);
+  });
+
+  it('varies with different seeds', () => {
+    const a = noise2d(5, 5, 1);
+    const b = noise2d(5, 5, 2);
+    expect(a).not.toBe(b);
+  });
+});
+
+describe('smoothNoise', () => {
+  it('matches noise2d at integer coordinates', () => {
+    expect(smoothNoise(3, 7, 42)).toBe(noise2d(3, 7, 42));
+  });
+
+  it('returns values in [0, 1) for fractional coordinates', () => {
+    for (let i = 0; i < 50; i++) {
+      const v = smoothNoise(i * 0.37, i * 0.53, 123);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+
+  it('is deterministic', () => {
+    expect(smoothNoise(1.5, 2.7, 10)).toBe(smoothNoise(1.5, 2.7, 10));
+  });
+});
+
+describe('fbm', () => {
+  it('returns values in [0, 1) range', () => {
+    for (let i = 0; i < 50; i++) {
+      const v = fbm(i * 0.1, i * 0.2, 4, 42);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+
+  it('is deterministic', () => {
+    expect(fbm(3.5, 7.2, 4, 99)).toBe(fbm(3.5, 7.2, 4, 99));
+  });
+
+  it('varies with octave count', () => {
+    const a = fbm(5, 5, 1, 42);
+    const b = fbm(5, 5, 4, 42);
+    expect(a).not.toBe(b);
   });
 });
