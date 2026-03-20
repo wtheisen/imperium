@@ -32,6 +32,7 @@ export class FogRenderer {
   private currentAlpha: Float32Array; // per-tile current opacity (smoothed)
   private fogImageData: ImageData; // pre-allocated, reused every frame
   private elapsed = 0;
+  private dirty = true; // true when fog grid changed, forces texture redraw
 
   constructor(tileMap: TileMapMesh, scene?: THREE.Scene, decorations?: TerrainDecorations) {
     this.tileMap = tileMap;
@@ -109,6 +110,8 @@ export class FogRenderer {
       }
     }
 
+    this.dirty = true;
+
     // Also darken tile materials and decorations
     this.applyTileDarkening();
     if (this.decorations) {
@@ -120,14 +123,25 @@ export class FogRenderer {
     this.elapsed += deltaMs;
     const dt = Math.min(deltaMs / 1000, 0.05);
 
-    // Smooth alpha transitions
+    // Smooth alpha transitions — track whether any alpha changed meaningfully
     const lerpSpeed = 3.0;
+    const epsilon = 0.005;
+    let changed = false;
     for (let i = 0; i < this.currentAlpha.length; i++) {
-      this.currentAlpha[i] += (this.targetAlpha[i] - this.currentAlpha[i]) * lerpSpeed * dt;
+      const delta = (this.targetAlpha[i] - this.currentAlpha[i]) * lerpSpeed * dt;
+      if (Math.abs(delta) > epsilon) {
+        changed = true;
+      }
+      this.currentAlpha[i] += delta;
     }
 
-    // Redraw fog texture
-    this.drawFogTexture();
+    // Skip expensive texture redraw when alphas have converged and no new fog update
+    if (changed || this.dirty) {
+      this.drawFogTexture();
+      if (!changed) {
+        this.dirty = false;
+      }
+    }
   }
 
   private drawFogTexture(): void {
