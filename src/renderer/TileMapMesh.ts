@@ -2,52 +2,9 @@ import * as THREE from 'three';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { TerrainType } from '../map/MapManager';
 import { TerrainTextures, generateBlendedMapTexture, loadTerrainTileset } from './TerrainTextures';
+import { fbm } from '../utils/MathUtils';
 
 const TILE_3D_HEIGHT = 0.15;
-
-/** Simple seeded pseudo-random */
-function seededRandom(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-/** Value noise at a point */
-function noise2d(x: number, y: number, seed: number): number {
-  const rng = seededRandom(Math.floor(x * 73856093 + y * 19349663 + seed) & 0x7fffffff);
-  return rng();
-}
-
-/** Smooth interpolated noise */
-function smoothNoise(x: number, y: number, seed: number): number {
-  const ix = Math.floor(x);
-  const iy = Math.floor(y);
-  const fx = x - ix;
-  const fy = y - iy;
-  const sx = fx * fx * (3 - 2 * fx);
-  const sy = fy * fy * (3 - 2 * fy);
-  const n00 = noise2d(ix, iy, seed);
-  const n10 = noise2d(ix + 1, iy, seed);
-  const n01 = noise2d(ix, iy + 1, seed);
-  const n11 = noise2d(ix + 1, iy + 1, seed);
-  const nx0 = n00 + (n10 - n00) * sx;
-  const nx1 = n01 + (n11 - n01) * sx;
-  return nx0 + (nx1 - nx0) * sy;
-}
-
-/** Multi-octave fractal noise */
-function fbm(x: number, y: number, octaves: number, seed: number): number {
-  let value = 0, amplitude = 0.5, frequency = 1, total = 0;
-  for (let i = 0; i < octaves; i++) {
-    value += smoothNoise(x * frequency, y * frequency, seed + i * 1000) * amplitude;
-    total += amplitude;
-    amplitude *= 0.5;
-    frequency *= 2;
-  }
-  return value / total;
-}
 
 /** Height ranges per terrain type: [min, max] */
 const HEIGHT_RANGES: Record<number, [number, number]> = {
