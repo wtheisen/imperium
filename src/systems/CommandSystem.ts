@@ -12,6 +12,7 @@ import { EventBus } from '../EventBus';
 import { InputEvent } from '../renderer/InputBridge';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { IsoHelper } from '../map/IsoHelper';
+import { TacticalPauseManager } from './TacticalPauseManager';
 
 export class CommandSystem {
   private selection: SelectionSystem;
@@ -21,6 +22,7 @@ export class CommandSystem {
   private attackMoveMode: boolean = false;
   private patrolMode: boolean = false;
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  private tacticalPause: TacticalPauseManager | null = null;
 
   constructor(
     selection: SelectionSystem,
@@ -59,6 +61,10 @@ export class CommandSystem {
     EventBus.on('patrol-mode-cursor', this.onPatrolModeCursor, this);
     EventBus.on('command-explore', this.handleExploreCommand, this);
     EventBus.on('command-explore-resume', this.handleExploreResume, this);
+  }
+
+  setTacticalPause(manager: TacticalPauseManager): void {
+    this.tacticalPause = manager;
   }
 
   /** Called each frame to advance patrol/explore behaviors. */
@@ -154,6 +160,26 @@ export class CommandSystem {
     const entitiesAtTile = this.entityManager.getEntitiesAtTile(tileX, tileY);
     const enemy = entitiesAtTile.find((e) => e.team === 'enemy');
 
+    // Determine command type
+    let type: 'move' | 'attack' | 'gather' = 'move';
+    if (enemy) type = 'attack';
+    else if (this.mapManager.isGoldMine(tileX, tileY)) type = 'gather';
+
+    // Queue orders during tactical pause instead of executing
+    if (this.tacticalPause?.paused) {
+      for (const unit of this.selection.selectedUnits) {
+        this.tacticalPause.queueOrder({
+          unitId: unit.entityId,
+          type,
+          targetX: tileX,
+          targetY: tileY,
+        });
+      }
+      this.showCommandIndicator(tileX, tileY, type);
+      EventBus.emit('command-issued', { type, tileX, tileY });
+      return;
+    }
+
     if (enemy) {
       // Attack command
       for (const unit of this.selection.selectedUnits) {
@@ -201,6 +227,21 @@ export class CommandSystem {
   }
 
   private handleAttackMove(tileX: number, tileY: number): void {
+    // Queue during tactical pause
+    if (this.tacticalPause?.paused) {
+      for (const unit of this.selection.selectedUnits) {
+        this.tacticalPause.queueOrder({
+          unitId: unit.entityId,
+          type: 'attack-move',
+          targetX: tileX,
+          targetY: tileY,
+        });
+      }
+      this.showCommandIndicator(tileX, tileY, 'attack');
+      EventBus.emit('command-issued', { type: 'attack-move', tileX, tileY });
+      return;
+    }
+
     const units = this.selection.selectedUnits;
     const offsets = this.computeFormationOffsets(units.length);
     for (let i = 0; i < units.length; i++) {
@@ -227,6 +268,21 @@ export class CommandSystem {
   };
 
   private handlePatrolCommand(tileX: number, tileY: number): void {
+    // Queue during tactical pause
+    if (this.tacticalPause?.paused) {
+      for (const unit of this.selection.selectedUnits) {
+        this.tacticalPause.queueOrder({
+          unitId: unit.entityId,
+          type: 'patrol',
+          targetX: tileX,
+          targetY: tileY,
+        });
+      }
+      this.showCommandIndicator(tileX, tileY, 'move');
+      EventBus.emit('command-issued', { type: 'patrol', tileX, tileY });
+      return;
+    }
+
     const units = this.selection.selectedUnits;
     for (const unit of units) {
       const mover = unit.getComponent<MoverComponent>('mover');
@@ -306,6 +362,62 @@ export class CommandSystem {
 
   private async handlePathRequest({ unit, targetX, targetY }: { unit: Unit; targetX: number; targetY: number }): Promise<void> {
     await this.moveUnitToward(unit, targetX, targetY);
+  }
+
+  /** Execute a queued order from tactical pause. */
+  executeQueuedOrder(order: { unitId: string; type: string; targetX: number; targetY: number }): void {
+    const entity = this.entityManager.getAllEntities().find(e => e.entityId === order.unitId);
+    if (!entity || !entity.active || !(entity instanceof Unit)) return;
+    const unit = entity as Unit;
+
+    switch (order.type) {
+      case 'move':
+        this.moveUnitToward(unit, order.targetX, order.targetY);
+        break;
+      case 'attack': {
+        const enemies = this.entityManager.getEntitiesAtTile(order.targetX, order.targetY);
+        const enemy = enemies.find(e => e.team === 'enemy');
+        const combat = unit.getComponent<CombatComponent>('combat');
+        if (combat && enemy) {
+          combat.setTarget(enemy);
+          this.moveUnitToward(unit, enemy.tileX, enemy.tileY);
+        } else {
+          this.moveUnitToward(unit, order.targetX, order.targetY);
+        }
+        break;
+      }
+      case 'attack-move': {
+        const mover = unit.getComponent<MoverComponent>('mover');
+        if (mover) {
+          mover.attackMoving = true;
+          mover.attackMoveDestination = { x: order.targetX, y: order.targetY };
+        }
+        this.moveUnitToward(unit, order.targetX, order.targetY);
+        break;
+      }
+      case 'patrol': {
+        const mover = unit.getComponent<MoverComponent>('mover');
+        if (mover) {
+          mover.behaviorMode = 'patrol';
+          mover.patrolPoints = [
+            { x: unit.tileX, y: unit.tileY },
+            { x: order.targetX, y: order.targetY },
+          ];
+          mover.patrolIndex = 1;
+          this.moveUnitToward(unit, order.targetX, order.targetY);
+        }
+        break;
+      }
+      case 'gather': {
+        const gatherer = unit.getComponent<GathererComponent>('gatherer');
+        const townHall = this.entityManager.getBuildings('player').find(b => b.buildingType === 'drop_ship');
+        if (gatherer && townHall) {
+          gatherer.assignMine(order.targetX, order.targetY, townHall.tileX, townHall.tileY);
+        }
+        this.moveUnitToward(unit, order.targetX, order.targetY);
+        break;
+      }
+    }
   }
 
   private handleStopCommand({ units }: { units: Unit[] }): void {

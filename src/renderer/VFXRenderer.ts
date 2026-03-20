@@ -81,6 +81,10 @@ export class VFXRenderer {
   // Mine tooltip (CSS overlay)
   private mineTooltipEl: HTMLDivElement | null = null;
 
+  // Tactical pause ghost markers
+  private ghostOrderMarkers: THREE.Mesh[] = [];
+  private ghostCardMarkers: THREE.Group[] = [];
+
   /** Camera reference for projecting 3D positions to screen (set externally). */
   camera: THREE.Camera | null = null;
 
@@ -113,6 +117,9 @@ export class VFXRenderer {
     EventBus.on('pack-opened-3d', this.onPackOpened, this);
     EventBus.on('poi-marker-3d', this.onPOIMarker, this);
     EventBus.on('poi-collected', this.onPOICollected, this);
+    EventBus.on('tactical-order-queued', this.onTacticalOrderQueued, this);
+    EventBus.on('tactical-card-queued', this.onTacticalCardQueued, this);
+    EventBus.on('tactical-queue-cleared', this.onTacticalQueueCleared, this);
   }
 
   // ── Tile Hover Ring ────────────────────────────────────────
@@ -1082,6 +1089,83 @@ export class VFXRenderer {
     this.poiMarkers.delete(data.id);
   };
 
+  // ── Tactical Pause Ghost Markers ────────────────────────────
+
+  private onTacticalOrderQueued = (data: { type: string; targetX: number; targetY: number }): void => {
+    const colorMap: Record<string, number> = {
+      move: 0x44ff44, attack: 0xff4444, 'attack-move': 0xff8844,
+      patrol: 0x4488ff, gather: 0xffaa00,
+    };
+    const color = colorMap[data.type] || 0x44ff44;
+
+    // Dashed ring marker at destination
+    const ringGeo = new THREE.RingGeometry(0.2, 0.35, 16);
+    ringGeo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.4,
+      side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(ringGeo, mat);
+    ring.position.set(data.targetX, 0.14, data.targetY);
+    this.scene.add(ring);
+    this.ghostOrderMarkers.push(ring);
+
+    // Small diamond above the ring
+    const diamondGeo = new THREE.OctahedronGeometry(0.08);
+    const diamondMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
+    const diamond = new THREE.Mesh(diamondGeo, diamondMat);
+    diamond.position.set(data.targetX, 0.6, data.targetY);
+    this.scene.add(diamond);
+    this.ghostOrderMarkers.push(diamond);
+  };
+
+  private onTacticalCardQueued = (data: { card: any; tileX: number; tileY: number }): void => {
+    const group = new THREE.Group();
+
+    // Ghost placement ring (translucent)
+    const ringGeo = new THREE.RingGeometry(0.25, 0.4, 4, 1);
+    ringGeo.rotateX(-Math.PI / 2);
+    ringGeo.rotateY(Math.PI / 4);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xc8982a, transparent: true, opacity: 0.35,
+      side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.y = 0.13;
+    group.add(ring);
+
+    // Floating card icon (small box)
+    const iconGeo = new THREE.BoxGeometry(0.2, 0.28, 0.02);
+    const iconMat = new THREE.MeshBasicMaterial({ color: 0xc8982a, transparent: true, opacity: 0.4 });
+    const icon = new THREE.Mesh(iconGeo, iconMat);
+    icon.position.y = 0.8;
+    group.add(icon);
+
+    group.position.set(data.tileX, 0, data.tileY);
+    this.scene.add(group);
+    this.ghostCardMarkers.push(group);
+  };
+
+  private onTacticalQueueCleared = (): void => {
+    for (const marker of this.ghostOrderMarkers) {
+      this.scene.remove(marker);
+      marker.geometry.dispose();
+      (marker.material as THREE.Material).dispose();
+    }
+    this.ghostOrderMarkers = [];
+
+    for (const group of this.ghostCardMarkers) {
+      group.traverse(c => {
+        if (c instanceof THREE.Mesh) {
+          c.geometry.dispose();
+          (c.material as THREE.Material).dispose();
+        }
+      });
+      this.scene.remove(group);
+    }
+    this.ghostCardMarkers = [];
+  };
+
   // ── HP Bars (Gap 7) ──────────────────────────────────────────
 
   /** Sync HP bars for all entities. Called each frame from update(). */
@@ -1325,6 +1409,23 @@ export class VFXRenderer {
     if (this.ordnanceReticule && this.ordnanceReticule.visible) {
       this.ordnanceReticule.rotation.y += 0.8 * dt;
     }
+
+    // Pulse ghost order markers (tactical pause)
+    const ghostPulse = 0.3 + 0.15 * Math.sin(now / 400);
+    for (const marker of this.ghostOrderMarkers) {
+      (marker.material as THREE.MeshBasicMaterial).opacity = ghostPulse;
+    }
+    for (const group of this.ghostCardMarkers) {
+      group.traverse(c => {
+        if (c instanceof THREE.Mesh) {
+          (c.material as THREE.MeshBasicMaterial).opacity = ghostPulse;
+        }
+      });
+      // Float the card icon up and down
+      if (group.children.length > 1) {
+        group.children[1].position.y = 0.75 + 0.08 * Math.sin(now / 500);
+      }
+    }
   }
 
   dispose(): void {
@@ -1347,6 +1448,12 @@ export class VFXRenderer {
     EventBus.off('pack-opened-3d', this.onPackOpened, this);
     EventBus.off('poi-marker-3d', this.onPOIMarker, this);
     EventBus.off('poi-collected', this.onPOICollected, this);
+    EventBus.off('tactical-order-queued', this.onTacticalOrderQueued, this);
+    EventBus.off('tactical-card-queued', this.onTacticalCardQueued, this);
+    EventBus.off('tactical-queue-cleared', this.onTacticalQueueCleared, this);
+
+    // Cleanup ghost markers
+    this.onTacticalQueueCleared();
 
     for (const p of this.particles) {
       this.scene.remove(p.mesh);

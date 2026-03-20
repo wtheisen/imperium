@@ -1096,38 +1096,107 @@ export class UIScene implements GameSceneInterface {
     }
   };
 
+  private pauseQueueCountEl: HTMLElement | null = null;
+
   private onGamePaused = (): void => {
     if (this.pauseOverlay) return;
     this.pauseOverlay = document.createElement('div');
     Object.assign(this.pauseOverlay.style, {
       position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-      background: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center',
+      background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center',
       justifyContent: 'center', zIndex: '9999', pointerEvents: 'none',
     });
+
+    // Pulsing border frame
+    const frame = document.createElement('div');
+    Object.assign(frame.style, {
+      position: 'absolute', inset: '0',
+      border: '2px solid rgba(200,152,42,0.2)',
+      animation: 'tactical-pause-border-pulse 2s ease-in-out infinite',
+      pointerEvents: 'none',
+    });
+    this.pauseOverlay.appendChild(frame);
+
     const text = document.createElement('div');
     Object.assign(text.style, {
       fontFamily: 'Teko, sans-serif', fontSize: '96px', color: '#c8982a',
-      letterSpacing: '12px', textTransform: 'uppercase', textShadow: '0 0 30px rgba(200,152,42,0.4)',
+      letterSpacing: '12px', textTransform: 'uppercase',
+      textShadow: '0 0 30px rgba(200,152,42,0.4), 0 0 60px rgba(200,152,42,0.15)',
+      animation: 'tactical-pause-text-pulse 2s ease-in-out infinite',
     });
-    text.textContent = 'PAUSED';
+    text.textContent = 'TACTICAL PAUSE';
+
+    const subtitle = document.createElement('div');
+    Object.assign(subtitle.style, {
+      fontFamily: 'Share Tech Mono, monospace', fontSize: '16px', color: 'rgba(200,152,42,0.6)',
+      letterSpacing: '3px', marginTop: '8px', textAlign: 'center',
+    });
+    subtitle.textContent = 'PLANNING MODE — ISSUE ORDERS';
+
+    const queueCount = document.createElement('div');
+    Object.assign(queueCount.style, {
+      fontFamily: 'Share Tech Mono, monospace', fontSize: '13px', color: 'rgba(200,191,160,0.4)',
+      letterSpacing: '2px', marginTop: '16px', textAlign: 'center',
+      transition: 'color 0.2s',
+    });
+    queueCount.textContent = 'QUEUED ORDERS: 0';
+    this.pauseQueueCountEl = queueCount;
+
     const hint = document.createElement('div');
     Object.assign(hint.style, {
-      fontFamily: 'Share Tech Mono, monospace', fontSize: '14px', color: '#c8bfa0',
-      letterSpacing: '2px', marginTop: '12px', textAlign: 'center',
+      fontFamily: 'Share Tech Mono, monospace', fontSize: '12px', color: 'rgba(200,191,160,0.25)',
+      letterSpacing: '2px', marginTop: '20px', textAlign: 'center',
     });
-    hint.textContent = 'PRESS P TO RESUME';
+    hint.textContent = 'PRESS P TO EXECUTE & RESUME';
+
     const wrapper = document.createElement('div');
     wrapper.style.textAlign = 'center';
     wrapper.appendChild(text);
+    wrapper.appendChild(subtitle);
+    wrapper.appendChild(queueCount);
     wrapper.appendChild(hint);
     this.pauseOverlay.appendChild(wrapper);
+
+    // Add tactical pause CSS animations if not present
+    if (!document.getElementById('tactical-pause-styles')) {
+      const style = document.createElement('style');
+      style.id = 'tactical-pause-styles';
+      style.textContent = `
+        @keyframes tactical-pause-text-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+        @keyframes tactical-pause-border-pulse {
+          0%, 100% { border-color: rgba(200,152,42,0.15); }
+          50% { border-color: rgba(200,152,42,0.35); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     document.body.appendChild(this.pauseOverlay);
+
+    // Listen for queue changes
+    EventBus.on('tactical-queue-changed', this.onTacticalQueueChanged, this);
   };
 
   private onGameResumed = (): void => {
+    EventBus.off('tactical-queue-changed', this.onTacticalQueueChanged, this);
+    this.pauseQueueCountEl = null;
     if (this.pauseOverlay) {
       this.pauseOverlay.remove();
       this.pauseOverlay = null;
+    }
+  };
+
+  private onTacticalQueueChanged = (data: { count: number }): void => {
+    if (this.pauseQueueCountEl) {
+      this.pauseQueueCountEl.textContent = `QUEUED ORDERS: ${data.count}`;
+      if (data.count > 0) {
+        this.pauseQueueCountEl.style.color = 'rgba(200,152,42,0.7)';
+      } else {
+        this.pauseQueueCountEl.style.color = 'rgba(200,191,160,0.4)';
+      }
     }
   };
 
@@ -1393,6 +1462,7 @@ export class UIScene implements GameSceneInterface {
     EventBus.off('ship-ordnance-select', this.onShipOrdnanceSelect, this);
     EventBus.off('ship-ordnance-fired', this.onShipOrdnanceFired, this);
     EventBus.off('card-drag-cancel', this.onShipOrdnanceCancel, this);
+    EventBus.off('tactical-queue-changed', this.onTacticalQueueChanged, this);
     this.packPickupUI?.destroy();
     if (this.shipOrdnanceBar) { this.shipOrdnanceBar.destroy(); this.shipOrdnanceBar = null; }
     if (this.pauseOverlay) { this.pauseOverlay.remove(); this.pauseOverlay = null; }
