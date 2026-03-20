@@ -45,6 +45,7 @@ export class AudioManager {
     EventBus.on('reinforcements-incoming', this.onReinforcementsIncoming, this);
     EventBus.on('mine-exhausted', this.onMineExhausted, this);
     EventBus.on('mission-complete', this.onMissionComplete, this);
+    EventBus.on('scout-alert', this.onScoutAlert, this);
 
     // Start ambient drone
     this.startDrone();
@@ -448,6 +449,26 @@ export class AudioManager {
     osc.stop(this.ctx.currentTime + 0.12);
   }
 
+  /** Scout reveal: short ascending radar blip sequence (3 quick pings) */
+  playScoutReveal(): void {
+    if (!this.canPlay('scoutReveal', 400)) return;
+    const t = this.ctx.currentTime;
+    const notes = [880, 1100, 1320]; // A5, ~C#6, E6 — ascending triad
+    for (let i = 0; i < notes.length; i++) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = notes[i];
+      const start = t + i * 0.08;
+      gain.gain.setValueAtTime(0.18, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.1);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(start);
+      osc.stop(start + 0.1);
+    }
+  }
+
   /** Victory fanfare: ascending C-E-G-C chord over 0.5s */
   playVictoryFanfare(): void {
     if (!this.canPlay('victoryFanfare', 1000)) return;
@@ -544,6 +565,10 @@ export class AudioManager {
     this.playVictoryFanfare();
   }
 
+  private onScoutAlert(): void {
+    this.playScoutReveal();
+  }
+
   toggleMute(): void {
     this.muted = !this.muted;
     if (this.muted) {
@@ -576,6 +601,7 @@ export class AudioManager {
     EventBus.off('reinforcements-incoming', this.onReinforcementsIncoming, this);
     EventBus.off('mine-exhausted', this.onMineExhausted, this);
     EventBus.off('mission-complete', this.onMissionComplete, this);
+    EventBus.off('scout-alert', this.onScoutAlert, this);
     this.ctx.close();
   }
 }

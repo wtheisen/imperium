@@ -40,6 +40,7 @@ import { resolveEnvironmentModifiers, EnvironmentEffects } from '../systems/Envi
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { PACK_BURN_GOLD_MULTIPLIER } from '../config';
 import { TacticalPauseManager } from '../systems/TacticalPauseManager';
+import { ScoutRevealSystem } from '../systems/ScoutRevealSystem';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -76,6 +77,7 @@ export class GameScene implements GameSceneInterface {
   private envEffects: EnvironmentEffects | null = null;
   private fallenVeterans: { name: string }[] = [];
   private tacticalPause!: TacticalPauseManager;
+  private scoutReveal: ScoutRevealSystem | null = null;
 
   create(data?: { mission?: MissionDefinition }): void {
     this.mission = data?.mission || MISSIONS[0];
@@ -193,6 +195,14 @@ export class GameScene implements GameSceneInterface {
 
     // Setup fog of war
     this.fogOfWar = new FogOfWarSystem(this.entityManager);
+
+    // Setup scout reveal system — alerts when fog reveals key features
+    this.scoutReveal = new ScoutRevealSystem(
+      this.mission.enemyCamps,
+      mines,
+      allPOIs,
+      allPacks.map(p => ({ tileX: p.tileX, tileY: p.tileY })),
+    );
 
     // EventBus listeners
     EventBus.on('card-drag-start', this.onCardDragStart, this);
@@ -784,6 +794,7 @@ export class GameScene implements GameSceneInterface {
     this.audioManager?.destroy();
     this.xpTracker?.destroy();
     this.spawnerSystem?.destroy();
+    this.scoutReveal?.destroy();
     this.fogOfWar?.destroy();
     this.entityManager?.destroy();
     this.economySystem?.destroy();

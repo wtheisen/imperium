@@ -86,6 +86,7 @@ export class Minimap {
     EventBus.on('camera-moved', this.onCameraMoved, this);
 
     // Ping events
+    EventBus.on('minimap-ping', this.onMinimapPing, this);
     EventBus.on('reinforcements-incoming', this.onPingReinforcements, this);
     EventBus.on('supply-pod-incoming', this.onPingSupplyPod, this);
     EventBus.on('spawner-neutralized', this.onPingSpawnerNeutralized, this);
@@ -240,6 +241,10 @@ export class Minimap {
     this.pings.push({ tileX, tileY, color, startTime: performance.now(), duration });
   }
 
+  private onMinimapPing = (data: { tileX: number; tileY: number; color: [number, number, number]; duration?: number }): void => {
+    this.ping(data.tileX, data.tileY, data.color, data.duration ?? 3000);
+  };
+
   private onPingReinforcements = (data: { tileX: number; tileY: number }): void => {
     this.ping(data.tileX, data.tileY, [220, 60, 60]); // red
   };
@@ -324,6 +329,7 @@ export class Minimap {
     EventBus.off('fog-updated', this.onFogUpdated, this);
     EventBus.off('entities-sync', this.onEntitiesSync, this);
     EventBus.off('camera-moved', this.onCameraMoved, this);
+    EventBus.off('minimap-ping', this.onMinimapPing, this);
     EventBus.off('reinforcements-incoming', this.onPingReinforcements, this);
     EventBus.off('supply-pod-incoming', this.onPingSupplyPod, this);
     EventBus.off('spawner-neutralized', this.onPingSpawnerNeutralized, this);
