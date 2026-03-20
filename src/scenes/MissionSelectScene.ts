@@ -41,292 +41,202 @@ function injectStyles(): void {
       0% { clip-path: inset(0 100% 0 0); }
       100% { clip-path: inset(0 0 0 0); }
     }
-    @keyframes ms-skull-fade {
-      from { opacity: 0; transform: scale(0.8); }
-      to { opacity: 0.04; transform: scale(1); }
+    @keyframes cm-node-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
     }
+    @keyframes cm-node-in {
+      from { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+      to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+    @keyframes cm-modal-in {
+      from { opacity: 0; transform: translateY(8px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes cm-threat-orbit {
+      from { transform: rotate(0deg) translateX(28px) rotate(0deg); }
+      to   { transform: rotate(360deg) translateX(28px) rotate(-360deg); }
+    }
+    .cm-node:hover { filter: brightness(1.3); cursor: pointer; }
+    .cm-node-dot {
+      position: absolute;
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      top: 50%; left: 50%;
+      margin: -2px 0 0 -2px;
+      animation: cm-threat-orbit 4s linear infinite;
+    }
+    .cm-node-dot:nth-child(2) { animation-delay: -1.33s; }
+    .cm-node-dot:nth-child(3) { animation-delay: -2.66s; }
   `;
   document.head.appendChild(style);
 }
 
 const DIFF_THEMES: Record<number, { color: string; label: string; symbol: string }> = {
-  1: { color: '#4a9e4a', label: 'STANDARD', symbol: 'I' },
+  1: { color: '#4a9e4a', label: 'STANDARD',  symbol: 'I'  },
   2: { color: '#c8982a', label: 'HAZARDOUS', symbol: 'II' },
-  3: { color: '#c43030', label: 'EXTREMIS', symbol: 'III' },
-  4: { color: '#8020c0', label: 'HELLDIVE', symbol: 'IV' },
+  3: { color: '#c43030', label: 'EXTREMIS',  symbol: 'III' },
+  4: { color: '#8020c0', label: 'HELLDIVE',  symbol: 'IV' },
 };
 
 const MAP_TYPE_LABELS: Record<string, string> = {
-  outdoor: 'PLANETARY SURFACE',
+  outdoor:    'PLANETARY SURFACE',
   space_hulk: 'SPACE HULK',
 };
 
+interface CampaignNode {
+  missionId: string;
+  x: number; // % from left of map container
+  y: number; // % from top of map container
+}
+
+const CAMPAIGN_NODES: CampaignNode[] = [
+  // ── Difficulty 1 — STANDARD (southern landing zones) ──
+  { missionId: 'purge_outskirts', x: 28, y: 72 },
+  { missionId: 'hold_the_line',   x: 62, y: 78 },
+
+  // ── Difficulty 2 — HAZARDOUS (mid-continent band) ──
+  { missionId: 'secure_relay',      x: 18, y: 52 },
+  { missionId: 'vox_array',         x: 42, y: 58 },
+  { missionId: 'scavenge_evacuate', x: 72, y: 55 },
+  { missionId: 'night_raid',        x: 55, y: 42 },
+  { missionId: 'space_hulk_alpha',  x: 83, y: 30 },
+
+  // ── Difficulty 3 — EXTREMIS (northern contested zones) ──
+  { missionId: 'exterminatus',    x: 22, y: 28 },
+  { missionId: 'armored_assault', x: 45, y: 22 },
+  { missionId: 'green_tide',      x: 68, y: 32 },
+  { missionId: 'deep_strike',     x: 86, y: 18 },
+
+  // ── Difficulty 4 — HELLDIVE (enemy heartland) ──
+  { missionId: 'exterminatus_omega', x: 40, y: 10 },
+];
+
 /**
- * MissionSelectScene — Warhammer 40K military briefing-style mission selection.
+ * MissionSelectScene — Theater-of-war planet surface campaign map.
+ * All missions displayed as deployable zones. Click a node to open
+ * a floating mission detail modal.
  */
 export class MissionSelectScene implements GameSceneInterface {
   id = 'MissionSelectScene';
   private container: HTMLDivElement | null = null;
-  private selectedMissionIdx = 0;
+  private selectedMissionId: string | null = null;
+  private commandDropdownOpen = false;
 
   create(): void {
     injectStyles();
-    const state = getPlayerState();
-
-    // Ensure selected mission is not locked; fall back to first unlocked
-    const selectedMission = MISSIONS[this.selectedMissionIdx];
-    if (selectedMission && this.isMissionLocked(selectedMission, state)) {
-      const firstUnlocked = MISSIONS.findIndex(m => !this.isMissionLocked(m, state));
-      this.selectedMissionIdx = firstUnlocked >= 0 ? firstUnlocked : 0;
-    }
 
     this.container = document.createElement('div');
     this.container.id = 'mission-select-ui';
     Object.assign(this.container.style, {
       position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
-      zIndex: '10', overflow: 'hidden',
+      zIndex: '10', overflow: 'hidden', display: 'flex', flexDirection: 'column',
       fontFamily: '"Share Tech Mono", monospace',
       color: '#c8bfa0',
-      // Deep military dark with a warm undertone
       background: 'linear-gradient(160deg, #0a0a0e 0%, #12100c 40%, #0e0c08 100%)',
     });
 
-    // Build the full layout
-    this.container.innerHTML = this.buildLayout(state);
+    this.container.innerHTML = this.buildLayout();
     document.getElementById('game-container')!.appendChild(this.container);
-
-    // Wire up interactivity after DOM is in place
-    this.wireEvents(state);
+    this.wireEvents();
   }
 
-  private buildLayout(state: ReturnType<typeof getPlayerState>): string {
-    const missions = MISSIONS;
-    const selectedMission = missions[this.selectedMissionIdx];
-    const completed = state.completedMissions.has(selectedMission.id);
-    const theme = DIFF_THEMES[selectedMission.difficulty] || DIFF_THEMES[1];
-
+  private buildLayout(): string {
+    const state = getPlayerState();
     return `
-      <!-- Atmospheric background layers -->
-      <div style="position:absolute;inset:0;pointer-events:none;overflow:hidden;">
-        <!-- Diagonal hazard stripes -->
+      <!-- Atmospheric background -->
+      <div style="position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0;">
         <div style="position:absolute;inset:0;opacity:0.018;
           background:repeating-linear-gradient(45deg,transparent,transparent 18px,#c8982a 18px,#c8982a 20px);
           animation:ms-stripe-scroll 4s linear infinite;"></div>
-        <!-- Scanline -->
-        <div style="position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(200,191,160,0.06),transparent);
+        <div style="position:absolute;left:0;right:0;height:2px;
+          background:linear-gradient(90deg,transparent,rgba(200,191,160,0.06),transparent);
           animation:ms-scanline 8s linear infinite;"></div>
-        <!-- Vignette -->
-        <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.7) 100%);"></div>
-        <!-- Corner aquila decoration -->
-        <div style="position:absolute;top:20px;right:24px;font-size:48px;opacity:0.04;
-          font-family:'Teko',sans-serif;letter-spacing:6px;color:#c8982a;
-          animation:ms-skull-fade 1.5s ease-out forwards;">+ AQUILA +</div>
+        <div style="position:absolute;inset:0;
+          background:radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,0.6) 100%);"></div>
+        <!-- Atmosphere glow at top -->
+        <div style="position:absolute;top:0;left:0;right:0;height:40%;
+          background:radial-gradient(ellipse at 50% -20%,rgba(100,60,20,0.15) 0%,transparent 70%);"></div>
       </div>
 
       <!-- Top bar -->
-      <div style="position:relative;display:flex;align-items:center;justify-content:space-between;
-        padding:16px 32px;border-bottom:1px solid rgba(200,152,42,0.15);
+      <div style="position:relative;z-index:2;display:flex;align-items:center;
+        justify-content:space-between;padding:14px 28px;flex-shrink:0;
+        border-bottom:1px solid rgba(200,152,42,0.15);
         background:linear-gradient(180deg,rgba(200,152,42,0.04) 0%,transparent 100%);">
-        <div style="display:flex;align-items:center;gap:16px;">
-          <div style="width:3px;height:28px;background:#c8982a;"></div>
-          <div>
-            <div style="font-family:'Teko',sans-serif;font-size:14px;font-weight:500;
-              color:rgba(200,152,42,0.5);letter-spacing:4px;">IMPERIAL COMMAND // STRATEGOS TERMINAL</div>
-          </div>
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="width:3px;height:26px;background:#c8982a;flex-shrink:0;"></div>
+          <div style="font-family:'Teko',sans-serif;font-size:13px;font-weight:500;
+            color:rgba(200,152,42,0.5);letter-spacing:4px;animation:ms-flicker 6s infinite;">
+            IMPERIAL COMMAND // STRATEGOS TERMINAL</div>
         </div>
-        <div style="display:flex;gap:12px;align-items:center;">
+        <div style="display:flex;gap:10px;align-items:center;">
           ${this.buildDeckSelector(state)}
           <button id="ms-edit-decks" style="padding:6px 14px;background:transparent;
             color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
             font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">EDIT DECKS</button>
-          <button id="ms-tech-trees" style="padding:6px 14px;background:transparent;
-            color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
-            font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">TECH TREES</button>
-          <button id="ms-supply-depot" style="padding:6px 14px;background:transparent;
-            color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
-            font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">SUPPLY DEPOT</button>
-          <button id="ms-ship" style="padding:6px 14px;background:transparent;
-            color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
-            font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">SHIP</button>
+          <div style="position:relative;">
+            <button id="ms-command-btn" style="padding:6px 14px;background:transparent;
+              color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
+              font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">COMMAND ▾</button>
+            <div id="ms-command-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;
+              z-index:100;background:rgba(10,10,14,0.97);
+              border:1px solid rgba(200,152,42,0.2);min-width:160px;">
+              <button class="ms-cmd-item" data-scene="TechTreeScene"
+                style="display:block;width:100%;padding:10px 16px;background:transparent;
+                color:#5a7a8a;border:none;border-bottom:1px solid rgba(200,152,42,0.08);
+                font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;
+                letter-spacing:1px;text-align:left;transition:all 0.15s;">TECH TREES</button>
+              <button class="ms-cmd-item" data-scene="ShopScene"
+                style="display:block;width:100%;padding:10px 16px;background:transparent;
+                color:#5a7a8a;border:none;border-bottom:1px solid rgba(200,152,42,0.08);
+                font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;
+                letter-spacing:1px;text-align:left;transition:all 0.15s;">SUPPLY DEPOT</button>
+              <button class="ms-cmd-item" data-scene="ShipScene"
+                style="display:block;width:100%;padding:10px 16px;background:transparent;
+                color:#5a7a8a;border:none;
+                font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;
+                letter-spacing:1px;text-align:left;transition:all 0.15s;">SHIP</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Main content -->
-      <div style="position:relative;display:flex;flex:1;overflow:hidden;">
+      <!-- Campaign map -->
+      <div id="cm-map" style="position:relative;flex:1;overflow:hidden;z-index:1;">
+        <!-- Planet terrain texture layers -->
+        <div style="position:absolute;inset:0;pointer-events:none;
+          background:
+            radial-gradient(ellipse at 30% 60%,rgba(60,40,15,0.25) 0%,transparent 50%),
+            radial-gradient(ellipse at 70% 40%,rgba(40,50,20,0.2) 0%,transparent 45%),
+            radial-gradient(ellipse at 50% 80%,rgba(80,50,10,0.18) 0%,transparent 40%);"></div>
+        <!-- Grid lines suggesting tactical map overlay -->
+        <div style="position:absolute;inset:0;pointer-events:none;opacity:0.04;
+          background-image:linear-gradient(rgba(200,191,160,1) 1px,transparent 1px),
+                           linear-gradient(90deg,rgba(200,191,160,1) 1px,transparent 1px);
+          background-size:60px 60px;"></div>
+        <!-- Equator line (mid-difficulty boundary) -->
+        <div style="position:absolute;left:5%;right:5%;top:46%;height:1px;pointer-events:none;
+          background:linear-gradient(90deg,transparent,rgba(200,152,42,0.08) 20%,rgba(200,152,42,0.08) 80%,transparent);"></div>
 
-        <!-- Left: Mission list -->
-        <div style="width:340px;flex-shrink:0;border-right:1px solid rgba(200,152,42,0.1);
-          display:flex;flex-direction:column;overflow-y:auto;">
-          <div style="padding:20px 24px 12px;border-bottom:1px solid rgba(200,152,42,0.08);">
-            <div style="font-family:'Teko',sans-serif;font-size:13px;font-weight:500;
-              color:rgba(200,152,42,0.4);letter-spacing:3px;animation:ms-flicker 6s infinite;">
-              MISSION DOSSIERS // ${missions.length} AVAILABLE</div>
-          </div>
-          <div id="ms-mission-list" style="flex:1;overflow-y:auto;">
-            ${missions.map((m, i) => this.buildMissionListItem(m, i, state)).join('')}
-          </div>
-        </div>
+        <!-- Region labels -->
+        <div style="position:absolute;left:2%;top:88%;font-family:'Teko',sans-serif;font-size:11px;
+          color:rgba(200,191,160,0.12);letter-spacing:3px;pointer-events:none;">LANDING ZONE ALPHA</div>
+        <div style="position:absolute;left:2%;top:45%;font-family:'Teko',sans-serif;font-size:11px;
+          color:rgba(200,152,42,0.1);letter-spacing:3px;pointer-events:none;">CONTESTED TERRITORY</div>
+        <div style="position:absolute;left:2%;top:5%;font-family:'Teko',sans-serif;font-size:11px;
+          color:rgba(196,48,48,0.12);letter-spacing:3px;pointer-events:none;">ENEMY HEARTLAND</div>
 
-        <!-- Right: Selected mission detail -->
-        <div style="flex:1;display:flex;flex-direction:column;overflow-y:auto;position:relative;">
-          <!-- Header -->
-          <div style="padding:32px 40px 0;">
-            <div style="font-family:'Teko',sans-serif;font-size:56px;font-weight:700;
-              color:#e8dcc0;letter-spacing:8px;line-height:1;
-              animation:ms-header-in 0.6s ease-out;">${selectedMission.name.toUpperCase()}</div>
+        <!-- Mission nodes (rendered by JS after DOM insert) -->
+        <div id="cm-nodes"></div>
 
-            <!-- Threat level bar -->
-            <div style="display:flex;align-items:center;gap:16px;margin-top:16px;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <div style="font-size:10px;letter-spacing:2px;color:rgba(200,191,160,0.4);">THREAT LEVEL</div>
-                <div style="display:flex;gap:3px;">
-                  ${[1, 2, 3].map(d => `<div style="width:24px;height:6px;
-                    background:${d <= selectedMission.difficulty ? theme.color : 'rgba(200,191,160,0.08)'};
-                    ${d <= selectedMission.difficulty ? `box-shadow:0 0 8px ${theme.color}40;` : ''}
-                    transition:all 0.3s;"></div>`).join('')}
-                </div>
-                <div style="font-size:10px;letter-spacing:2px;color:${theme.color};font-weight:bold;">${theme.label}</div>
-              </div>
-              <div style="width:1px;height:16px;background:rgba(200,191,160,0.1);"></div>
-              <div style="font-size:10px;letter-spacing:2px;color:rgba(200,191,160,0.4);">
-                ${MAP_TYPE_LABELS[selectedMission.terrain?.mapType || 'outdoor'] || 'PLANETARY SURFACE'}</div>
-              ${completed ? `<div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
-                <div style="width:8px;height:8px;background:#4a9e4a;border-radius:50%;box-shadow:0 0 6px #4a9e4a80;"></div>
-                <div style="font-size:10px;letter-spacing:2px;color:#4a9e4a;">VICTORY CONFIRMED</div>
-              </div>` : ''}
-            </div>
-
-            <!-- Divider with trace animation -->
-            <div style="position:relative;height:1px;margin-top:20px;background:rgba(200,152,42,0.06);">
-              <div style="position:absolute;inset:0;background:linear-gradient(90deg,${theme.color},transparent);
-                animation:ms-border-trace 1s ease-out forwards;opacity:0.3;"></div>
-            </div>
-          </div>
-
-          <!-- Description + Objectives -->
-          <div style="padding:24px 40px;display:flex;gap:40px;">
-            <!-- Left column: briefing -->
-            <div style="flex:1;">
-              <div style="font-size:10px;letter-spacing:3px;color:rgba(200,152,42,0.4);margin-bottom:10px;">
-                MISSION BRIEFING</div>
-              <p style="color:#a09880;font-size:13px;line-height:1.8;margin:0;">${selectedMission.description}</p>
-
-              <!-- Mission stats -->
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:28px;">
-                ${this.buildStatBox('STARTING REQUISITION', `${selectedMission.startingGold} REQ`, '#c8982a')}
-                ${this.buildStatBox('OBJECTIVES', `${selectedMission.objectives.length}`, theme.color)}
-                ${this.buildStatBox('ENEMY POSITIONS', `${selectedMission.enemyCamps.length}`, '#c43030')}
-                ${this.buildStatBox('SUPPLY INTERVAL', `${Math.round(selectedMission.supplyDropIntervalMs / 1000)}s`, '#5a7a8a')}
-              </div>
-            </div>
-
-            <!-- Right column: objectives -->
-            <div style="width:280px;flex-shrink:0;">
-              <div style="font-size:10px;letter-spacing:3px;color:rgba(200,152,42,0.4);margin-bottom:14px;">
-                TACTICAL OBJECTIVES</div>
-              <div style="display:flex;flex-direction:column;gap:10px;">
-                ${selectedMission.objectives.map((obj, i) => `
-                  <div style="padding:12px 14px;background:rgba(200,152,42,0.03);
-                    border-left:2px solid ${theme.color}40;position:relative;
-                    animation:ms-card-in 0.4s ease-out ${0.2 + i * 0.1}s both;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-                      <div style="font-size:9px;letter-spacing:1px;color:${theme.color};
-                        background:${theme.color}15;padding:1px 6px;">${obj.type.toUpperCase()}</div>
-                      <div style="font-size:9px;color:rgba(200,191,160,0.3);">+${obj.goldReward} REQ</div>
-                    </div>
-                    <div style="font-family:'Teko',sans-serif;font-size:16px;font-weight:500;
-                      color:#c8bfa0;letter-spacing:1px;">${obj.name}</div>
-                    <div style="font-size:10px;color:rgba(200,191,160,0.4);line-height:1.5;margin-top:2px;">
-                      ${obj.description}</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          </div>
-
-          <!-- Skull Modifiers (only for completed missions) -->
-          ${completed ? this.buildSkullModifiers(state) : ''}
-
-          <!-- Deploy bar -->
-          <div style="padding:20px 40px 28px;border-top:1px solid rgba(200,152,42,0.08);
-            display:flex;align-items:center;justify-content:space-between;
-            background:linear-gradient(180deg,transparent,rgba(200,152,42,0.02));">
-            <div style="font-size:10px;color:rgba(200,191,160,0.3);letter-spacing:2px;">
-              AWAITING DEPLOYMENT ORDER // CLICK TO PROCEED</div>
-            <button id="ms-deploy-btn" style="
-              position:relative;overflow:hidden;
-              padding:14px 56px;
-              background:linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%);
-              color:#c8982a;
-              border:1px solid rgba(200,152,42,0.4);
-              font-family:'Teko',sans-serif;font-size:22px;font-weight:600;
-              letter-spacing:6px;cursor:pointer;
-              transition:all 0.25s;
-              animation:ms-glow-pulse 3s ease-in-out infinite;
-              --ms-accent:rgba(200,152,42,0.3);
-            ">DEPLOY</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  private isMissionLocked(mission: MissionDefinition, state: ReturnType<typeof getPlayerState>): boolean {
-    const completedCount = state.completedMissions.size;
-    if (mission.difficulty === 2 && completedCount < 1) return true;
-    if (mission.difficulty === 3 && completedCount < 2) return true;
-    if (mission.difficulty >= 4 && completedCount < 4) return true;
-    return false;
-  }
-
-  private getLockRequirement(mission: MissionDefinition): string {
-    if (mission.difficulty === 2) return 'COMPLETE 1 MISSION TO UNLOCK';
-    if (mission.difficulty === 3) return 'COMPLETE 2 MISSIONS TO UNLOCK';
-    if (mission.difficulty >= 4) return 'COMPLETE 4 MISSIONS TO UNLOCK';
-    return '';
-  }
-
-  private buildMissionListItem(mission: MissionDefinition, index: number, state: ReturnType<typeof getPlayerState>): string {
-    const selected = index === this.selectedMissionIdx;
-    const completed = state.completedMissions.has(mission.id);
-    const theme = DIFF_THEMES[mission.difficulty] || DIFF_THEMES[1];
-    const locked = this.isMissionLocked(mission, state);
-
-    return `
-      <div class="ms-mission-item" data-idx="${index}" data-locked="${locked}" style="
-        padding:16px 24px;cursor:${locked ? 'default' : 'pointer'};position:relative;
-        border-bottom:1px solid rgba(200,152,42,0.05);
-        background:${selected && !locked ? 'rgba(200,152,42,0.06)' : 'transparent'};
-        border-left:${selected && !locked ? `3px solid ${theme.color}` : '3px solid transparent'};
-        opacity:${locked ? '0.4' : '1'};
-        pointer-events:${locked ? 'none' : 'auto'};
-        transition:all 0.2s;
-        animation:ms-card-in 0.3s ease-out ${index * 0.08}s both;
-      ">
-        <!-- Top row: number + name -->
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
-            color:${selected && !locked ? theme.color : 'rgba(200,191,160,0.12)'};line-height:1;
-            transition:color 0.2s;min-width:28px;">${String(index + 1).padStart(2, '0')}</div>
-          <div style="flex:1;">
-            <div style="font-family:'Teko',sans-serif;font-size:18px;font-weight:600;
-              color:${selected && !locked ? '#e8dcc0' : '#6a6458'};letter-spacing:1px;
-              transition:color 0.2s;">${mission.name.toUpperCase()}</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
-              <div style="display:flex;gap:2px;">
-                ${[1, 2, 3].map(d => `<div style="width:12px;height:3px;
-                  background:${d <= mission.difficulty ? theme.color + (selected && !locked ? '' : '60') : 'rgba(200,191,160,0.06)'};
-                  transition:all 0.2s;"></div>`).join('')}
-              </div>
-              <div style="font-size:9px;letter-spacing:1px;color:${selected && !locked ? theme.color : 'rgba(200,191,160,0.2)'};">
-                ${theme.symbol}</div>
-              ${completed ? `<div style="font-size:9px;color:#4a9e4a60;letter-spacing:1px;">COMPLETE</div>` : ''}
-              ${locked ? `<div style="font-size:9px;color:#c43030;letter-spacing:1px;font-weight:bold;">LOCKED</div>` : ''}
-            </div>
-            ${locked ? `<div style="font-size:8px;color:#c43030;letter-spacing:1px;margin-top:4px;opacity:0.7;">
-              ${this.getLockRequirement(mission)}</div>` : ''}
-          </div>
-        </div>
+        <!-- Mission detail modal -->
+        <div id="cm-modal" style="display:none;position:absolute;z-index:50;width:340px;
+          max-height:75vh;overflow-y:auto;
+          background:linear-gradient(160deg,rgba(14,12,8,0.97) 0%,rgba(10,10,14,0.97) 100%);
+          border:1px solid rgba(200,152,42,0.3);
+          box-shadow:0 0 40px rgba(0,0,0,0.8),0 0 20px rgba(200,152,42,0.08);
+          animation:cm-modal-in 0.18s ease-out;"></div>
       </div>
     `;
   }
@@ -345,94 +255,329 @@ export class MissionSelectScene implements GameSceneInterface {
     }).join('');
   }
 
-  private buildSkullModifiers(state: ReturnType<typeof getPlayerState>): string {
+  private buildMissionModal(mission: MissionDefinition, completed: boolean): string {
+    const state = getPlayerState();
+    const theme = DIFF_THEMES[mission.difficulty] || DIFF_THEMES[1];
+    const terrainLabel = MAP_TYPE_LABELS[mission.terrain?.mapType || 'outdoor'] || 'PLANETARY SURFACE';
     const activeIds = state.activeModifiers;
     const bonus = getModifierBonus(activeIds);
+
     return `
-      <div style="padding:16px 40px;border-top:1px solid rgba(200,152,42,0.08);
-        background:rgba(200,152,42,0.015);">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
-          <div style="font-size:10px;letter-spacing:3px;color:rgba(200,152,42,0.4);">SKULL MODIFIERS</div>
-          ${bonus > 0 ? `<div style="font-size:10px;color:#c8982a;letter-spacing:1px;">+${bonus} BONUS RP</div>` : ''}
+      <div style="padding:20px 22px 0;">
+        <!-- Header -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px;">
+          <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
+            color:#e8dcc0;letter-spacing:4px;line-height:1;">${mission.name.toUpperCase()}</div>
+          <button id="cm-modal-close" style="flex-shrink:0;background:transparent;border:none;
+            color:rgba(200,191,160,0.3);font-size:18px;cursor:pointer;padding:0 0 0 8px;
+            line-height:1;transition:color 0.15s;">✕</button>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${MODIFIERS.map(mod => {
-            const active = activeIds.includes(mod.id);
-            return `<button class="ms-skull-btn" data-mod="${mod.id}" title="${mod.description}" style="
-              display:flex;align-items:center;gap:6px;
-              padding:6px 12px;
-              background:${active ? 'rgba(200,152,42,0.12)' : 'rgba(200,191,160,0.02)'};
-              border:1px solid ${active ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.08)'};
-              color:${active ? '#c8982a' : '#5a5a4a'};
-              font-family:'Share Tech Mono',monospace;font-size:11px;
-              cursor:pointer;transition:all 0.2s;letter-spacing:1px;
-              ${active ? 'box-shadow:0 0 8px rgba(200,152,42,0.15);' : ''}
-            ">
-              <span style="font-size:14px;">${mod.icon}</span>
-              <span>${mod.name}</span>
-              <span style="font-size:9px;color:${active ? '#4a9e4a' : 'rgba(200,191,160,0.2)'};">+${mod.reqPointsBonus}</span>
-            </button>`;
-          }).join('')}
+
+        <!-- Threat row -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.4);">THREAT</div>
+            <div style="display:flex;gap:2px;">
+              ${[1,2,3].map(d => `<div style="width:20px;height:5px;
+                background:${d <= mission.difficulty ? theme.color : 'rgba(200,191,160,0.08)'};
+                ${d <= mission.difficulty ? `box-shadow:0 0 6px ${theme.color}40;` : ''}"></div>`).join('')}
+            </div>
+            <div style="font-size:9px;letter-spacing:2px;color:${theme.color};font-weight:bold;">${theme.label}</div>
+          </div>
+          <div style="width:1px;height:12px;background:rgba(200,191,160,0.1);"></div>
+          <div style="font-size:9px;letter-spacing:1px;color:rgba(200,191,160,0.35);">${terrainLabel}</div>
+          ${completed ? `<div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+            <div style="width:6px;height:6px;background:#4a9e4a;border-radius:50%;"></div>
+            <div style="font-size:9px;letter-spacing:1px;color:#4a9e4a;">PACIFIED</div>
+          </div>` : ''}
         </div>
+
+        <!-- Divider -->
+        <div style="height:1px;background:rgba(200,152,42,0.08);margin-bottom:14px;position:relative;">
+          <div style="position:absolute;inset:0;
+            background:linear-gradient(90deg,${theme.color},transparent);
+            opacity:0.25;animation:ms-border-trace 0.8s ease-out forwards;"></div>
+        </div>
+
+        <!-- Briefing -->
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:6px;">MISSION BRIEFING</div>
+        <p style="color:#a09880;font-size:12px;line-height:1.7;margin:0 0 16px;">${mission.description}</p>
+
+        <!-- Stat boxes -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+          ${this.buildStatBox('STARTING REQ', `${mission.startingGold}`, '#c8982a')}
+          ${this.buildStatBox('OBJECTIVES', `${mission.objectives.length}`, theme.color)}
+          ${this.buildStatBox('ENEMY CAMPS', `${mission.enemyCamps.length}`, '#c43030')}
+          ${this.buildStatBox('SUPPLY INT.', `${Math.round(mission.supplyDropIntervalMs / 1000)}s`, '#5a7a8a')}
+        </div>
+
+        <!-- Objectives -->
+        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">TACTICAL OBJECTIVES</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:${completed ? '0' : '20px'};">
+          ${mission.objectives.map((obj, i) => `
+            <div style="padding:8px 10px;background:rgba(200,152,42,0.03);
+              border-left:2px solid ${theme.color}40;
+              animation:ms-card-in 0.3s ease-out ${0.1 + i * 0.08}s both;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+                <div style="font-size:8px;letter-spacing:1px;color:${theme.color};
+                  background:${theme.color}15;padding:1px 5px;">${obj.type.toUpperCase()}</div>
+                <div style="font-size:8px;color:rgba(200,191,160,0.3);">+${obj.goldReward} REQ</div>
+              </div>
+              <div style="font-family:'Teko',sans-serif;font-size:14px;font-weight:500;
+                color:#c8bfa0;letter-spacing:1px;">${obj.name}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      ${completed ? `
+        <!-- Skull Modifiers -->
+        <div style="padding:12px 22px;border-top:1px solid rgba(200,152,42,0.08);
+          background:rgba(200,152,42,0.012);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);">SKULL MODIFIERS</div>
+            ${bonus > 0 ? `<div style="font-size:9px;color:#c8982a;">+${bonus} BONUS RP</div>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${MODIFIERS.map(mod => {
+              const active = activeIds.includes(mod.id);
+              return `<button class="ms-skull-btn" data-mod="${mod.id}" title="${mod.description}" style="
+                display:flex;align-items:center;gap:5px;
+                padding:5px 10px;
+                background:${active ? 'rgba(200,152,42,0.12)' : 'rgba(200,191,160,0.02)'};
+                border:1px solid ${active ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.08)'};
+                color:${active ? '#c8982a' : '#5a5a4a'};
+                font-family:'Share Tech Mono',monospace;font-size:10px;
+                cursor:pointer;transition:all 0.2s;letter-spacing:1px;
+                ${active ? 'box-shadow:0 0 6px rgba(200,152,42,0.15);' : ''}
+              ">
+                <span style="font-size:12px;">${mod.icon}</span>
+                <span>${mod.name}</span>
+                <span style="font-size:8px;color:${active ? '#4a9e4a' : 'rgba(200,191,160,0.2)'};">+${mod.reqPointsBonus}</span>
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <!-- Deploy bar -->
+      <div style="padding:14px 22px 18px;border-top:1px solid rgba(200,152,42,0.08);
+        background:linear-gradient(180deg,transparent,rgba(200,152,42,0.02));">
+        <button id="ms-deploy-btn" style="
+          width:100%;position:relative;overflow:hidden;
+          padding:12px 0;
+          background:linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%);
+          color:#c8982a;
+          border:1px solid rgba(200,152,42,0.4);
+          font-family:'Teko',sans-serif;font-size:20px;font-weight:600;
+          letter-spacing:6px;cursor:pointer;
+          transition:all 0.25s;
+          animation:ms-glow-pulse 3s ease-in-out infinite;
+          --ms-accent:rgba(200,152,42,0.3);
+        ">DEPLOY</button>
       </div>
     `;
   }
 
   private buildStatBox(label: string, value: string, color: string): string {
     return `
-      <div style="padding:10px 12px;background:rgba(200,191,160,0.02);
+      <div style="padding:8px 10px;background:rgba(200,191,160,0.02);
         border-left:2px solid ${color}30;">
-        <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.3);margin-bottom:4px;">
+        <div style="font-size:8px;letter-spacing:2px;color:rgba(200,191,160,0.3);margin-bottom:2px;">
           ${label}</div>
-        <div style="font-family:'Teko',sans-serif;font-size:22px;font-weight:600;
+        <div style="font-family:'Teko',sans-serif;font-size:18px;font-weight:600;
           color:${color};letter-spacing:1px;">${value}</div>
       </div>
     `;
   }
 
-  private wireEvents(state: ReturnType<typeof getPlayerState>): void {
-    if (!this.container) return;
+  private renderNodes(): void {
+    const container = this.container?.querySelector('#cm-nodes') as HTMLElement | null;
+    if (!container) return;
 
-    // Mission list items
-    this.container.querySelectorAll('.ms-mission-item').forEach(el => {
-      const idx = parseInt((el as HTMLElement).dataset.idx || '0');
-      const locked = (el as HTMLElement).dataset.locked === 'true';
-      if (locked) return; // Skip locked missions
-      el.addEventListener('click', () => {
-        this.selectedMissionIdx = idx;
-        this.shutdown();
-        this.create();
-      });
-      el.addEventListener('mouseenter', () => {
-        if (idx !== this.selectedMissionIdx) {
-          (el as HTMLElement).style.background = 'rgba(200,152,42,0.03)';
-        }
-      });
-      el.addEventListener('mouseleave', () => {
-        if (idx !== this.selectedMissionIdx) {
-          (el as HTMLElement).style.background = 'transparent';
-        }
-      });
+    const state = getPlayerState();
+    const missionMap = new Map(MISSIONS.map(m => [m.id, m]));
+
+    container.innerHTML = CAMPAIGN_NODES.map((node, idx) => {
+      const mission = missionMap.get(node.missionId);
+      if (!mission) return '';
+
+      const theme = DIFF_THEMES[mission.difficulty] || DIFF_THEMES[1];
+      const completed = state.completedMissions.has(mission.id);
+      const isSpaceHulk = mission.terrain?.mapType === 'space_hulk';
+      const symbol = isSpaceHulk ? '◈' : mission.difficulty >= 4 ? '✦' : '⊕';
+      const selected = this.selectedMissionId === mission.id;
+
+      const nodeColor = completed ? '#4a9e4a' : theme.color;
+      const size = mission.difficulty >= 4 ? 62 : mission.difficulty >= 3 ? 54 : 48;
+
+      return `
+        <div class="cm-node" data-mission="${mission.id}" style="
+          position:absolute;
+          left:${node.x}%;top:${node.y}%;
+          width:${size}px;height:${size}px;
+          transform:translate(-50%,-50%);
+          border-radius:${isSpaceHulk ? '4px' : '50%'};
+          border:${selected ? `2px solid ${nodeColor}` : `1px solid ${nodeColor}60`};
+          background:radial-gradient(circle,${nodeColor}${selected ? '28' : '14'} 0%,transparent 70%);
+          box-shadow:0 0 ${selected ? '24px' : '12px'} ${nodeColor}${selected ? '60' : '30'};
+          ${!completed ? `animation:cm-node-pulse ${2.5 + idx * 0.3}s ease-in-out infinite;` : ''}
+          display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+          cursor:pointer;user-select:none;
+          animation-delay:${idx * 0.15}s;
+          transition:box-shadow 0.2s,border-color 0.2s;
+        ">
+          ${!completed ? `
+            <div class="cm-node-dot" style="background:${nodeColor};"></div>
+            <div class="cm-node-dot" style="background:${nodeColor};animation-delay:-1.33s;"></div>
+            <div class="cm-node-dot" style="background:${nodeColor};animation-delay:-2.66s;"></div>
+          ` : `
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+              font-size:${size * 0.4}px;color:${nodeColor}40;pointer-events:none;">✦</div>
+          `}
+          <div style="position:relative;z-index:1;font-size:${size >= 54 ? '14' : '12'}px;color:${nodeColor};line-height:1;">${symbol}</div>
+          <div style="position:relative;z-index:1;font-family:'Teko',sans-serif;font-size:9px;
+            color:${nodeColor}cc;letter-spacing:1px;text-align:center;line-height:1.2;
+            max-width:${size + 20}px;white-space:nowrap;">
+            ${mission.name.toUpperCase().substring(0, 14)}${mission.name.length > 14 ? '…' : ''}
+          </div>
+          <div style="position:relative;z-index:1;display:flex;gap:2px;margin-top:1px;">
+            ${[1,2,3].map(d => `<div style="width:8px;height:2px;
+              background:${d <= mission.difficulty ? nodeColor : nodeColor + '20'};"></div>`).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  private showModal(missionId: string): void {
+    const modal = this.container?.querySelector('#cm-modal') as HTMLElement | null;
+    const mapEl = this.container?.querySelector('#cm-map') as HTMLElement | null;
+    if (!modal || !mapEl) return;
+
+    const mission = MISSIONS.find(m => m.id === missionId);
+    if (!mission) return;
+
+    this.selectedMissionId = missionId;
+    this.renderNodes();
+
+    const state = getPlayerState();
+    const completed = state.completedMissions.has(missionId);
+    modal.innerHTML = this.buildMissionModal(mission, completed);
+    modal.style.display = 'block';
+
+    // Position modal near the node, but keep it on-screen
+    const node = CAMPAIGN_NODES.find(n => n.missionId === missionId);
+    if (node) {
+      const mapRect = mapEl.getBoundingClientRect();
+      const mapW = mapRect.width || window.innerWidth;
+      const mapH = mapRect.height || (window.innerHeight - 50);
+
+      const nodeXpx = (node.x / 100) * mapW;
+      const nodeYpx = (node.y / 100) * mapH;
+
+      const modalW = 340;
+      const gap = 20;
+
+      // Horizontal: prefer right, flip left if near right edge
+      let left = nodeXpx + gap;
+      if (left + modalW > mapW - 20) left = nodeXpx - modalW - gap;
+      left = Math.max(10, Math.min(left, mapW - modalW - 10));
+
+      // Vertical: prefer center-aligned to node, shift up if near bottom
+      let top = nodeYpx - 80;
+      const approxH = completed ? 560 : 440;
+      if (top + approxH > mapH - 20) top = mapH - approxH - 20;
+      top = Math.max(10, top);
+
+      modal.style.left = `${left}px`;
+      modal.style.top = `${top}px`;
+    }
+
+    this.wireModalEvents(mission, completed);
+  }
+
+  private hideModal(): void {
+    const modal = this.container?.querySelector('#cm-modal') as HTMLElement | null;
+    if (modal) modal.style.display = 'none';
+    this.selectedMissionId = null;
+    this.renderNodes();
+  }
+
+  private wireModalEvents(mission: MissionDefinition, completed: boolean): void {
+    const modal = this.container?.querySelector('#cm-modal');
+    if (!modal) return;
+
+    // Close button
+    modal.querySelector('#cm-modal-close')?.addEventListener('click', e => {
+      e.stopPropagation();
+      this.hideModal();
     });
 
-    // Deploy
-    const deployBtn = this.container.querySelector('#ms-deploy-btn');
+    // Deploy button
+    const deployBtn = modal.querySelector('#ms-deploy-btn') as HTMLElement | null;
     if (deployBtn) {
       deployBtn.addEventListener('mouseenter', () => {
-        (deployBtn as HTMLElement).style.background = 'linear-gradient(180deg,rgba(200,152,42,0.25) 0%,rgba(200,152,42,0.1) 100%)';
-        (deployBtn as HTMLElement).style.borderColor = 'rgba(200,152,42,0.7)';
-        (deployBtn as HTMLElement).style.letterSpacing = '10px';
+        deployBtn.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.25) 0%,rgba(200,152,42,0.1) 100%)';
+        deployBtn.style.borderColor = 'rgba(200,152,42,0.7)';
+        deployBtn.style.letterSpacing = '10px';
       });
       deployBtn.addEventListener('mouseleave', () => {
-        (deployBtn as HTMLElement).style.background = 'linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%)';
-        (deployBtn as HTMLElement).style.borderColor = 'rgba(200,152,42,0.4)';
-        (deployBtn as HTMLElement).style.letterSpacing = '6px';
+        deployBtn.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%)';
+        deployBtn.style.borderColor = 'rgba(200,152,42,0.4)';
+        deployBtn.style.letterSpacing = '6px';
       });
       deployBtn.addEventListener('click', () => {
-        const mission = MISSIONS[this.selectedMissionIdx];
         getSceneManager().start('DropSiteScene', { mission });
       });
     }
+
+    // Skull modifier toggles
+    if (completed) {
+      modal.querySelectorAll('.ms-skull-btn').forEach(el => {
+        const modId = (el as HTMLElement).dataset.mod || '';
+        el.addEventListener('click', () => {
+          toggleModifier(modId);
+          savePlayerState();
+          // Re-render modal in place
+          const state = getPlayerState();
+          const isCompleted = state.completedMissions.has(mission.id);
+          (this.container?.querySelector('#cm-modal') as HTMLElement).innerHTML =
+            this.buildMissionModal(mission, isCompleted);
+          this.wireModalEvents(mission, isCompleted);
+        });
+      });
+    }
+  }
+
+  private wireEvents(): void {
+    if (!this.container) return;
+    const state = getPlayerState();
+
+    // Render nodes after DOM is ready
+    this.renderNodes();
+
+    // Node clicks
+    this.container.querySelector('#cm-nodes')?.addEventListener('click', e => {
+      const target = (e.target as HTMLElement).closest('.cm-node') as HTMLElement | null;
+      if (target?.dataset.mission) {
+        if (this.selectedMissionId === target.dataset.mission) {
+          this.hideModal();
+        } else {
+          this.showModal(target.dataset.mission);
+        }
+      }
+    });
+
+    // Click outside modal to close
+    this.container.querySelector('#cm-map')?.addEventListener('click', e => {
+      const modal = this.container?.querySelector('#cm-modal') as HTMLElement | null;
+      const target = e.target as HTMLElement;
+      if (modal && modal.style.display !== 'none' &&
+          !modal.contains(target) && !target.closest('.cm-node')) {
+        this.hideModal();
+      }
+    });
 
     // Deck selector
     this.container.querySelectorAll('.ms-deck-btn').forEach(el => {
@@ -444,42 +589,64 @@ export class MissionSelectScene implements GameSceneInterface {
       });
     });
 
-    // Edit Decks / Tech Trees
+    // Edit Decks
     this.container.querySelector('#ms-edit-decks')?.addEventListener('click', () => {
       getSceneManager().start('DeckEditScene');
     });
-    this.container.querySelector('#ms-tech-trees')?.addEventListener('click', () => {
-      getSceneManager().start('TechTreeScene');
-    });
-    this.container.querySelector('#ms-supply-depot')?.addEventListener('click', () => {
-      getSceneManager().start('ShopScene');
-    });
-    this.container.querySelector('#ms-ship')?.addEventListener('click', () => {
-      getSceneManager().start('ShipScene');
-    });
 
-    // Skull modifier toggles
-    this.container.querySelectorAll('.ms-skull-btn').forEach(el => {
-      const modId = (el as HTMLElement).dataset.mod || '';
+    // Command dropdown
+    const commandBtn = this.container.querySelector('#ms-command-btn') as HTMLElement | null;
+    const dropdown = this.container.querySelector('#ms-command-dropdown') as HTMLElement | null;
+    if (commandBtn && dropdown) {
+      commandBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        this.commandDropdownOpen = !this.commandDropdownOpen;
+        dropdown.style.display = this.commandDropdownOpen ? 'block' : 'none';
+      });
+      // Close dropdown on outside click
+      document.addEventListener('click', this._closeDropdown);
+    }
+
+    // Command dropdown items
+    this.container.querySelectorAll('.ms-cmd-item').forEach(el => {
+      const scene = (el as HTMLElement).dataset.scene || '';
+      el.addEventListener('mouseenter', () => {
+        (el as HTMLElement).style.background = 'rgba(90,122,138,0.1)';
+        (el as HTMLElement).style.color = '#7a9aaa';
+      });
+      el.addEventListener('mouseleave', () => {
+        (el as HTMLElement).style.background = 'transparent';
+        (el as HTMLElement).style.color = '#5a7a8a';
+      });
       el.addEventListener('click', () => {
-        toggleModifier(modId);
-        savePlayerState();
-        this.shutdown();
-        this.create();
+        if (scene) getSceneManager().start(scene);
       });
     });
 
-    // Hover effects on utility buttons
-    ['#ms-edit-decks', '#ms-tech-trees', '#ms-supply-depot', '#ms-ship'].forEach(sel => {
+    // Hover effects on top bar buttons
+    ['#ms-edit-decks', '#ms-command-btn'].forEach(sel => {
       const btn = this.container?.querySelector(sel) as HTMLElement | null;
       if (btn) {
-        btn.addEventListener('mouseenter', () => { btn.style.borderColor = 'rgba(90,122,138,0.6)'; btn.style.color = '#7a9aaa'; });
-        btn.addEventListener('mouseleave', () => { btn.style.borderColor = 'rgba(90,122,138,0.3)'; btn.style.color = '#5a7a8a'; });
+        btn.addEventListener('mouseenter', () => {
+          btn.style.borderColor = 'rgba(90,122,138,0.6)';
+          btn.style.color = '#7a9aaa';
+        });
+        btn.addEventListener('mouseleave', () => {
+          btn.style.borderColor = 'rgba(90,122,138,0.3)';
+          btn.style.color = '#5a7a8a';
+        });
       }
     });
   }
 
+  private _closeDropdown = (): void => {
+    this.commandDropdownOpen = false;
+    const dropdown = this.container?.querySelector('#ms-command-dropdown') as HTMLElement | null;
+    if (dropdown) dropdown.style.display = 'none';
+  };
+
   shutdown(): void {
+    document.removeEventListener('click', this._closeDropdown);
     if (this.container) {
       this.container.remove();
       this.container = null;
