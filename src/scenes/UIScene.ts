@@ -22,6 +22,7 @@ import { CARD_DATABASE } from '../cards/CardDatabase';
 import { getHandSizeBonus, getShipOrdnanceSlots, getShipOrdnanceCharges } from '../ship/ShipState';
 import { ShipOrdnanceBar } from '../ui/ShipOrdnanceBar';
 import { getShipOrdnance } from '../state/PlayerState';
+import { MutatorHUD } from '../ui/MutatorHUD';
 
 /**
  * UIScene — manages deck, hand, gold, and all HUD logic.
@@ -71,6 +72,7 @@ export class UIScene implements GameSceneInterface {
 
   // Deck gauge element (Feature 3)
   private deckGaugeEl: HTMLElement | null = null;
+  private mutatorHUD: MutatorHUD | null = null;
 
   create(data?: { mission?: MissionDefinition; deck?: Deck }): void {
     this.mission = data?.mission || null;
@@ -100,6 +102,7 @@ export class UIScene implements GameSceneInterface {
     this.minimap = new Minimap();
     this.cardTooltip = new CardTooltip();
     this.keybindingOverlay = new KeybindingOverlay();
+    this.mutatorHUD = new MutatorHUD();
 
     // Ship ordnance bar
     const ordnanceIds = getShipOrdnance();
@@ -1489,6 +1492,7 @@ export class UIScene implements GameSceneInterface {
     if (this.minimap) { this.minimap.destroy(); this.minimap = null; }
     if (this.cardTooltip) { this.cardTooltip.destroy(); this.cardTooltip = null; }
     if (this.keybindingOverlay) { this.keybindingOverlay.destroy(); this.keybindingOverlay = null; }
+    if (this.mutatorHUD) { this.mutatorHUD.destroy(); this.mutatorHUD = null; }
 
     if (this.container) {
       this.container.remove();

@@ -94,6 +94,23 @@ export const CARDS_PER_PACK = 3;
 export const SHIP_ORDNANCE_BASE_SLOTS = 2;
 export const SHIP_ORDNANCE_BASE_CHARGES = 2;
 
+// Environment mutator constants
+export const IRON_RAIN_INTERVAL_MS = 25000;
+export const IRON_RAIN_DAMAGE = 20;
+export const IRON_RAIN_RADIUS = 3;
+export const IRON_RAIN_WARNING_MS = 2000;
+
+export const TOXIC_ATMOSPHERE_TICK_MS = 3000;
+export const TOXIC_ATMOSPHERE_DAMAGE = 3;
+export const TOXIC_ATMOSPHERE_SAFE_RADIUS = 5;
+
+export const AMBUSH_SPAWN_INTERVAL_MS = 40000;
+export const AMBUSH_SPAWN_COUNT = 3;
+export const AMBUSH_SPAWN_OFFSET = 4;
+
+export const BLOOD_TITHE_KILL_GOLD = 3;
+export const BLOOD_TITHE_DEATH_GOLD_LOSS = 5;
+
 // Procedural PoI / Pack generation
 export const POI_BASE_COUNT = 4;
 export const POI_PER_DIFFICULTY = 2;

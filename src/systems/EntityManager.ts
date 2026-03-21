@@ -13,10 +13,12 @@ import { applyTechTreeBonuses } from '../state/TechTreeEffects';
 import { LevelBadgeComponent } from '../components/LevelBadgeComponent';
 import { getActiveModifiers } from '../state/PlayerState';
 import { getCachedMergedEffects } from '../state/DifficultyModifiers';
+import { EnvironmentEffects } from './EnvironmentModifierSystem';
 
 export class EntityManager {
   private entities: Map<string, Entity> = new Map();
   private validator: PlacementValidator;
+  private envEffects: EnvironmentEffects | null = null;
   /** Cached array of all entities, invalidated on add/remove. */
   private cachedAll: Entity[] | null = null;
   /** Team-partitioned caches, invalidated alongside cachedAll. */
@@ -44,6 +46,10 @@ export class EntityManager {
     EventBus.on('unit-trained', this.handleUnitTrained, this);
   }
 
+  setEnvironmentEffects(effects: EnvironmentEffects): void {
+    this.envEffects = effects;
+  }
+
   spawnUnit(
     tileX: number,
     tileY: number,
@@ -55,11 +61,20 @@ export class EntityManager {
     let effectiveStats = stats;
     if (team === 'enemy') {
       const effects = getCachedMergedEffects(getActiveModifiers);
-      if (effects.enemyHpMult || effects.enemyDamageMult || effects.enemySpeedMult) {
+      const envHpMult = this.envEffects?.enemyHpMult ?? 1;
+      const envDmgMult = this.envEffects?.enemyDamageMult ?? 1;
+      const envSpdMult = this.envEffects?.enemySpeedMult ?? 1;
+      const skullHp = effects.enemyHpMult ?? 1;
+      const skullDmg = effects.enemyDamageMult ?? 1;
+      const skullSpd = effects.enemySpeedMult ?? 1;
+      const totalHp = skullHp * envHpMult;
+      const totalDmg = skullDmg * envDmgMult;
+      const totalSpd = skullSpd * envSpdMult;
+      if (totalHp !== 1 || totalDmg !== 1 || totalSpd !== 1) {
         effectiveStats = { ...stats };
-        if (effects.enemyHpMult) effectiveStats.maxHp = Math.round(stats.maxHp * effects.enemyHpMult);
-        if (effects.enemyDamageMult) effectiveStats.attackDamage = Math.round(stats.attackDamage * effects.enemyDamageMult);
-        if (effects.enemySpeedMult) effectiveStats.speed = stats.speed * effects.enemySpeedMult;
+        if (totalHp !== 1) effectiveStats.maxHp = Math.round(stats.maxHp * totalHp);
+        if (totalDmg !== 1) effectiveStats.attackDamage = Math.round(stats.attackDamage * totalDmg);
+        if (totalSpd !== 1) effectiveStats.speed = stats.speed * totalSpd;
       }
     }
 
@@ -95,8 +110,14 @@ export class EntityManager {
       return null;
     }
 
+    // Apply reinforced_walls multiplier to enemy buildings
+    let effectiveHp = stats.maxHp;
+    if (team === 'enemy' && this.envEffects) {
+      effectiveHp = Math.round(stats.maxHp * this.envEffects.enemyBuildingHpMult);
+    }
+
     const building = new Building(tileX, tileY, buildingType, stats, team);
-    building.addComponent('health', new HealthComponent(building, stats.maxHp));
+    building.addComponent('health', new HealthComponent(building, effectiveHp));
 
     if (stats.attackDamage && stats.attackRange && stats.attackCooldown) {
       building.addComponent(

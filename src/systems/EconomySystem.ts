@@ -17,6 +17,7 @@ export class EconomySystem {
     EventBus.on('objective-completed', this.onObjectiveCompleted, this);
     EventBus.on('supply-drop', this.onSupplyDrop, this);
     EventBus.on('card-played', this.onCardPlayed, this);
+    EventBus.on('mutator-gold', this.onMutatorGold, this);
   }
 
   getGold(): number {
@@ -77,11 +78,21 @@ export class EconomySystem {
     this.addGold(gold);
   }
 
+  private onMutatorGold = ({ amount }: { amount: number; reason: string }): void => {
+    if (amount > 0) {
+      this.addGold(amount);
+    } else if (amount < 0) {
+      this.gold = Math.max(0, this.gold + amount);
+      EventBus.emit('gold-changed', { amount, total: this.gold });
+    }
+  };
+
   destroy(): void {
     EventBus.off('entity-died', this.onEntityDied, this);
     EventBus.off('gold-gathered', this.onGoldGathered, this);
     EventBus.off('objective-completed', this.onObjectiveCompleted, this);
     EventBus.off('supply-drop', this.onSupplyDrop, this);
     EventBus.off('card-played', this.onCardPlayed, this);
+    EventBus.off('mutator-gold', this.onMutatorGold, this);
   }
 }

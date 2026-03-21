@@ -141,7 +141,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'flanking',
     mapType: 'outdoor',
-    allowedModifiers: ['ork_frenzy', 'armored_advance'],
+    allowedModifiers: ['ork_frenzy', 'armored_advance', 'blood_tithe', 'elite_only', 'iron_rain'],
   },
   {
     id: 'destroy_and_recover',
@@ -156,7 +156,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'linear',
     mapType: 'outdoor',
-    allowedModifiers: ['dense_fog', 'night_raid'],
+    allowedModifiers: ['dense_fog', 'night_raid', 'ambush_spawns', 'scrapyard', 'warp_interference'],
   },
   {
     id: 'hold_and_strike',
@@ -171,7 +171,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'encircling',
     mapType: 'outdoor',
-    allowedModifiers: ['ork_frenzy', 'supply_shortage'],
+    allowedModifiers: ['ork_frenzy', 'supply_shortage', 'killzone', 'iron_rain', 'reinforced_walls'],
   },
   {
     id: 'activate_sequence',
@@ -186,7 +186,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'flanking',
     mapType: 'any',
-    allowedModifiers: ['dense_fog', 'night_raid'],
+    allowedModifiers: ['dense_fog', 'night_raid', 'toxic_atmosphere', 'rapid_deployment', 'warp_interference'],
   },
   {
     id: 'scavenge_and_extract',
@@ -200,7 +200,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'linear',
     mapType: 'outdoor',
-    allowedModifiers: ['supply_shortage', 'armored_advance'],
+    allowedModifiers: ['supply_shortage', 'armored_advance', 'blood_tithe', 'scrapyard', 'rapid_deployment'],
   },
   {
     id: 'deep_infiltration',
@@ -215,7 +215,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'linear',
     mapType: 'space_hulk',
-    allowedModifiers: ['dense_fog'],
+    allowedModifiers: ['dense_fog', 'ambush_spawns', 'toxic_atmosphere', 'killzone'],
   },
   {
     id: 'total_purge',
@@ -231,7 +231,7 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     ],
     campLayout: 'encircling',
     mapType: 'outdoor',
-    allowedModifiers: ['ork_frenzy', 'armored_advance', 'night_raid'],
+    allowedModifiers: ['ork_frenzy', 'armored_advance', 'night_raid', 'elite_only', 'iron_rain', 'reinforced_walls'],
   },
 ];
 
