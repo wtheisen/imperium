@@ -16,6 +16,10 @@ const HEIGHT_RANGES: Record<number, [number, number]> = {
   [TerrainType.WATER]:       [-0.12, -0.08],
   [TerrainType.METAL_FLOOR]: [0.0,   0.0],
   [TerrainType.HULL_WALL]:   [0.3,   0.4],
+  [TerrainType.LAVA]:        [-0.10, -0.05],
+  [TerrainType.ICE]:         [0.0,   0.04],
+  [TerrainType.SAND]:        [0.0,   0.06],
+  [TerrainType.RUBBLE]:      [0.02,  0.15],
 };
 
 /**
@@ -34,6 +38,10 @@ export class TileMapMesh {
   private waterMesh: THREE.Mesh | null = null;
   private waterTexture: THREE.Texture | null = null;
 
+  /** Lava glow overlay mesh */
+  private lavaMesh: THREE.Mesh | null = null;
+  private lavaTexture: THREE.Texture | null = null;
+
   /** Height map: [y][x] = elevation Y offset */
   private heightMap: number[][] = [];
   private terrainGrid: TerrainType[][] = [];
@@ -47,6 +55,7 @@ export class TileMapMesh {
     this.buildHeightMap(terrainGrid);
     this.buildTerrainMesh(terrainGrid);
     this.buildWaterOverlay(terrainGrid);
+    this.buildLavaOverlay(terrainGrid);
 
     // Load LPC tile images async, then regenerate the map texture
     loadTerrainTileset().then(() => {
@@ -288,6 +297,63 @@ export class TileMapMesh {
     this.group.add(this.waterMesh);
   }
 
+  // ── Lava overlay ───────────────────────────────────────────────────
+
+  private buildLavaOverlay(terrain: TerrainType[][]): void {
+    const lavaTiles: { x: number; y: number }[] = [];
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        if (terrain[y]?.[x] === TerrainType.LAVA) {
+          lavaTiles.push({ x, y });
+        }
+      }
+    }
+    if (lavaTiles.length === 0) return;
+
+    const totalVerts = lavaTiles.length * 4;
+    const positions = new Float32Array(totalVerts * 3);
+    const uvs = new Float32Array(totalVerts * 2);
+    const indices: number[] = [];
+    const lavaY = -0.03;
+
+    for (let i = 0; i < lavaTiles.length; i++) {
+      const { x, y } = lavaTiles[i];
+      const vi = i * 4;
+      positions[vi * 3]     = x - 0.5; positions[vi * 3 + 1] = lavaY; positions[vi * 3 + 2] = y - 0.5;
+      positions[(vi+1) * 3] = x + 0.5; positions[(vi+1) * 3 + 1] = lavaY; positions[(vi+1) * 3 + 2] = y - 0.5;
+      positions[(vi+2) * 3] = x - 0.5; positions[(vi+2) * 3 + 1] = lavaY; positions[(vi+2) * 3 + 2] = y + 0.5;
+      positions[(vi+3) * 3] = x + 0.5; positions[(vi+3) * 3 + 1] = lavaY; positions[(vi+3) * 3 + 2] = y + 0.5;
+
+      uvs[vi * 2]     = 0; uvs[vi * 2 + 1] = 0;
+      uvs[(vi+1) * 2] = 1; uvs[(vi+1) * 2 + 1] = 0;
+      uvs[(vi+2) * 2] = 0; uvs[(vi+2) * 2 + 1] = 1;
+      uvs[(vi+3) * 2] = 1; uvs[(vi+3) * 2 + 1] = 1;
+
+      indices.push(vi, vi + 2, vi + 1);
+      indices.push(vi + 1, vi + 2, vi + 3);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff4400,
+      emissive: 0xff2200,
+      emissiveIntensity: 0.6,
+      roughness: 0.3,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.65,
+    });
+
+    this.lavaMesh = new THREE.Mesh(geometry, material);
+    this.lavaMesh.frustumCulled = false;
+    this.group.add(this.lavaMesh);
+  }
+
   // ── Water animation ─────────────────────────────────────────────────
 
   animateWater(deltaMs: number): void {
@@ -349,6 +415,10 @@ export class TileMapMesh {
     if (this.waterMesh) {
       this.waterMesh.geometry.dispose();
       (this.waterMesh.material as THREE.Material).dispose();
+    }
+    if (this.lavaMesh) {
+      this.lavaMesh.geometry.dispose();
+      (this.lavaMesh.material as THREE.Material).dispose();
     }
     if (this.mapTexture) this.mapTexture.dispose();
     this.terrainTextures.dispose();

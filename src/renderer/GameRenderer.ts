@@ -11,6 +11,7 @@ import { Entity } from '../entities/Entity';
 import { EventBus } from '../EventBus';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { SpriteSheetManager } from './sprites/SpriteSheetManager';
+import { BIOME_CONFIGS, BiomeType } from '../map/BiomeConfig';
 
 /**
  * Top-level three.js renderer. Owns the WebGL canvas, scene, camera controller,
@@ -115,7 +116,8 @@ export class GameRenderer {
   buildTileMap(
     terrainGrid: TerrainType[][],
     protectedPositions?: { x: number; y: number; radius: number }[],
-    mapType?: string
+    mapType?: string,
+    biome?: BiomeType
   ): void {
     if (this.tileMap) {
       this.scene.remove(this.tileMap.group);
@@ -138,20 +140,27 @@ export class GameRenderer {
       terrainGrid,
       this.tileMap.getHeightMap(),
       zones,
-      12345
+      12345,
+      biome
     );
     this.scene.add(this.decorations.group);
 
     // Create fog renderer now that we have a tile map
     this.fogRenderer = new FogRenderer(this.tileMap, this.scene, this.decorations);
 
-    // Adjust lighting for Space Hulk maps — darker, cooler atmosphere
+    // Apply biome or map-type lighting
     if (mapType === 'space_hulk') {
       this.ambientLight.intensity = 0.25;
       this.sunLight.color.set(0xccddff);
+      this.sunLight.intensity = 0.6;
+      this.renderer.setClearColor(0x0d0d15);
     } else {
-      this.ambientLight.intensity = 0.5;
-      this.sunLight.color.set(0xffeedd);
+      const biomeConfig = BIOME_CONFIGS[biome ?? 'temperate'];
+      this.ambientLight.color.set(biomeConfig.ambientColor);
+      this.ambientLight.intensity = biomeConfig.ambientIntensity;
+      this.sunLight.color.set(biomeConfig.sunColor);
+      this.sunLight.intensity = biomeConfig.sunIntensity;
+      this.renderer.setClearColor(biomeConfig.clearColor);
     }
   }
 

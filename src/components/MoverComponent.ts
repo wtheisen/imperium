@@ -24,6 +24,9 @@ export class MoverComponent implements Component {
   public fracTileX: number;
   public fracTileY: number;
 
+  /** External speed multiplier (e.g. 0.6 for 40% slow on ice). Reset each tick by TerrainEffectSystem. */
+  public speedMultiplier: number = 1.0;
+
   constructor(unit: Unit, speed: number) {
     this.unit = unit;
     this.moveSpeed = speed;
@@ -86,8 +89,8 @@ export class MoverComponent implements Component {
     const dy = target.y - this.fracTileY;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Speed in tiles/second (convert from the old pixel-based speed)
-    const tilesPerSecond = this.moveSpeed * 0.8;
+    // Speed in tiles/second (convert from the old pixel-based speed), apply terrain multiplier
+    const tilesPerSecond = this.moveSpeed * 0.8 * this.speedMultiplier;
     const step = tilesPerSecond * (delta / 1000);
 
     if (dist <= step) {

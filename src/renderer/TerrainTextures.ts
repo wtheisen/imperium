@@ -9,12 +9,81 @@ function clamp(v: number, lo: number, hi: number): number {
 // ── LPC tile image data ───────────────────────────────────────────────
 
 const TILE_PX = 32;
-const NUM_TERRAIN_TYPES = 8;
+const NUM_PNG_TILES = 8;
+const NUM_TERRAIN_TYPES = 12;
 
 /** Per-terrain-type canvases (32x32 each) for fast drawImage stamping */
 let tileCanvases: HTMLCanvasElement[] | null = null;
 /** Per-terrain-type pixel data for per-pixel border blending */
 let tilePixels: Uint8ClampedArray[] | null = null;
+
+/** Generate a procedural 32x32 tile canvas for new terrain types */
+function generateProceduralTile(terrainType: TerrainType): { canvas: HTMLCanvasElement; pixels: Uint8ClampedArray } {
+  const canvas = document.createElement('canvas');
+  canvas.width = TILE_PX;
+  canvas.height = TILE_PX;
+  const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.createImageData(TILE_PX, TILE_PX);
+  const d = imageData.data;
+
+  for (let y = 0; y < TILE_PX; y++) {
+    for (let x = 0; x < TILE_PX; x++) {
+      const idx = (y * TILE_PX + x) * 4;
+      const nx = x / TILE_PX;
+      const ny = y / TILE_PX;
+
+      let r: number, g: number, b: number;
+
+      switch (terrainType) {
+        case TerrainType.LAVA: {
+          // Dark crust with bright orange/red veins
+          const n = fbm(nx * 6, ny * 6, 3, 55555);
+          const vein = Math.pow(Math.max(0, n - 0.3) * 2.5, 0.5);
+          r = clamp(40 + vein * 215, 0, 255);
+          g = clamp(15 + vein * 120, 0, 255);
+          b = clamp(10 + vein * 20, 0, 255);
+          break;
+        }
+        case TerrainType.ICE: {
+          // White-blue with subtle cracks
+          const n = fbm(nx * 5, ny * 5, 3, 66666);
+          const crack = Math.abs(n - 0.5) < 0.03 ? 0.6 : 1.0;
+          r = clamp((180 + n * 40) * crack, 0, 255);
+          g = clamp((195 + n * 35) * crack, 0, 255);
+          b = clamp((220 + n * 30) * crack, 0, 255);
+          break;
+        }
+        case TerrainType.SAND: {
+          // Tan/yellow with subtle grain
+          const n = fbm(nx * 8, ny * 8, 2, 77777);
+          r = clamp(190 + n * 30, 0, 255);
+          g = clamp(165 + n * 25, 0, 255);
+          b = clamp(110 + n * 20, 0, 255);
+          break;
+        }
+        case TerrainType.RUBBLE: {
+          // Gray concrete/rubble with debris variation
+          const n = fbm(nx * 7, ny * 7, 3, 88888);
+          const detail = fbm(nx * 15, ny * 15, 2, 88889);
+          r = clamp(95 + n * 40 + detail * 15, 0, 255);
+          g = clamp(90 + n * 35 + detail * 12, 0, 255);
+          b = clamp(85 + n * 30 + detail * 10, 0, 255);
+          break;
+        }
+        default:
+          r = 128; g = 128; b = 128;
+      }
+
+      d[idx] = r;
+      d[idx + 1] = g;
+      d[idx + 2] = b;
+      d[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return { canvas, pixels: imageData.data };
+}
 
 /** Load the LPC terrain tileset strip and extract per-tile data. */
 export function loadTerrainTileset(): Promise<void> {
@@ -29,12 +98,12 @@ export function loadTerrainTileset(): Promise<void> {
 
       tileCanvases = [];
       tilePixels = [];
-      for (let i = 0; i < NUM_TERRAIN_TYPES; i++) {
-        // Extract pixel data
+
+      // Extract tiles from the PNG strip (first 8)
+      for (let i = 0; i < NUM_PNG_TILES; i++) {
         const data = srcCtx.getImageData(i * TILE_PX, 0, TILE_PX, TILE_PX);
         tilePixels.push(data.data);
 
-        // Create a small canvas for this tile (for fast drawImage stamping)
         const tc = document.createElement('canvas');
         tc.width = TILE_PX;
         tc.height = TILE_PX;
@@ -42,6 +111,15 @@ export function loadTerrainTileset(): Promise<void> {
         tctx.putImageData(data, 0, 0);
         tileCanvases.push(tc);
       }
+
+      // Generate procedural tiles for new terrain types (8-11)
+      const newTypes = [TerrainType.LAVA, TerrainType.ICE, TerrainType.SAND, TerrainType.RUBBLE];
+      for (const tt of newTypes) {
+        const { canvas, pixels } = generateProceduralTile(tt);
+        tileCanvases.push(canvas);
+        tilePixels.push(pixels);
+      }
+
       resolve();
     };
     img.onerror = () => reject(new Error('Failed to load terrain-tiles.png'));
@@ -199,6 +277,10 @@ export function generateBlendedMapTexture(
       [TerrainType.FOREST]:      '#2a4520',
       [TerrainType.METAL_FLOOR]: '#404448',
       [TerrainType.HULL_WALL]:   '#2a2c32',
+      [TerrainType.LAVA]:        '#8a2010',
+      [TerrainType.ICE]:         '#b8c8dd',
+      [TerrainType.SAND]:        '#bea870',
+      [TerrainType.RUBBLE]:      '#6a6560',
     };
 
     for (let ty = 0; ty < mapHeight; ty++) {

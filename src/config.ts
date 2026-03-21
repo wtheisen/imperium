@@ -121,3 +121,9 @@ export const POI_MIN_DIST_FROM_MINE = 4;
 export const PACK_BASE_COUNT = 2;
 export const PACK_PER_DIFFICULTY = 1;
 export const PACK_MIN_DIST_FROM_START = 12;
+
+// Terrain biome effects
+export const TERRAIN_LAVA_DAMAGE = 3;
+export const TERRAIN_LAVA_TICK_MS = 1000;
+export const TERRAIN_ICE_SPEED_MULT = 0.6;
+export const TERRAIN_RUBBLE_DAMAGE_REDUCTION = 0.25;

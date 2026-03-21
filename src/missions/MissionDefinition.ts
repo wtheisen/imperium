@@ -126,6 +126,8 @@ export interface TerrainParams {
   riverCount?: number;    // 0-3 rivers to carve (default 1)
   mapType?: 'outdoor' | 'space_hulk'; // default 'outdoor'
   corridorWidth?: number; // 2-3, default 3 (space_hulk only)
+  biome?: 'temperate' | 'volcanic' | 'tundra' | 'jungle' | 'desert'; // default 'temperate'
+  specialCoverage?: number; // fraction of map with biome-specific terrain (lava/ice/rubble)
 }
 
 export interface MissionDefinition {
