@@ -1,5 +1,5 @@
 import { EventBus } from '../EventBus';
-import { MissionDefinition, ObjectiveDefinition } from '../missions/MissionDefinition';
+import { MissionDefinition, ObjectiveDefinition, OnCompleteAction } from '../missions/MissionDefinition';
 import { EntityManager } from './EntityManager';
 import { Building } from '../entities/Building';
 import { Unit } from '../entities/Unit';
@@ -26,6 +26,10 @@ export interface ObjectiveStatus {
   waveTimer: number;
   /** For collect: which positions have been collected */
   collectedPositions: Set<number>;
+  /** Whether this objective is locked behind a prerequisite */
+  locked: boolean;
+  /** Whether this objective is hidden until revealed by an action */
+  hidden: boolean;
 }
 
 export class MissionSystem {
@@ -51,6 +55,7 @@ export class MissionSystem {
     this.extractionTimerMax = mission.extractionTimerMs ?? 0;
 
     EventBus.on('entity-died', this.onEntityDied, this);
+    EventBus.on('inject-objective', this.onInjectObjective, this);
   }
 
   private createStatus(obj: ObjectiveDefinition, optional: boolean): ObjectiveStatus {
@@ -58,6 +63,9 @@ export class MissionSystem {
     if (obj.type === 'survive') progressMax = obj.surviveDurationMs ?? 60000;
     if (obj.type === 'activate') progressMax = obj.channelDurationMs ?? 20000;
     if (obj.type === 'collect') progressMax = obj.collectTotal ?? (obj.collectPositions?.length ?? 0);
+
+    const locked = !!obj.prerequisiteId;
+    const hidden = !!obj.hidden;
 
     return {
       definition: obj,
@@ -68,6 +76,8 @@ export class MissionSystem {
       activated: false,
       waveTimer: 0,
       collectedPositions: new Set(),
+      locked,
+      hidden,
     };
   }
 
@@ -78,11 +88,139 @@ export class MissionSystem {
     return this._allStatuses;
   }
 
+  private invalidateStatusCache(): void {
+    this._allStatuses = null;
+  }
+
+  /** Check if a prerequisite objective has been completed */
+  private isPrerequisiteMet(status: ObjectiveStatus): boolean {
+    const prereqId = status.definition.prerequisiteId;
+    if (!prereqId) return true;
+    return this.getAllStatuses().some((s) => s.definition.id === prereqId && s.completed);
+  }
+
+  /** Check if an objective is active (unlocked and not hidden) */
+  private isObjectiveActive(status: ObjectiveStatus): boolean {
+    return !status.locked && !status.hidden && !status.completed;
+  }
+
+  /** Unlock objectives whose prerequisites are now met */
+  private updatePrerequisites(): void {
+    for (const status of this.getAllStatuses()) {
+      if (!status.locked) continue;
+      if (this.isPrerequisiteMet(status)) {
+        status.locked = false;
+        status.hidden = false;
+        EventBus.emit('objective-unlocked', {
+          objectiveId: status.definition.id,
+          name: status.definition.name,
+          type: status.definition.type,
+          tileX: status.definition.tileX,
+          tileY: status.definition.tileY,
+        });
+      }
+    }
+  }
+
+  /** Handle dynamic objective injection */
+  private onInjectObjective = (data: { objective: ObjectiveDefinition; optional?: boolean }): void => {
+    const optional = data.optional ?? false;
+    const status = this.createStatus(data.objective, optional);
+    // Injected objectives that aren't locked start active immediately
+    if (!data.objective.prerequisiteId) {
+      status.locked = false;
+    }
+    if (!data.objective.hidden) {
+      status.hidden = false;
+    }
+
+    if (optional) {
+      this.optionalObjectiveStatuses.push(status);
+    } else {
+      this.objectiveStatuses.push(status);
+    }
+    this.invalidateStatusCache();
+
+    EventBus.emit('objective-injected', {
+      objectiveId: data.objective.id,
+      name: data.objective.name,
+      type: data.objective.type,
+      tileX: data.objective.tileX,
+      tileY: data.objective.tileY,
+      optional,
+    });
+  };
+
+  /** Execute an on-complete action */
+  private executeOnCompleteAction(action: OnCompleteAction, sourceTileX: number, sourceTileY: number): void {
+    switch (action.type) {
+      case 'reveal_objective':
+        if (action.revealObjective) {
+          EventBus.emit('inject-objective', {
+            objective: action.revealObjective,
+            optional: false,
+          });
+        }
+        break;
+
+      case 'spawn_reinforcements': {
+        const tx = action.spawnTileX ?? sourceTileX;
+        const ty = action.spawnTileY ?? sourceTileY;
+        const count = action.spawnCount ?? 6;
+        EventBus.emit('chain-spawn-reinforcements', { tileX: tx, tileY: ty, count });
+        break;
+      }
+
+      case 'modify_environment':
+        if (action.modifier && action.modifierAction) {
+          EventBus.emit('chain-modify-environment', {
+            modifier: action.modifier,
+            action: action.modifierAction,
+          });
+        }
+        break;
+
+      case 'reveal_fog': {
+        const fx = action.fogTileX ?? sourceTileX;
+        const fy = action.fogTileY ?? sourceTileY;
+        const radius = action.fogRadius ?? 15;
+        EventBus.emit('fog-reveal', { tileX: fx, tileY: fy, radius });
+        EventBus.emit('floating-text-3d', { tileX: fx, tileY: fy, text: 'AREA REVEALED', color: '#60a0e0' });
+        break;
+      }
+
+      case 'grant_bonus': {
+        const gold = action.bonusGold ?? 0;
+        const draws = action.bonusCardDraws ?? 0;
+        if (gold > 0 || draws > 0) {
+          EventBus.emit('objective-completed', {
+            objectiveId: '__bonus__',
+            goldReward: gold,
+            cardDraws: draws,
+            tileX: sourceTileX,
+            tileY: sourceTileY,
+            optional: true,
+          });
+        }
+        if (action.buffAtkBonus && action.buffDurationMs && action.buffRadius) {
+          EventBus.emit('chain-grant-buff', {
+            tileX: sourceTileX,
+            tileY: sourceTileY,
+            radius: action.buffRadius,
+            atkBonus: action.buffAtkBonus,
+            durationMs: action.buffDurationMs,
+          });
+        }
+        break;
+      }
+    }
+  }
+
   private onEntityDied({ entity }: { entity: any }): void {
     if (this.state !== 'ACTIVE' && this.state !== 'EXTRACTION') return;
 
     for (const status of this.getAllStatuses()) {
-      if (status.completed) continue;
+      if (status.completed || !this.isObjectiveActive(status)) continue;
 
       // Destroy objectives: building belonging to targeted camp died
       if (status.definition.type === 'destroy' && entity instanceof Building && entity.team === 'enemy') {
@@ -125,7 +263,7 @@ export class MissionSystem {
   /** Check proximity-based objectives (recover, collect, survive trigger, activate) */
   private checkProximityObjectives(playerUnits: Unit[]): void {
     for (const status of this.getAllStatuses()) {
-      if (status.completed) continue;
+      if (status.completed || !this.isObjectiveActive(status)) continue;
       const obj = status.definition;
 
       for (const unit of playerUnits) {
@@ -209,6 +347,7 @@ export class MissionSystem {
   private updateActivateObjectives(delta: number, playerUnits: Unit[]): void {
     for (const status of this.getAllStatuses()) {
       if (status.completed || status.definition.type !== 'activate') continue;
+      if (status.locked || status.hidden) continue;
 
       const obj = status.definition;
 
@@ -262,6 +401,14 @@ export class MissionSystem {
       tileY: obj.tileY,
       optional: status.optional,
     });
+
+    // Execute on-complete action if present
+    if (obj.onCompleteAction) {
+      this.executeOnCompleteAction(obj.onCompleteAction, obj.tileX, obj.tileY);
+    }
+
+    // Unlock any objectives that depend on this one
+    this.updatePrerequisites();
 
     // Check if all REQUIRED objectives are done
     if (this.objectiveStatuses.every((s) => s.completed)) {
@@ -389,6 +536,8 @@ export class MissionSystem {
       progress: s.progress,
       progressMax: s.progressMax,
       activated: s.activated,
+      locked: s.locked,
+      hidden: s.hidden,
     });
 
     EventBus.emit('mission-update', {
@@ -406,5 +555,6 @@ export class MissionSystem {
 
   destroy(): void {
     EventBus.off('entity-died', this.onEntityDied, this);
+    EventBus.off('inject-objective', this.onInjectObjective, this);
   }
 }

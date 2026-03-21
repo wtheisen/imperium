@@ -167,15 +167,23 @@ export class GameScene implements GameSceneInterface {
     const allPacks = [...(this.mission.packSpawns ?? []), ...generatedPacks];
     this.packManager = new PackManager(this.entityManager, allPacks);
 
-    // Create objective markers for required + optional objectives
+    // Create objective markers for required + optional objectives (skip hidden/locked)
     for (const obj of this.mission.objectives) {
-      this.objectiveMarkers.push(new ObjectiveMarker(obj));
-    }
-    if (this.mission.optionalObjectives) {
-      for (const obj of this.mission.optionalObjectives) {
+      if (!obj.hidden && !obj.prerequisiteId) {
         this.objectiveMarkers.push(new ObjectiveMarker(obj));
       }
     }
+    if (this.mission.optionalObjectives) {
+      for (const obj of this.mission.optionalObjectives) {
+        if (!obj.hidden && !obj.prerequisiteId) {
+          this.objectiveMarkers.push(new ObjectiveMarker(obj));
+        }
+      }
+    }
+
+    // Create markers for newly unlocked/injected objectives
+    EventBus.on('objective-unlocked', this.onObjectiveUnlockedMarker, this);
+    EventBus.on('objective-injected', this.onObjectiveInjectedMarker, this);
     // Emit collect item markers for collect objectives
     for (const obj of [...this.mission.objectives, ...(this.mission.optionalObjectives ?? [])]) {
       if (obj.type === 'collect' && obj.collectPositions) {
@@ -224,6 +232,9 @@ export class GameScene implements GameSceneInterface {
     EventBus.on('unequip-wargear', this.onUnequipWargear, this);
     EventBus.on('wargear-orphaned', this.onWargearOrphaned, this);
     EventBus.on('objective-completed', this.onObjectiveCompleted, this);
+    EventBus.on('chain-spawn-reinforcements', this.onChainSpawnReinforcements, this);
+    EventBus.on('chain-modify-environment', this.onChainModifyEnvironment, this);
+    EventBus.on('chain-grant-buff', this.onChainGrantBuff, this);
     EventBus.on('mine-tick', this.onMineTick, this);
     EventBus.on('veteran-killed', this.onVeteranKilled, this);
     EventBus.on('input-pointer-move', this.onInputMove3D, this);
@@ -628,6 +639,92 @@ export class GameScene implements GameSceneInterface {
     EventBus.emit('reset-discards', { bonus: 0 });
   }
 
+  private onObjectiveUnlockedMarker = (data: { objectiveId: string; name: string; type: string; tileX: number; tileY: number }): void => {
+    // Create a 3D marker for the newly unlocked objective
+    const allObjs = [...this.mission.objectives, ...(this.mission.optionalObjectives ?? [])];
+    const obj = allObjs.find(o => o.id === data.objectiveId);
+    if (obj) {
+      this.objectiveMarkers.push(new ObjectiveMarker(obj));
+      // Also emit collect markers if it's a collect objective
+      if (obj.type === 'collect' && obj.collectPositions) {
+        for (let i = 0; i < obj.collectPositions.length; i++) {
+          const pos = obj.collectPositions[i];
+          EventBus.emit('collect-marker-3d', {
+            objectiveId: obj.id, posIndex: i,
+            tileX: pos.tileX, tileY: pos.tileY,
+          });
+        }
+      }
+    }
+  };
+
+  private onObjectiveInjectedMarker = (data: { objectiveId: string; name: string; type: string; tileX: number; tileY: number }): void => {
+    // Create a 3D marker for dynamically injected objectives
+    EventBus.emit('objective-marker-3d', {
+      id: data.objectiveId,
+      tileX: data.tileX,
+      tileY: data.tileY,
+      type: data.type,
+    });
+  };
+
+  private onChainSpawnReinforcements = ({ tileX, tileY, count }: { tileX: number; tileY: number; count: number }): void => {
+    // Spawn a targeted wave at the specified location
+    EventBus.emit('survive-wave-spawn', { tileX, tileY, size: count });
+    EventBus.emit('floating-text-3d', { tileX, tileY, text: 'REINFORCEMENTS INCOMING', color: '#c43030' });
+  };
+
+  private onChainModifyEnvironment = ({ modifier, action }: { modifier: string; action: 'add' | 'remove' }): void => {
+    if (!this.mission.environmentModifiers) {
+      this.mission.environmentModifiers = [];
+    }
+    if (action === 'remove') {
+      this.mission.environmentModifiers = this.mission.environmentModifiers.filter(m => m !== modifier);
+      // Re-resolve environment effects
+      this.envEffects = resolveEnvironmentModifiers(this.mission.environmentModifiers);
+      EventBus.emit('floating-text-3d', {
+        tileX: this.mission.playerStartX, tileY: this.mission.playerStartY,
+        text: `${modifier.replace(/_/g, ' ').toUpperCase()} LIFTED`, color: '#4a9e4a',
+      });
+    } else {
+      if (!this.mission.environmentModifiers.includes(modifier as any)) {
+        this.mission.environmentModifiers.push(modifier as any);
+      }
+      this.envEffects = resolveEnvironmentModifiers(this.mission.environmentModifiers);
+      EventBus.emit('floating-text-3d', {
+        tileX: this.mission.playerStartX, tileY: this.mission.playerStartY,
+        text: `${modifier.replace(/_/g, ' ').toUpperCase()} ACTIVE`, color: '#c43030',
+      });
+    }
+    EventBus.emit('environment-changed', { modifiers: this.mission.environmentModifiers });
+  };
+
+  private onChainGrantBuff = ({ tileX, tileY, radius, atkBonus, durationMs }: {
+    tileX: number; tileY: number; radius: number; atkBonus: number; durationMs: number;
+  }): void => {
+    // Apply radius-based temp buff to player units near the objective
+    const units = this.entityManager.getUnits('player');
+    const buffedUnits: Unit[] = [];
+    for (const unit of units) {
+      const dist = Math.abs(unit.tileX - tileX) + Math.abs(unit.tileY - tileY);
+      if (dist <= radius) {
+        unit.stats.attackDamage += atkBonus;
+        buffedUnits.push(unit);
+      }
+    }
+    if (buffedUnits.length > 0) {
+      EventBus.emit('floating-text-3d', { tileX, tileY, text: `+${atkBonus} ATK BUFF`, color: '#c8982a' });
+      // Schedule buff removal
+      setTimeout(() => {
+        for (const unit of buffedUnits) {
+          if (unit.active) {
+            unit.stats.attackDamage -= atkBonus;
+          }
+        }
+      }, durationMs);
+    }
+  };
+
   private onVeteranKilled({ name }: { name: string }): void {
     this.fallenVeterans.push({ name });
   }
@@ -788,6 +885,11 @@ export class GameScene implements GameSceneInterface {
     EventBus.off('unequip-wargear', this.onUnequipWargear, this);
     EventBus.off('wargear-orphaned', this.onWargearOrphaned, this);
     EventBus.off('objective-completed', this.onObjectiveCompleted, this);
+    EventBus.off('chain-spawn-reinforcements', this.onChainSpawnReinforcements, this);
+    EventBus.off('chain-modify-environment', this.onChainModifyEnvironment, this);
+    EventBus.off('chain-grant-buff', this.onChainGrantBuff, this);
+    EventBus.off('objective-unlocked', this.onObjectiveUnlockedMarker, this);
+    EventBus.off('objective-injected', this.onObjectiveInjectedMarker, this);
     EventBus.off('mine-tick', this.onMineTick, this);
     EventBus.off('veteran-killed', this.onVeteranKilled, this);
     EventBus.off('input-pointer-move', this.onInputMove3D, this);

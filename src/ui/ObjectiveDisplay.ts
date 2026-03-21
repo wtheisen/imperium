@@ -15,10 +15,16 @@ export class ObjectiveDisplay {
   private objectiveRows: Map<string, HTMLDivElement> = new Map();
   private progressBars: Map<string, HTMLDivElement> = new Map();
   private completedIds: Set<string> = new Set();
+  private hiddenIds: Set<string> = new Set();
+  private lockedIds: Set<string> = new Set();
   private mission: MissionDefinition;
   private extractionEl: HTMLDivElement | null = null;
+  private requiredSection: HTMLDivElement;
+  private optionalSection: HTMLDivElement | null = null;
   private boundOnComplete: (data: { objectiveId: string }) => void;
   private boundOnMissionUpdate: (data: any) => void;
+  private boundOnInjected: (data: any) => void;
+  private boundOnUnlocked: (data: any) => void;
 
   constructor(mission: MissionDefinition) {
     this.mission = mission;
@@ -87,15 +93,28 @@ export class ObjectiveDisplay {
       this.container.appendChild(modBar);
     }
 
-    // Required objectives
+    // Required objectives section
+    this.requiredSection = document.createElement('div');
+    this.container.appendChild(this.requiredSection);
+
     for (const obj of mission.objectives) {
+      if (obj.hidden) {
+        this.hiddenIds.add(obj.id);
+        continue; // Don't render hidden objectives initially
+      }
+      if (obj.prerequisiteId) {
+        this.lockedIds.add(obj.id);
+        // Locked objectives are fully hidden from the UI
+        continue;
+      }
       const row = this.createRow(obj, false);
-      this.container.appendChild(row);
+      this.requiredSection.appendChild(row);
       this.objectiveRows.set(obj.id, row);
     }
 
     // Optional objectives
     if (mission.optionalObjectives && mission.optionalObjectives.length > 0) {
+      this.optionalSection = document.createElement('div');
       const optHeader = document.createElement('div');
       Object.assign(optHeader.style, {
         fontSize: '8px', letterSpacing: '2px', color: 'rgba(200,152,42,0.3)',
@@ -103,13 +122,16 @@ export class ObjectiveDisplay {
         borderTop: '1px solid rgba(200,152,42,0.06)',
       });
       optHeader.textContent = 'BONUS OBJECTIVES';
-      this.container.appendChild(optHeader);
+      this.optionalSection.appendChild(optHeader);
 
       for (const obj of mission.optionalObjectives) {
+        if (obj.hidden || obj.prerequisiteId) continue;
         const row = this.createRow(obj, true);
-        this.container.appendChild(row);
+        this.optionalSection.appendChild(row);
         this.objectiveRows.set(obj.id, row);
       }
+
+      this.container.appendChild(this.optionalSection);
     }
 
     // Extraction countdown (hidden initially)
@@ -134,6 +156,12 @@ export class ObjectiveDisplay {
 
     this.boundOnMissionUpdate = (data) => this.onMissionUpdate(data);
     EventBus.on('mission-update', this.boundOnMissionUpdate);
+
+    this.boundOnInjected = (data) => this.onObjectiveInjected(data);
+    EventBus.on('objective-injected', this.boundOnInjected);
+
+    this.boundOnUnlocked = (data) => this.onObjectiveUnlocked(data);
+    EventBus.on('objective-unlocked', this.boundOnUnlocked);
   }
 
   private createRow(obj: ObjectiveDefinition, optional: boolean): HTMLDivElement {
@@ -262,6 +290,105 @@ export class ObjectiveDisplay {
     return row;
   }
 
+  /** Animate a new objective appearing in the display */
+  private animateReveal(row: HTMLDivElement): void {
+    row.style.opacity = '0';
+    row.style.transform = 'translateX(20px)';
+    row.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+    requestAnimationFrame(() => {
+      row.style.opacity = '1';
+      row.style.transform = 'translateX(0)';
+    });
+  }
+
+  private onObjectiveInjected(data: {
+    objectiveId: string; name: string; type: string;
+    tileX: number; tileY: number; optional: boolean;
+  }): void {
+    // Find the objective definition from the injected event
+    // Build a minimal ObjectiveDefinition for rendering
+    const allObjs = [...this.mission.objectives, ...(this.mission.optionalObjectives ?? [])];
+    let obj = allObjs.find(o => o.id === data.objectiveId);
+
+    // For dynamically injected objectives, they may not be in the original mission
+    // Create the row from event data
+    if (!obj) {
+      obj = {
+        id: data.objectiveId,
+        type: data.type as any,
+        name: data.name,
+        description: '',
+        tileX: data.tileX,
+        tileY: data.tileY,
+        goldReward: 0,
+        cardDraws: 0,
+      };
+    }
+
+    if (this.objectiveRows.has(data.objectiveId)) return;
+
+    const row = this.createRow(obj, data.optional);
+    if (data.optional) {
+      if (!this.optionalSection) {
+        this.optionalSection = document.createElement('div');
+        const optHeader = document.createElement('div');
+        Object.assign(optHeader.style, {
+          fontSize: '8px', letterSpacing: '2px', color: 'rgba(200,152,42,0.3)',
+          marginTop: '8px', marginBottom: '6px', paddingTop: '6px',
+          borderTop: '1px solid rgba(200,152,42,0.06)',
+        });
+        optHeader.textContent = 'BONUS OBJECTIVES';
+        this.optionalSection.appendChild(optHeader);
+        this.container.insertBefore(this.optionalSection, this.extractionEl);
+      }
+      this.optionalSection.appendChild(row);
+    } else {
+      this.requiredSection.appendChild(row);
+    }
+    this.objectiveRows.set(data.objectiveId, row);
+    this.animateReveal(row);
+  }
+
+  private onObjectiveUnlocked(data: {
+    objectiveId: string; name: string; type: string;
+    tileX: number; tileY: number;
+  }): void {
+    this.lockedIds.delete(data.objectiveId);
+    this.hiddenIds.delete(data.objectiveId);
+
+    // If already rendered, skip
+    if (this.objectiveRows.has(data.objectiveId)) return;
+
+    // Find the full definition
+    const allObjs = [...this.mission.objectives, ...(this.mission.optionalObjectives ?? [])];
+    const obj = allObjs.find(o => o.id === data.objectiveId);
+    if (!obj) return;
+
+    const isOptional = this.mission.optionalObjectives?.some(o => o.id === data.objectiveId) ?? false;
+    const row = this.createRow(obj, isOptional);
+
+    if (isOptional) {
+      if (!this.optionalSection) {
+        this.optionalSection = document.createElement('div');
+        const optHeader = document.createElement('div');
+        Object.assign(optHeader.style, {
+          fontSize: '8px', letterSpacing: '2px', color: 'rgba(200,152,42,0.3)',
+          marginTop: '8px', marginBottom: '6px', paddingTop: '6px',
+          borderTop: '1px solid rgba(200,152,42,0.06)',
+        });
+        optHeader.textContent = 'BONUS OBJECTIVES';
+        this.optionalSection.appendChild(optHeader);
+        this.container.insertBefore(this.optionalSection, this.extractionEl);
+      }
+      this.optionalSection.appendChild(row);
+    } else {
+      this.requiredSection.appendChild(row);
+    }
+
+    this.objectiveRows.set(data.objectiveId, row);
+    this.animateReveal(row);
+  }
+
   private markComplete(objectiveId: string): void {
     if (this.completedIds.has(objectiveId)) return;
     this.completedIds.add(objectiveId);
@@ -303,7 +430,7 @@ export class ObjectiveDisplay {
     // Update progress bars
     const allObjectives = [...(data.objectives || []), ...(data.optionalObjectives || [])];
     for (const obj of allObjectives) {
-      if (obj.completed) continue;
+      if (obj.completed || obj.locked || obj.hidden) continue;
       const progressFill = this.progressBars.get(obj.id);
       if (progressFill && obj.progressMax > 0) {
         const pct = Math.min(100, (obj.progress / obj.progressMax) * 100);
@@ -332,9 +459,13 @@ export class ObjectiveDisplay {
   destroy(): void {
     EventBus.off('objective-completed', this.boundOnComplete);
     EventBus.off('mission-update', this.boundOnMissionUpdate);
+    EventBus.off('objective-injected', this.boundOnInjected);
+    EventBus.off('objective-unlocked', this.boundOnUnlocked);
     this.container.remove();
     this.objectiveRows.clear();
     this.progressBars.clear();
     this.completedIds.clear();
+    this.hiddenIds.clear();
+    this.lockedIds.clear();
   }
 }
