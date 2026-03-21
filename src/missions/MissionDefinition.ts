@@ -9,6 +9,38 @@ export type EnvironmentModifier =
   | 'killzone' | 'elite_only' | 'scrapyard' | 'reinforced_walls'
   | 'warp_interference' | 'rapid_deployment';
 
+export type OnCompleteActionType =
+  | 'reveal_objective'
+  | 'spawn_reinforcements'
+  | 'modify_environment'
+  | 'reveal_fog'
+  | 'grant_bonus';
+
+export interface OnCompleteAction {
+  type: OnCompleteActionType;
+  /** For reveal_objective — the objective to inject into the mission */
+  revealObjective?: ObjectiveDefinition;
+  /** For spawn_reinforcements — spawn at position or from camp */
+  spawnTileX?: number;
+  spawnTileY?: number;
+  spawnCampId?: string;
+  spawnCount?: number;
+  /** For modify_environment — add or remove a modifier */
+  modifier?: EnvironmentModifier;
+  modifierAction?: 'add' | 'remove';
+  /** For reveal_fog — center and radius of fog reveal */
+  fogTileX?: number;
+  fogTileY?: number;
+  fogRadius?: number;
+  /** For grant_bonus — extra rewards */
+  bonusGold?: number;
+  bonusCardDraws?: number;
+  /** For grant_bonus — radius-based temp stat buff */
+  buffRadius?: number;
+  buffAtkBonus?: number;
+  buffDurationMs?: number;
+}
+
 export interface ObjectiveDefinition {
   id: string;
   type: ObjectiveType;
@@ -32,6 +64,12 @@ export interface ObjectiveDefinition {
   collectPositions?: { tileX: number; tileY: number }[];
   goldReward: number;
   cardDraws: number;
+  /** ID of prerequisite objective that must complete before this one activates */
+  prerequisiteId?: string;
+  /** Whether this objective is hidden until revealed by an on-complete action */
+  hidden?: boolean;
+  /** Action to execute when this objective completes */
+  onCompleteAction?: OnCompleteAction;
 }
 
 export type POIType = 'gold_cache' | 'ammo_dump' | 'med_station' | 'intel' | 'relic';

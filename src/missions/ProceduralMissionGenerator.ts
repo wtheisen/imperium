@@ -5,6 +5,7 @@ import {
   EnemyCampDefinition,
   CampUnitDef,
   EnvironmentModifier,
+  OnCompleteAction,
 } from './MissionDefinition';
 import { ENEMY_GRUNT, ENEMY_ARCHER, ENEMY_BRUTE, ENEMY_BOSS } from '../ai/EnemyStats';
 import { SUPPLY_DROP_INTERVAL_MS, CAMP_AGGRO_DEFAULT, MAP_WIDTH, MAP_HEIGHT } from '../config';
@@ -18,6 +19,12 @@ interface ObjectiveSlot {
   type: ObjectiveType;
   role: 'primary' | 'secondary';
   zone: MapZone;
+  /** Index of prerequisite slot in the objectiveSlots array */
+  prerequisiteSlotIndex?: number;
+  /** Whether this objective starts hidden (revealed by a prior action) */
+  hidden?: boolean;
+  /** On-complete action template type */
+  onCompleteActionType?: OnCompleteAction['type'];
 }
 
 interface ArchetypeDefinition {
@@ -28,6 +35,8 @@ interface ArchetypeDefinition {
   campLayout: 'flanking' | 'linear' | 'encircling';
   mapType: 'outdoor' | 'space_hulk' | 'any';
   allowedModifiers: EnvironmentModifier[];
+  /** Whether this archetype uses objective chains */
+  chained?: boolean;
 }
 
 interface DifficultyConfig {
@@ -233,6 +242,58 @@ const ARCHETYPES: ArchetypeDefinition[] = [
     mapType: 'outdoor',
     allowedModifiers: ['ork_frenzy', 'armored_advance', 'night_raid', 'elite_only', 'iron_rain', 'reinforced_walls'],
   },
+
+  // ── Chain Archetypes ────────────────────────────────────────────────
+
+  {
+    id: 'intel_hunt',
+    nameTemplates: ['Intel Hunt: {zone}', 'Shadow Protocol', 'Operation {codename}', 'Predator Strike'],
+    descTemplates: [
+      'Recover scattered intel to reveal the location of a hidden enemy command post. Destroy it to complete the operation.',
+      'Enemy positions in {zone} are unknown. Gather intelligence first, then strike the revealed target.',
+    ],
+    objectiveSlots: [
+      { type: 'collect', role: 'primary', zone: 'center', onCompleteActionType: 'reveal_fog' },
+      { type: 'destroy', role: 'primary', zone: 'north', prerequisiteSlotIndex: 0, hidden: true },
+    ],
+    campLayout: 'linear',
+    mapType: 'outdoor',
+    allowedModifiers: ['dense_fog', 'night_raid'],
+    chained: true,
+  },
+  {
+    id: 'relay_cascade',
+    nameTemplates: ['Relay Cascade', 'Signal Chain: {zone}', 'Operation {codename}', 'Vox Override'],
+    descTemplates: [
+      'Activate relay terminals in sequence to restore Imperial communications and call for extraction.',
+      'A chain of relays must be activated across {zone}. Each relay reveals the next through the fog.',
+    ],
+    objectiveSlots: [
+      { type: 'activate', role: 'primary', zone: 'mid_w', onCompleteActionType: 'reveal_fog' },
+      { type: 'activate', role: 'primary', zone: 'ne', prerequisiteSlotIndex: 0, hidden: true, onCompleteActionType: 'grant_bonus' },
+    ],
+    campLayout: 'flanking',
+    mapType: 'any',
+    allowedModifiers: ['dense_fog', 'supply_shortage'],
+    chained: true,
+  },
+  {
+    id: 'siege_and_breach',
+    nameTemplates: ['Siege and Breach', 'Fortress Assault: {zone}', 'Operation {codename}', 'Iron Breach'],
+    descTemplates: [
+      'Destroy the outer defenses, survive the counter-attack, then push through to destroy the inner stronghold.',
+      'The enemy fortress in {zone} has layered defenses. Breach them one by one.',
+    ],
+    objectiveSlots: [
+      { type: 'destroy', role: 'secondary', zone: 'center', onCompleteActionType: 'spawn_reinforcements' },
+      { type: 'survive', role: 'secondary', zone: 'center', prerequisiteSlotIndex: 0, onCompleteActionType: 'reveal_fog' },
+      { type: 'destroy', role: 'primary', zone: 'north', prerequisiteSlotIndex: 1, hidden: true },
+    ],
+    campLayout: 'linear',
+    mapType: 'outdoor',
+    allowedModifiers: ['ork_frenzy', 'armored_advance'],
+    chained: true,
+  },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -315,6 +376,42 @@ function checkSpacing(
   minDist: number,
 ): boolean {
   return existing.every(p => tileDist(x, y, p.x, p.y) >= minDist);
+}
+
+// ── On-complete action builder ───────────────────────────────────────
+
+function buildOnCompleteAction(
+  type: OnCompleteAction['type'],
+  tileX: number,
+  tileY: number,
+  dc: DifficultyConfig,
+): OnCompleteAction {
+  switch (type) {
+    case 'reveal_fog':
+      return { type: 'reveal_fog', fogTileX: tileX, fogTileY: tileY, fogRadius: 20 };
+    case 'spawn_reinforcements':
+      return {
+        type: 'spawn_reinforcements',
+        spawnTileX: tileX, spawnTileY: tileY,
+        spawnCount: dc.gruntRange[1] + dc.archerRange[1],
+      };
+    case 'grant_bonus':
+      return {
+        type: 'grant_bonus',
+        bonusGold: 15,
+        bonusCardDraws: 1,
+        buffRadius: 10,
+        buffAtkBonus: 3,
+        buffDurationMs: 30000,
+      };
+    case 'modify_environment':
+      return { type: 'modify_environment', modifier: 'dense_fog', modifierAction: 'remove' };
+    case 'reveal_objective':
+      // reveal_objective is wired at the archetype level, not here
+      return { type: 'reveal_objective' };
+    default:
+      return { type };
+  }
 }
 
 // ── Collect position generation ──────────────────────────────────────
@@ -428,6 +525,17 @@ export function generateMission(
     if (slot.type === 'collect') {
       obj.collectTotal = rngInt(rng, dc.collectTotalRange[0], dc.collectTotalRange[1]);
       obj.collectPositions = generateCollectPositions(obj.collectTotal, rng);
+    }
+
+    // Chain fields — prerequisite, hidden, on-complete action
+    if (slot.prerequisiteSlotIndex !== undefined) {
+      obj.prerequisiteId = `obj_proc_${slot.prerequisiteSlotIndex}`;
+    }
+    if (slot.hidden) {
+      obj.hidden = true;
+    }
+    if (slot.onCompleteActionType) {
+      obj.onCompleteAction = buildOnCompleteAction(slot.onCompleteActionType, tx, ty, dc);
     }
 
     objectives.push(obj);
@@ -698,6 +806,9 @@ export function getArchetypeLabel(id: string): string {
     scavenge_and_extract: 'SCAVENGE + EXTRACT',
     deep_infiltration: 'DEEP INFILTRATION',
     total_purge: 'TOTAL PURGE',
+    intel_hunt: 'INTEL HUNT',
+    relay_cascade: 'RELAY CASCADE',
+    siege_and_breach: 'SIEGE + BREACH',
   };
   return labels[id] || id.toUpperCase();
 }

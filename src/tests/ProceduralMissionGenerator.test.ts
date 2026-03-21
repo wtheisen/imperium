@@ -246,8 +246,8 @@ describe('seed utilities', () => {
 });
 
 describe('getArchetypeIds', () => {
-  it('returns 7 archetype IDs', () => {
-    expect(getArchetypeIds()).toHaveLength(7);
+  it('returns 10 archetype IDs', () => {
+    expect(getArchetypeIds()).toHaveLength(10);
   });
 
   it('includes expected archetypes', () => {
