@@ -43,6 +43,7 @@ import { TacticalPauseManager } from '../systems/TacticalPauseManager';
 import { ScoutRevealSystem } from '../systems/ScoutRevealSystem';
 import { BattleRecorder } from '../systems/BattleRecorder';
 import { MutatorEffectsSystem } from '../systems/MutatorEffectsSystem';
+import { TerrainEffectSystem } from '../systems/TerrainEffectSystem';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -82,6 +83,7 @@ export class GameScene implements GameSceneInterface {
   private tacticalPause!: TacticalPauseManager;
   private scoutReveal: ScoutRevealSystem | null = null;
   private battleRecorder!: BattleRecorder;
+  private terrainEffects!: TerrainEffectSystem;
 
   create(data?: { mission?: MissionDefinition }): void {
     this.mission = data?.mission || MISSIONS[0];
@@ -110,6 +112,7 @@ export class GameScene implements GameSceneInterface {
       terrainGrid: this.mapManager.getTerrainGrid(),
       protectedPositions,
       mapType: this.mission.terrain?.mapType,
+      biome: this.mission.terrain?.biome,
     });
 
     // Emit gold mine positions for 3D models
@@ -124,6 +127,9 @@ export class GameScene implements GameSceneInterface {
 
     // Setup entity management
     this.entityManager = new EntityManager(this.validator);
+
+    // Setup terrain effects (biome gameplay: lava DOT, ice slow, rubble cover)
+    this.terrainEffects = new TerrainEffectSystem(this.mapManager, this.entityManager);
 
     // Setup economy with mission starting gold
     this.economySystem = new EconomySystem(this.mission.startingGold);
@@ -839,6 +845,7 @@ export class GameScene implements GameSceneInterface {
     TimerManager.get().update(delta);
 
     this.entityManager.update(delta);
+    this.terrainEffects.update(delta);
     this.combatSystem.update(delta);
     this.economySystem.update(delta);
     this.missionSystem.update(delta);
@@ -944,6 +951,7 @@ export class GameScene implements GameSceneInterface {
     this.selectionSystem?.destroy();
     this.commandSystem?.destroy();
     this.combatSystem?.destroy();
+    this.terrainEffects?.destroy();
 
     TimerManager.get().clear();
   }

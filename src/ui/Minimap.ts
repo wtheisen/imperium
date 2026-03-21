@@ -16,6 +16,10 @@ const TERRAIN_COLORS: Record<number, [number, number, number]> = {
   [TerrainType.FOREST]:      [32,  65,  30],   // darker green for forest canopy
   [TerrainType.METAL_FLOOR]: [70,  72,  78],   // dark gunmetal matching space hulk floors
   [TerrainType.HULL_WALL]:   [45,  48,  55],   // darker metallic for walls
+  [TerrainType.LAVA]:        [160,  40,  15],   // molten orange-red
+  [TerrainType.ICE]:         [180, 200, 220],   // pale blue-white
+  [TerrainType.SAND]:        [190, 170, 120],   // warm tan
+  [TerrainType.RUBBLE]:      [105, 100,  95],   // gray rubble
 };
 
 const ENTITY_COLORS: Record<string, [number, number, number]> = {

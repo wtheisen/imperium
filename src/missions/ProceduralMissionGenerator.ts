@@ -10,6 +10,7 @@ import {
 import { ENEMY_GRUNT, ENEMY_ARCHER, ENEMY_BRUTE, ENEMY_BOSS } from '../ai/EnemyStats';
 import { SUPPLY_DROP_INTERVAL_MS, CAMP_AGGRO_DEFAULT, MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { createRng } from '../utils/MathUtils';
+import { BIOME_CONFIGS, BiomeType, getBiomeIds } from '../map/BiomeConfig';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -693,6 +694,11 @@ export function generateMission(
 
   const terrainSeed = Math.floor(rng() * 2147483646) + 1;
 
+  // Pick a random biome for outdoor maps
+  const biomeIds = getBiomeIds();
+  const biome: BiomeType = mapType === 'space_hulk' ? 'temperate' : rngPick(rng, biomeIds);
+  const biomeConfig = BIOME_CONFIGS[biome];
+
   // 8. Assemble mission
   const mission: MissionDefinition = {
     id: `proc_${actualSeed}`,
@@ -709,11 +715,13 @@ export function generateMission(
       ? { mapType: 'space_hulk', corridorWidth: rngInt(rng, 2, 3), goldMineCount: rngInt(rng, dc.goldMineCount[0], dc.goldMineCount[1]), seed: terrainSeed }
       : {
         seed: terrainSeed,
-        waterCoverage: 0.04 + rng() * 0.06,
-        stoneCoverage: 0.03 + rng() * 0.04,
-        forestCoverage: 0.04 + rng() * 0.06,
-        goldMineCount: rngInt(rng, dc.goldMineCount[0], dc.goldMineCount[1]),
-        riverCount: rngInt(rng, 0, 2),
+        biome,
+        waterCoverage: biomeConfig.waterCoverage[0] + rng() * (biomeConfig.waterCoverage[1] - biomeConfig.waterCoverage[0]),
+        stoneCoverage: biomeConfig.stoneCoverage[0] + rng() * (biomeConfig.stoneCoverage[1] - biomeConfig.stoneCoverage[0]),
+        forestCoverage: biomeConfig.forestCoverage[0] + rng() * (biomeConfig.forestCoverage[1] - biomeConfig.forestCoverage[0]),
+        specialCoverage: biomeConfig.specialCoverage[0] + rng() * (biomeConfig.specialCoverage[1] - biomeConfig.specialCoverage[0]),
+        goldMineCount: rngInt(rng, biomeConfig.goldMineCount[0], biomeConfig.goldMineCount[1]),
+        riverCount: rngInt(rng, biomeConfig.riverCount[0], biomeConfig.riverCount[1]),
       },
   };
 

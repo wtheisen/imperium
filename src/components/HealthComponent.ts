@@ -7,6 +7,8 @@ export class HealthComponent implements Component {
   public maxHp: number;
   public currentHp: number;
   public armor: number = 0;
+  /** Fractional damage reduction from terrain (e.g. 0.25 = 25% less damage on rubble). Reset each tick. */
+  public terrainDamageReduction: number = 0;
   private invulnerable: boolean = false;
 
   constructor(entity: Entity, maxHp: number) {
@@ -42,7 +44,8 @@ export class HealthComponent implements Component {
       }
     }
 
-    const reduced = Math.max(1, amount - this.armor);
+    const afterArmor = Math.max(1, amount - this.armor);
+    const reduced = Math.max(1, Math.round(afterArmor * (1 - this.terrainDamageReduction)));
     this.currentHp = Math.max(0, this.currentHp - reduced);
 
     this.spawnFloatingNumber(-reduced, '#ff4444');

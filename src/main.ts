@@ -24,7 +24,7 @@ setGameRenderer(gameRenderer);
 
 // When GameScene builds its map, build the 3D tile map
 EventBus.on('terrain-ready', (data: any) => {
-  gameRenderer.buildTileMap(data.terrainGrid, data.protectedPositions, data.mapType);
+  gameRenderer.buildTileMap(data.terrainGrid, data.protectedPositions, data.mapType, data.biome);
 });
 
 // ── Scene Manager ──

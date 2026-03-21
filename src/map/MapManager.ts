@@ -10,6 +10,7 @@ import { PackDefinition, PackType } from '../packs/PackTypes';
 import { EventBus } from '../EventBus';
 import { generateSpaceHulk } from './SpaceHulkGenerator';
 import { createRng, fbm } from '../utils/MathUtils';
+import { BIOME_CONFIGS, BiomeType } from './BiomeConfig';
 
 export enum TerrainType {
   GRASS = 0,
@@ -20,6 +21,10 @@ export enum TerrainType {
   FOREST = 5,
   METAL_FLOOR = 6,
   HULL_WALL = 7,
+  LAVA = 8,
+  ICE = 9,
+  SAND = 10,
+  RUBBLE = 11,
 }
 
 interface MineData {
@@ -83,12 +88,6 @@ export class MapManager {
 
   /** Apply mission-specific terrain — procedural generation + optional explicit overrides */
   loadMissionTerrain(mission: MissionDefinition): void {
-    // Reset grid to grass
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        this.terrain[y][x] = TerrainType.GRASS;
-      }
-    }
     this.mineData.clear();
 
     // Collect protected positions (player start, camps, objectives)
@@ -110,7 +109,23 @@ export class MapManager {
       const corridorWidth = params.corridorWidth ?? 3;
       this.terrain = generateSpaceHulk(MAP_WIDTH, MAP_HEIGHT, seed, corridorWidth, protectedPositions);
     } else {
-      this.floorType = TerrainType.GRASS;
+      // Determine floor type from biome
+      const biome = params.biome ?? 'temperate';
+      const biomeConfig = BIOME_CONFIGS[biome];
+      const floorMap: Record<string, TerrainType> = {
+        GRASS: TerrainType.GRASS,
+        DIRT: TerrainType.DIRT,
+        SAND: TerrainType.SAND,
+      };
+      this.floorType = floorMap[biomeConfig.floorType] ?? TerrainType.GRASS;
+
+      // Reset grid to biome floor type
+      for (let y = 0; y < MAP_HEIGHT; y++) {
+        for (let x = 0; x < MAP_WIDTH; x++) {
+          this.terrain[y][x] = this.floorType;
+        }
+      }
+
       // Generate procedural terrain
       this.generateTerrain(mission, protectedPositions);
     }
@@ -161,8 +176,20 @@ export class MapManager {
     const forestCoverage = params.forestCoverage ?? 0.06;
     const riverCount = params.riverCount ?? 1;
 
+    // Biome-specific special terrain coverage
+    const biome = params.biome ?? 'temperate';
+    const biomeConfig = BIOME_CONFIGS[biome];
+    const specialCoverage = params.specialCoverage ?? 0;
+    const specialTerrainMap: Record<string, TerrainType> = {
+      LAVA: TerrainType.LAVA,
+      ICE: TerrainType.ICE,
+      RUBBLE: TerrainType.RUBBLE,
+    };
+    const specialTerrainType = biomeConfig.specialTerrain
+      ? specialTerrainMap[biomeConfig.specialTerrain]
+      : undefined;
+
     // Step 1: Base terrain via noise thresholds
-    // We compute noise for every tile, then assign types based on sorted thresholds
     const noiseValues: { x: number; y: number; n: number }[] = [];
     const forestNoise: { x: number; y: number; n: number }[] = [];
 
@@ -170,13 +197,11 @@ export class MapManager {
       for (let x = 0; x < MAP_WIDTH; x++) {
         const n = fbm(x / MAP_WIDTH * 6, y / MAP_HEIGHT * 6, 4, seed);
         noiseValues.push({ x, y, n });
-        // Different frequency noise for forest
         const fn = fbm(x / MAP_WIDTH * 8, y / MAP_HEIGHT * 8, 3, seed + 5000);
         forestNoise.push({ x, y, n: fn });
       }
     }
 
-    // Sort by noise value to pick lowest N% as water, next M% as stone, etc.
     const sorted = [...noiseValues].sort((a, b) => a.n - b.n);
     const totalTiles = MAP_WIDTH * MAP_HEIGHT;
 
@@ -195,33 +220,54 @@ export class MapManager {
     const sortedDesc = [...noiseValues].sort((a, b) => b.n - a.n);
     for (let i = 0; i < stoneCount && i < sortedDesc.length; i++) {
       const { x, y } = sortedDesc[i];
-      if (this.terrain[y][x] === TerrainType.GRASS && !this.isProtected(x, y, protectedPositions)) {
+      if (this.terrain[y][x] === this.floorType && !this.isProtected(x, y, protectedPositions)) {
         this.terrain[y][x] = TerrainType.STONE;
       }
     }
 
-    // Assign forest using separate noise — highest values become forest
+    // Assign forest using separate noise
     const sortedForest = [...forestNoise].sort((a, b) => b.n - a.n);
     const forestCount = Math.floor(totalTiles * forestCoverage);
     for (let i = 0; i < forestCount && i < sortedForest.length; i++) {
       const { x, y } = sortedForest[i];
-      if (this.terrain[y][x] === TerrainType.GRASS && !this.isProtected(x, y, protectedPositions)) {
+      if (this.terrain[y][x] === this.floorType && !this.isProtected(x, y, protectedPositions)) {
         this.terrain[y][x] = TerrainType.FOREST;
       }
     }
 
-    // Sprinkle some DIRT on remaining grass using yet another noise layer
-    const dirtNoise: number[][] = [];
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      dirtNoise[y] = [];
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        dirtNoise[y][x] = fbm(x / MAP_WIDTH * 4, y / MAP_HEIGHT * 4, 3, seed + 3000);
+    // Biome-specific special terrain (lava, ice, rubble) using a dedicated noise layer
+    if (specialTerrainType !== undefined && specialCoverage > 0) {
+      const specialNoise: { x: number; y: number; n: number }[] = [];
+      for (let y = 0; y < MAP_HEIGHT; y++) {
+        for (let x = 0; x < MAP_WIDTH; x++) {
+          const n = fbm(x / MAP_WIDTH * 5, y / MAP_HEIGHT * 5, 3, seed + 8000);
+          specialNoise.push({ x, y, n });
+        }
+      }
+      const sortedSpecial = [...specialNoise].sort((a, b) => b.n - a.n);
+      const specialCount = Math.floor(totalTiles * specialCoverage);
+      for (let i = 0; i < specialCount && i < sortedSpecial.length; i++) {
+        const { x, y } = sortedSpecial[i];
+        if (this.terrain[y][x] === this.floorType && !this.isProtected(x, y, protectedPositions)) {
+          this.terrain[y][x] = specialTerrainType;
+        }
       }
     }
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        if (this.terrain[y][x] === TerrainType.GRASS && dirtNoise[y][x] > 0.62) {
-          this.terrain[y][x] = TerrainType.DIRT;
+
+    // Sprinkle some DIRT on remaining floor tiles (only for non-dirt floors)
+    if (this.floorType !== TerrainType.DIRT && this.floorType !== TerrainType.SAND) {
+      const dirtNoise: number[][] = [];
+      for (let y = 0; y < MAP_HEIGHT; y++) {
+        dirtNoise[y] = [];
+        for (let x = 0; x < MAP_WIDTH; x++) {
+          dirtNoise[y][x] = fbm(x / MAP_WIDTH * 4, y / MAP_HEIGHT * 4, 3, seed + 3000);
+        }
+      }
+      for (let y = 0; y < MAP_HEIGHT; y++) {
+        for (let x = 0; x < MAP_WIDTH; x++) {
+          if (this.terrain[y][x] === this.floorType && dirtNoise[y][x] > 0.62) {
+            this.terrain[y][x] = TerrainType.DIRT;
+          }
         }
       }
     }
@@ -231,7 +277,7 @@ export class MapManager {
       this.carveRiver(rng, protectedPositions);
     }
 
-    // Step 3: Clear protected zones (player start = 5x5 grass, camps/objectives = 3x3)
+    // Step 3: Clear protected zones (use biome floor type)
     for (const pz of protectedPositions) {
       const half = pz.radius;
       for (let dy = -half; dy <= half; dy++) {
@@ -240,7 +286,7 @@ export class MapManager {
           const ty = pz.y + dy;
           if (tx >= 0 && tx < MAP_WIDTH && ty >= 0 && ty < MAP_HEIGHT) {
             if (this.terrain[ty][tx] !== TerrainType.GOLD_MINE) {
-              this.terrain[ty][tx] = TerrainType.GRASS;
+              this.terrain[ty][tx] = this.floorType;
             }
           }
         }
@@ -345,7 +391,8 @@ export class MapManager {
         const dist = Math.abs(tx - playerX) + Math.abs(ty - playerY);
 
         if (dist < tier.minDist || dist > tier.maxDist) continue;
-        if (this.terrain[ty][tx] !== TerrainType.GRASS && this.terrain[ty][tx] !== TerrainType.DIRT && this.terrain[ty][tx] !== TerrainType.METAL_FLOOR) continue;
+        const tt = this.terrain[ty][tx];
+        if (tt !== TerrainType.GRASS && tt !== TerrainType.DIRT && tt !== TerrainType.METAL_FLOOR && tt !== TerrainType.SAND) continue;
 
         // Not adjacent to water
         if (this.hasAdjacentWater(tx, ty)) continue;
@@ -457,7 +504,8 @@ export class MapManager {
 
   isWalkable(tileX: number, tileY: number): boolean {
     const t = this.getTerrain(tileX, tileY);
-    return t !== TerrainType.WATER && t !== TerrainType.FOREST && t !== TerrainType.HULL_WALL;
+    return t !== TerrainType.WATER && t !== TerrainType.FOREST
+      && t !== TerrainType.HULL_WALL && t !== TerrainType.LAVA;
   }
 
   getWalkabilityGrid(): number[][] {

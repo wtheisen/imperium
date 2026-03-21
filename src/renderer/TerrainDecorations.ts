@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config';
 import { TerrainType } from '../map/MapManager';
 import { createRng } from '../utils/MathUtils';
+import { BiomeType } from '../map/BiomeConfig';
 
 interface ProtectedZone {
   x: number;
@@ -26,6 +27,15 @@ interface PropDef {
   maxCount: number;
 }
 
+/** Biome-specific color palettes for decoration props */
+const BIOME_PALETTES: Record<string, { ruin: number; rock: number; bush: number; grass: number; tree: number }> = {
+  temperate: { ruin: 0x6a6a5e, rock: 0x888880, bush: 0x3a6630, grass: 0x557744, tree: 0x4a3520 },
+  volcanic:  { ruin: 0x5a3030, rock: 0x4a3838, bush: 0x4a4020, grass: 0x605030, tree: 0x3a2a18 },
+  tundra:    { ruin: 0x7a7a80, rock: 0x99999a, bush: 0x556660, grass: 0x667766, tree: 0x5a4a3a },
+  jungle:    { ruin: 0x5a6a50, rock: 0x6a7a60, bush: 0x1a5520, grass: 0x2a6630, tree: 0x3a2a15 },
+  desert:    { ruin: 0x8a8070, rock: 0x9a9080, bush: 0x6a7a30, grass: 0x8a8a50, tree: 0x6a5030 },
+};
+
 /**
  * Places decorative props (ruins, rocks, bushes, trees, etc.) on the terrain
  * using InstancedMesh for performance.
@@ -41,9 +51,10 @@ export class TerrainDecorations {
     terrainGrid: TerrainType[][],
     heightMap: number[][],
     protectedPositions: ProtectedZone[],
-    seed: number = 12345
+    seed: number = 12345,
+    biome?: BiomeType
   ) {
-    this.build(terrainGrid, heightMap, protectedPositions, seed);
+    this.build(terrainGrid, heightMap, protectedPositions, seed, biome);
   }
 
   private isProtected(x: number, y: number, zones: ProtectedZone[]): boolean {
@@ -57,9 +68,11 @@ export class TerrainDecorations {
     terrain: TerrainType[][],
     heightMap: number[][],
     protectedZones: ProtectedZone[],
-    seed: number
+    seed: number,
+    biome?: BiomeType
   ): void {
     const rng = createRng(seed);
+    const b = biome ?? 'temperate';
 
     // Collect placement candidates per prop type
     const ruinPositions: PropInstance[] = [];
@@ -73,6 +86,12 @@ export class TerrainDecorations {
     const pipePositions: PropInstance[] = [];
     const controlPanelPositions: PropInstance[] = [];
     const gratingPositions: PropInstance[] = [];
+
+    // Biome-specific prop positions
+    const lavaPillarPositions: PropInstance[] = [];
+    const iceShardPositions: PropInstance[] = [];
+    const cactusPositions: PropInstance[] = [];
+    const vinePositions: PropInstance[] = [];
 
     // Track which tiles have ruins (for skull placement)
     const ruinTiles = new Set<string>();
@@ -183,6 +202,81 @@ export class TerrainDecorations {
                   rotY: rng() * Math.PI * 2,
                 });
               }
+              // Jungle: add vines hanging from trees
+              if (b === 'jungle' && rng() < 0.3) {
+                vinePositions.push({
+                  x: x + (rng() - 0.5) * 0.3,
+                  y: h + 0.3,
+                  z: y + (rng() - 0.5) * 0.3,
+                  scaleX: 0.3 + rng() * 0.2,
+                  scaleY: 0.6 + rng() * 0.4,
+                  scaleZ: 0.3 + rng() * 0.2,
+                  rotY: rng() * Math.PI * 2,
+                });
+              }
+            }
+            break;
+
+          case TerrainType.LAVA:
+            // Obsidian pillars near lava
+            if (rng() < 0.15) {
+              lavaPillarPositions.push({
+                x: x + (rng() - 0.5) * 0.4,
+                y: h,
+                z: y + (rng() - 0.5) * 0.4,
+                scaleX: 0.4 + rng() * 0.3,
+                scaleY: 0.5 + rng() * 0.8,
+                scaleZ: 0.4 + rng() * 0.3,
+                rotY: rng() * Math.PI * 2,
+              });
+            }
+            break;
+
+          case TerrainType.ICE:
+            // Ice shards sticking up
+            if (rng() < 0.12) {
+              iceShardPositions.push({
+                x: x + (rng() - 0.5) * 0.5,
+                y: h,
+                z: y + (rng() - 0.5) * 0.5,
+                scaleX: 0.2 + rng() * 0.2,
+                scaleY: 0.4 + rng() * 0.6,
+                scaleZ: 0.2 + rng() * 0.2,
+                rotY: rng() * Math.PI * 2,
+              });
+            }
+            break;
+
+          case TerrainType.SAND:
+            // Cacti on sand (desert only)
+            if (b === 'desert' && rng() < 0.04) {
+              cactusPositions.push({
+                x: x + (rng() - 0.5) * 0.4,
+                y: h,
+                z: y + (rng() - 0.5) * 0.4,
+                scaleX: 0.3 + rng() * 0.2,
+                scaleY: 0.5 + rng() * 0.5,
+                scaleZ: 0.3 + rng() * 0.2,
+                rotY: rng() * Math.PI * 2,
+              });
+            }
+            break;
+
+          case TerrainType.RUBBLE:
+            // Extra rock debris on rubble
+            if (rng() < 0.5) {
+              const count = 1 + Math.floor(rng() * 3);
+              for (let i = 0; i < count; i++) {
+                rockPositions.push({
+                  x: x + (rng() - 0.5) * 0.7,
+                  y: h,
+                  z: y + (rng() - 0.5) * 0.7,
+                  scaleX: 0.2 + rng() * 0.4,
+                  scaleY: 0.2 + rng() * 0.3,
+                  scaleZ: 0.2 + rng() * 0.4,
+                  rotY: rng() * Math.PI * 2,
+                });
+              }
             }
             break;
         }
@@ -260,13 +354,16 @@ export class TerrainDecorations {
       }
     }
 
+    // Biome palette shifts for existing props
+    const biomePalette = BIOME_PALETTES[b];
+
     // Build instanced meshes for each prop type
     const propDefs: { instances: PropInstance[]; def: PropDef }[] = [
       {
         instances: ruinPositions,
         def: {
           geometry: this.makeRuinGeometry(),
-          material: new THREE.MeshStandardMaterial({ color: 0x6a6a5e, roughness: 0.93 }),
+          material: new THREE.MeshStandardMaterial({ color: biomePalette.ruin, roughness: 0.93 }),
           maxCount: ruinPositions.length,
         },
       },
@@ -274,7 +371,7 @@ export class TerrainDecorations {
         instances: rockPositions,
         def: {
           geometry: new THREE.DodecahedronGeometry(0.08, 0),
-          material: new THREE.MeshStandardMaterial({ color: 0x888880, roughness: 0.92 }),
+          material: new THREE.MeshStandardMaterial({ color: biomePalette.rock, roughness: 0.92 }),
           maxCount: rockPositions.length,
         },
       },
@@ -282,7 +379,7 @@ export class TerrainDecorations {
         instances: bushPositions,
         def: {
           geometry: new THREE.SphereGeometry(0.12, 6, 4),
-          material: new THREE.MeshStandardMaterial({ color: 0x3a6630, roughness: 0.9 }),
+          material: new THREE.MeshStandardMaterial({ color: biomePalette.bush, roughness: 0.9 }),
           maxCount: bushPositions.length,
         },
       },
@@ -290,7 +387,7 @@ export class TerrainDecorations {
         instances: grassTuftPositions,
         def: {
           geometry: this.makeGrassTuftGeometry(),
-          material: new THREE.MeshStandardMaterial({ color: 0x557744, roughness: 0.95 }),
+          material: new THREE.MeshStandardMaterial({ color: biomePalette.grass, roughness: 0.95 }),
           maxCount: grassTuftPositions.length,
         },
       },
@@ -298,7 +395,7 @@ export class TerrainDecorations {
         instances: treePositions,
         def: {
           geometry: this.makeTreeGeometry(),
-          material: new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.9 }),
+          material: new THREE.MeshStandardMaterial({ color: biomePalette.tree, roughness: 0.9 }),
           maxCount: treePositions.length,
         },
       },
@@ -340,6 +437,39 @@ export class TerrainDecorations {
           geometry: this.makeGratingGeometry(),
           material: new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.6, metalness: 0.4 }),
           maxCount: gratingPositions.length,
+        },
+      },
+      // Biome-specific props
+      {
+        instances: lavaPillarPositions,
+        def: {
+          geometry: this.makeLavaPillarGeometry(),
+          material: new THREE.MeshStandardMaterial({ color: 0x2a2020, roughness: 0.95 }),
+          maxCount: lavaPillarPositions.length,
+        },
+      },
+      {
+        instances: iceShardPositions,
+        def: {
+          geometry: this.makeIceShardGeometry(),
+          material: new THREE.MeshStandardMaterial({ color: 0xaabbdd, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 }),
+          maxCount: iceShardPositions.length,
+        },
+      },
+      {
+        instances: cactusPositions,
+        def: {
+          geometry: this.makeCactusGeometry(),
+          material: new THREE.MeshStandardMaterial({ color: 0x3a6a30, roughness: 0.85 }),
+          maxCount: cactusPositions.length,
+        },
+      },
+      {
+        instances: vinePositions,
+        def: {
+          geometry: new THREE.CylinderGeometry(0.01, 0.015, 0.4, 4),
+          material: new THREE.MeshStandardMaterial({ color: 0x2a5520, roughness: 0.9 }),
+          maxCount: vinePositions.length,
         },
       },
     ];
@@ -503,6 +633,34 @@ export class TerrainDecorations {
     const geo = new THREE.BoxGeometry(0.6, 0.02, 0.6);
     geo.translate(0, 0.01, 0);
     return geo;
+  }
+
+  /** Obsidian pillar for volcanic biome */
+  private makeLavaPillarGeometry(): THREE.BufferGeometry {
+    const geo = new THREE.CylinderGeometry(0.06, 0.1, 0.5, 5);
+    geo.translate(0, 0.25, 0);
+    return geo;
+  }
+
+  /** Ice shard crystal for tundra biome */
+  private makeIceShardGeometry(): THREE.BufferGeometry {
+    const geo = new THREE.ConeGeometry(0.06, 0.35, 4);
+    geo.translate(0, 0.175, 0);
+    return geo;
+  }
+
+  /** Simple cactus for desert biome */
+  private makeCactusGeometry(): THREE.BufferGeometry {
+    const trunk = new THREE.CylinderGeometry(0.03, 0.04, 0.3, 5);
+    trunk.translate(0, 0.15, 0);
+    const arm = new THREE.CylinderGeometry(0.02, 0.025, 0.12, 4);
+    arm.rotateZ(Math.PI / 2);
+    arm.translate(0.06, 0.22, 0);
+    const trunkNI = trunk.toNonIndexed();
+    const armNI = arm.toNonIndexed();
+    const merged = this.mergeBufferGeometries([trunkNI, armNI]);
+    trunk.dispose(); arm.dispose(); trunkNI.dispose(); armNI.dispose();
+    return merged;
   }
 
   /** Simple geometry merge for non-indexed geometries */
