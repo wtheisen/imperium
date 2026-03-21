@@ -4,6 +4,8 @@ import { getPlayerState, toggleModifier, savePlayerState } from '../state/Player
 import { MODIFIERS, getModifierBonus } from '../state/DifficultyModifiers';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
 import { generateMission, generateSeedString, parseSeedString } from '../missions/ProceduralMissionGenerator';
+import { EnvironmentModifier } from '../missions/MissionDefinition';
+import { MODIFIER_META } from '../systems/EnvironmentModifierSystem';
 
 // Inject scoped styles once
 let stylesInjected = false;
@@ -125,6 +127,7 @@ export class MissionSelectScene implements GameSceneInterface {
   private commandDropdownOpen = false;
   private procDifficulty = 2;
   private procSeedStr = generateSeedString();
+  private playerMutators = new Set<EnvironmentModifier>();
 
   create(): void {
     injectStyles();
@@ -232,6 +235,25 @@ export class MissionSelectScene implements GameSceneInterface {
 
         <!-- Mission nodes (rendered by JS after DOM insert) -->
         <div id="cm-nodes"></div>
+
+        <!-- Mutator picker row -->
+        <div id="cm-mutator-picker" style="position:absolute;bottom:58px;left:50%;transform:translateX(-50%);
+          z-index:10;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;
+          padding:6px 12px;
+          background:linear-gradient(180deg,rgba(14,12,8,0.92) 0%,rgba(10,10,14,0.92) 100%);
+          border:1px solid rgba(200,152,42,0.12);border-bottom:none;
+          box-shadow:0 -4px 16px rgba(0,0,0,0.4);">
+          <div style="width:100%;font-family:'Teko',sans-serif;font-size:9px;font-weight:500;
+            color:rgba(200,152,42,0.35);letter-spacing:3px;text-align:center;margin-bottom:2px;">MUTATORS</div>
+          ${MODIFIER_META.map(m => `<button class="cm-mutator-btn" data-mod="${m.id}" title="${m.name}: ${m.description}" style="
+            width:30px;height:30px;
+            background:rgba(200,191,160,0.03);
+            border:1px solid rgba(200,191,160,0.1);
+            color:#5a5a4a;font-size:14px;
+            cursor:pointer;transition:all 0.2s;
+            display:flex;align-items:center;justify-content:center;
+            position:relative;">${m.icon}</button>`).join('')}
+        </div>
 
         <!-- Procedural mission generator panel -->
         <div id="cm-proc-panel" style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
@@ -669,6 +691,19 @@ export class MissionSelectScene implements GameSceneInterface {
       });
     });
 
+    // Mutator picker toggle buttons
+    this.container.querySelectorAll('.cm-mutator-btn').forEach(el => {
+      const modId = (el as HTMLElement).dataset.mod as EnvironmentModifier;
+      el.addEventListener('click', () => {
+        if (this.playerMutators.has(modId)) {
+          this.playerMutators.delete(modId);
+        } else {
+          this.playerMutators.add(modId);
+        }
+        this.updateMutatorButtons();
+      });
+    });
+
     // Procedural mission generator panel
     this.container.querySelectorAll('.cm-proc-diff-btn').forEach(el => {
       const d = parseInt((el as HTMLElement).dataset.diff || '2');
@@ -693,7 +728,9 @@ export class MissionSelectScene implements GameSceneInterface {
       if (seedInput) this.procSeedStr = seedInput.value.toUpperCase().slice(0, 6);
       const seed = parseSeedString(this.procSeedStr);
       const state = getPlayerState();
-      const mission = generateMission(this.procDifficulty, seed, state.activeModifiers);
+      // Merge skull modifiers + player-toggled mutators
+      const allModifiers = [...(state.activeModifiers || []), ...Array.from(this.playerMutators)];
+      const mission = generateMission(this.procDifficulty, seed, allModifiers);
       getSceneManager().start('DropSiteScene', { mission });
     });
 
@@ -733,6 +770,17 @@ export class MissionSelectScene implements GameSceneInterface {
       (el as HTMLElement).style.background = selected ? 'rgba(200,152,42,0.15)' : 'rgba(200,191,160,0.03)';
       (el as HTMLElement).style.borderColor = selected ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.1)';
       (el as HTMLElement).style.color = selected ? '#c8982a' : '#5a5a4a';
+    });
+  }
+
+  private updateMutatorButtons(): void {
+    this.container?.querySelectorAll('.cm-mutator-btn').forEach(el => {
+      const modId = (el as HTMLElement).dataset.mod as EnvironmentModifier;
+      const active = this.playerMutators.has(modId);
+      (el as HTMLElement).style.background = active ? 'rgba(200,152,42,0.2)' : 'rgba(200,191,160,0.03)';
+      (el as HTMLElement).style.borderColor = active ? 'rgba(200,152,42,0.6)' : 'rgba(200,191,160,0.1)';
+      (el as HTMLElement).style.color = active ? '#c8982a' : '#5a5a4a';
+      (el as HTMLElement).style.boxShadow = active ? '0 0 8px rgba(200,152,42,0.3),inset 0 0 6px rgba(200,152,42,0.1)' : 'none';
     });
   }
 

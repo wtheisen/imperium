@@ -57,6 +57,11 @@ export class HealthComponent implements Component {
   }
 
   heal(amount: number): void {
+    // Killzone mutator: emit heal attempt event that can be cancelled
+    const cancel = { cancelled: false };
+    EventBus.emit('entity-heal-attempt', { entity: this.entity, amount, cancel });
+    if (cancel.cancelled) return;
+
     const prevHp = this.currentHp;
     this.currentHp = Math.min(this.maxHp, this.currentHp + amount);
     const actualHeal = this.currentHp - prevHp;

@@ -108,6 +108,7 @@ export class VFXRenderer {
     EventBus.on('supply-pod-opened-3d', this.onSupplyPodOpened, this);
     EventBus.on('tile-hover-3d', this.onTileHover, this);
     EventBus.on('ordnance-vfx-3d', this.onSpellVFX, this);
+    EventBus.on('mutator-vfx', this.onMutatorVFX, this);
     EventBus.on('placement-preview-3d', this.onPlacementPreview, this);
     EventBus.on('floating-text-3d', this.onFloatingText, this);
     EventBus.on('mine-tooltip-3d', this.onMineTooltip, this);
@@ -193,6 +194,51 @@ export class VFXRenderer {
     // Extra white flash for fireball/vortex
     if (type === 'fireball' || type === 'vortex') {
       this.spawnFlash(tileX, tileY, 0xffffff, 0.2, 300, 4);
+    }
+  };
+
+  // ── Mutator VFX ──────────────────────────────────────────────
+
+  private onMutatorVFX = (data: { type: string; tileX: number; tileY: number; radius?: number }): void => {
+    const { type, tileX, tileY } = data;
+
+    const mutatorColorMap: Record<string, number> = {
+      iron_rain_warning: 0xff6600,
+      iron_rain_impact: 0xff2200,
+      toxic_tick: 0x22cc22,
+      ambush_warp_in: 0x9933ff,
+      blood_tithe_gain: 0xffcc00,
+      blood_tithe_loss: 0xff0000,
+    };
+    const color = mutatorColorMap[type] || 0xffffff;
+
+    if (type === 'iron_rain_warning') {
+      // Pulsing warning circle on the ground
+      const radius = data.radius || 3;
+      const ringGeo = new THREE.RingGeometry(radius * 0.6, radius * 0.8, 24);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.set(tileX, 0.12, tileY);
+      this.scene.add(ring);
+      this.particles.push({
+        mesh: ring, velocity: new THREE.Vector3(0, 0, 0),
+        lifetime: 2000, elapsed: 0, fadeOut: true, scaleSpeed: 0.3, disposeGeo: true,
+      });
+    } else if (type === 'iron_rain_impact') {
+      // Big fireball explosion
+      const radius = data.radius || 3;
+      this.spawnFlash(tileX, tileY, color, 0.5, 800, radius);
+      this.spawnFlash(tileX, tileY, 0xffffff, 0.3, 400, radius * 0.5);
+    } else if (type === 'toxic_tick') {
+      // Small green puff at unit position
+      this.spawnFlash(tileX, tileY, color, 0.15, 400, 0.6);
+    } else if (type === 'ambush_warp_in') {
+      // Purple shimmer burst
+      this.spawnFlash(tileX, tileY, color, 0.4, 600, 2);
+      this.spawnFlash(tileX, tileY, 0xffffff, 0.2, 300, 1);
+    } else if (type === 'blood_tithe_gain' || type === 'blood_tithe_loss') {
+      this.spawnFlash(tileX, tileY, color, 0.2, 400, 0.8);
     }
   };
 
@@ -1439,6 +1485,7 @@ export class VFXRenderer {
     EventBus.off('supply-pod-opened-3d', this.onSupplyPodOpened, this);
     EventBus.off('tile-hover-3d', this.onTileHover, this);
     EventBus.off('ordnance-vfx-3d', this.onSpellVFX, this);
+    EventBus.off('mutator-vfx', this.onMutatorVFX, this);
     EventBus.off('placement-preview-3d', this.onPlacementPreview, this);
     EventBus.off('floating-text-3d', this.onFloatingText, this);
     EventBus.off('mine-tooltip-3d', this.onMineTooltip, this);

@@ -16,6 +16,7 @@ import { getActiveModifiers, getUndeployedInstance } from '../state/PlayerState'
 import { getCachedMergedEffects } from '../state/DifficultyModifiers';
 import { getSpawnInvulnMs, getBuildingHpBonus } from '../ship/ShipState';
 import { CARD_DATABASE } from './CardDatabase';
+import { EnvironmentEffects } from '../systems/EnvironmentModifierSystem';
 
 /** Per-model stats. Total HP/damage = per-model × squadSize. */
 const UNIT_STATS: Record<string, UnitStats> = {
@@ -41,14 +42,25 @@ const BUILDING_STATS: Record<string, BuildingStats> = {
 export class CardEffects {
   private entityManager: EntityManager;
   private economy: EconomySystem;
+  private envEffects: EnvironmentEffects | null = null;
 
   constructor(entityManager: EntityManager, economy: EconomySystem) {
     this.entityManager = entityManager;
     this.economy = economy;
   }
 
+  setEnvironmentEffects(effects: EnvironmentEffects): void {
+    this.envEffects = effects;
+  }
+
   execute(card: Card, tileX: number, tileY: number): boolean {
-    if (!this.economy.canAfford(card.cost)) return false;
+    // Apply warp_interference ordnance cost multiplier
+    let effectiveCost = card.cost;
+    if (card.type === 'ordnance' && this.envEffects) {
+      effectiveCost = Math.round(card.cost * this.envEffects.ordnanceCostMult);
+    }
+
+    if (!this.economy.canAfford(effectiveCost)) return false;
 
     let success = false;
 
@@ -68,7 +80,7 @@ export class CardEffects {
     }
 
     if (success) {
-      this.economy.spend(card.cost);
+      this.economy.spend(effectiveCost);
     }
 
     return success;
@@ -82,9 +94,11 @@ export class CardEffects {
     const sq = baseStats.squadSize || 1;
     const effects = getCachedMergedEffects(getActiveModifiers);
     const hpMult = effects.playerHpMult ?? 1;
+    // Apply rapid_deployment HP reduction from environment modifiers
+    const envHpMult = this.envEffects?.playerSpawnHpMult ?? 1;
     const stats: UnitStats = {
       ...baseStats,
-      maxHp: Math.round(baseStats.maxHp * sq * hpMult),
+      maxHp: Math.round(baseStats.maxHp * sq * hpMult * envHpMult),
       attackDamage: baseStats.attackDamage * sq,
     };
 

@@ -42,6 +42,7 @@ import { PACK_BURN_GOLD_MULTIPLIER } from '../config';
 import { TacticalPauseManager } from '../systems/TacticalPauseManager';
 import { ScoutRevealSystem } from '../systems/ScoutRevealSystem';
 import { BattleRecorder } from '../systems/BattleRecorder';
+import { MutatorEffectsSystem } from '../systems/MutatorEffectsSystem';
 
 export class GameScene implements GameSceneInterface {
   id = 'GameScene';
@@ -76,6 +77,7 @@ export class GameScene implements GameSceneInterface {
   private packManager: PackManager | null = null;
   private takenPackCards: string[] = [];
   private envEffects: EnvironmentEffects | null = null;
+  private mutatorEffects: MutatorEffectsSystem | null = null;
   private fallenVeterans: { name: string }[] = [];
   private tacticalPause!: TacticalPauseManager;
   private scoutReveal: ScoutRevealSystem | null = null;
@@ -148,11 +150,21 @@ export class GameScene implements GameSceneInterface {
     this.spawnLandingCraft();
     EventBus.emit('minimap-pan', { tileX: this.mission.playerStartX, tileY: this.mission.playerStartY });
 
+    // Resolve environment modifiers before enemy placement so HP/damage multipliers apply
+    this.envEffects = resolveEnvironmentModifiers(this.mission.environmentModifiers);
+    this.entityManager.setEnvironmentEffects(this.envEffects);
+    this.cardEffects.setEnvironmentEffects(this.envEffects);
+
     // Place enemy camps from mission definition
     EnemyPlacement.populate(this.mission, this.entityManager);
 
-    // Resolve environment modifiers
-    this.envEffects = resolveEnvironmentModifiers(this.mission.environmentModifiers);
+    // Setup active mutator effects (iron_rain, toxic_atmosphere, etc.)
+    this.mutatorEffects = new MutatorEffectsSystem(this.entityManager, this.envEffects);
+
+    // Emit active modifiers for in-game HUD
+    if (this.mission.environmentModifiers && this.mission.environmentModifiers.length > 0) {
+      EventBus.emit('active-mutators', { modifiers: this.mission.environmentModifiers });
+    }
 
     // Setup spawner system for continuous enemy production
     this.spawnerSystem = new SpawnerSystem(this.entityManager, this.mission.enemyCamps);
@@ -736,6 +748,7 @@ export class GameScene implements GameSceneInterface {
     this.enemyAI.update(delta);
     this.fogOfWar.update(delta);
     this.spawnerSystem.update(delta);
+    this.mutatorEffects?.update(delta);
     this.pathfinding.update();
     this.commandSystem.update(delta);
     this.selectionSystem.update(delta);
@@ -820,6 +833,7 @@ export class GameScene implements GameSceneInterface {
     this.battleRecorder?.destroy();
     this.xpTracker?.destroy();
     this.spawnerSystem?.destroy();
+    this.mutatorEffects?.destroy();
     this.scoutReveal?.destroy();
     this.fogOfWar?.destroy();
     this.entityManager?.destroy();

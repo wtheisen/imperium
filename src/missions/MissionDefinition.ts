@@ -3,7 +3,11 @@ import { PackDefinition } from '../packs/PackTypes';
 
 export type ObjectiveType = 'destroy' | 'recover' | 'purge' | 'survive' | 'activate' | 'collect';
 
-export type EnvironmentModifier = 'dense_fog' | 'ork_frenzy' | 'supply_shortage' | 'armored_advance' | 'night_raid';
+export type EnvironmentModifier =
+  | 'dense_fog' | 'ork_frenzy' | 'supply_shortage' | 'armored_advance' | 'night_raid'
+  | 'iron_rain' | 'toxic_atmosphere' | 'ambush_spawns' | 'blood_tithe'
+  | 'killzone' | 'elite_only' | 'scrapyard' | 'reinforced_walls'
+  | 'warp_interference' | 'rapid_deployment';
 
 export interface ObjectiveDefinition {
   id: string;
