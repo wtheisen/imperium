@@ -91,6 +91,7 @@ export class FogOfWarSystem {
     const playerEntities = this.entityManager.getEntitiesByTeam('player');
     for (const entity of playerEntities) {
       if (!entity.active) continue;
+      if (entity.tileX < 0 || entity.tileX >= MAP_WIDTH || entity.tileY < 0 || entity.tileY >= MAP_HEIGHT) continue;
       const sight = this.getSightRadius(entity);
       this.revealAround(entity.tileX, entity.tileY, sight);
     }
