@@ -23,6 +23,7 @@ import { getHandSizeBonus, getShipOrdnanceSlots, getShipOrdnanceCharges } from '
 import { ShipOrdnanceBar } from '../ui/ShipOrdnanceBar';
 import { getShipOrdnance } from '../state/PlayerState';
 import { MutatorHUD } from '../ui/MutatorHUD';
+import { TacticalPauseOverlay } from '../ui/TacticalPauseOverlay';
 
 /**
  * UIScene — manages deck, hand, gold, and all HUD logic.
@@ -49,7 +50,7 @@ export class UIScene implements GameSceneInterface {
   private keybindingOverlay: KeybindingOverlay | null = null;
   private packPickupUI: PackPickupUI | null = null;
   private shipOrdnanceBar: ShipOrdnanceBar | null = null;
-  private pauseOverlay: HTMLDivElement | null = null;
+  private tacticalPauseOverlay: TacticalPauseOverlay | null = null;
   /** Per-slot DOM elements for incremental updates. Index 0 = deck pile. */
   private slotEls: HTMLElement[] = [];
   private deckPileEl: HTMLElement | null = null;
@@ -103,6 +104,7 @@ export class UIScene implements GameSceneInterface {
     this.cardTooltip = new CardTooltip();
     this.keybindingOverlay = new KeybindingOverlay();
     this.mutatorHUD = new MutatorHUD();
+    this.tacticalPauseOverlay = new TacticalPauseOverlay();
 
     // Ship ordnance bar
     const ordnanceIds = getShipOrdnance();
@@ -209,15 +211,8 @@ export class UIScene implements GameSceneInterface {
   private boundMouseUp: ((e: MouseEvent) => void) | null = null;
   private boundScryCancel: ((e: MouseEvent) => void) | null = null;
 
-  private createUIOverlay(): void {
-    this.container = document.createElement('div');
-    this.container.id = 'ui-overlay';
-    Object.assign(this.container.style, {
-      position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
-      pointerEvents: 'none', zIndex: '3', fontFamily: 'monospace',
-    });
-
-    this.container.innerHTML = `
+  private createTopBar(): string {
+    return `
       <div id="hud-top" style="position:absolute; top:0; left:0; right:0; pointer-events:auto;
         display:flex; align-items:center; gap:0; padding:0;
         background:linear-gradient(180deg,rgba(10,10,14,0.9) 0%,rgba(10,10,14,0.6) 70%,transparent 100%);
@@ -270,7 +265,11 @@ export class UIScene implements GameSceneInterface {
             font-size:8px; padding:4px 12px; letter-spacing:2px; transition:all 0.2s;">MUTE</button>
         </div>
       </div>
+    `;
+  }
 
+  private createBottomBar(): string {
+    return `
       <!-- Bottom HUD bar spanning full width -->
       <div id="hud-bottom" style="position:absolute; bottom:0; left:0; right:0; pointer-events:auto;
         display:grid; grid-template-columns:1fr 176px 1fr; align-items:stretch; height:192px;
@@ -319,17 +318,17 @@ export class UIScene implements GameSceneInterface {
         </div>
       </div>
     `;
+  }
 
-    document.getElementById('game-container')!.appendChild(this.container);
-
-    this.goldEl = this.container.querySelector('#gold-display');
-    this.deckInfoEl = this.container.querySelector('#deck-info');
-    this.supplyTimerEl = this.container.querySelector('#supply-timer');
-    this.handEl = this.container.querySelector('#hud-section-hand');
-    this.deckGaugeEl = this.container.querySelector('#deck-gauge-fill');
+  private wireOverlayListeners(): void {
+    this.goldEl = this.container!.querySelector('#gold-display');
+    this.deckInfoEl = this.container!.querySelector('#deck-info');
+    this.supplyTimerEl = this.container!.querySelector('#supply-timer');
+    this.handEl = this.container!.querySelector('#hud-section-hand');
+    this.deckGaugeEl = this.container!.querySelector('#deck-gauge-fill');
 
     // Mute button
-    const muteBtn = this.container.querySelector('#mute-btn') as HTMLButtonElement;
+    const muteBtn = this.container!.querySelector('#mute-btn') as HTMLButtonElement;
     muteBtn.addEventListener('click', () => {
       this.isMuted = !this.isMuted;
       muteBtn.textContent = this.isMuted ? 'UNMUTE' : 'MUTE';
@@ -378,6 +377,18 @@ export class UIScene implements GameSceneInterface {
     // Listen for play success/fail to animate cards
     EventBus.on('card-played', this.onCardPlayedVFX, this);
     EventBus.on('card-play-failed', this.onCardPlayFailedVFX, this);
+  }
+
+  private createUIOverlay(): void {
+    this.container = document.createElement('div');
+    this.container.id = 'ui-overlay';
+    Object.assign(this.container.style, {
+      position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
+      pointerEvents: 'none', zIndex: '3', fontFamily: 'monospace',
+    });
+    this.container.innerHTML = `${this.createTopBar()}${this.createBottomBar()}`;
+    document.getElementById('game-container')!.appendChild(this.container);
+    this.wireOverlayListeners();
   }
 
   private playingSlot: number = -1;
@@ -1104,109 +1115,9 @@ export class UIScene implements GameSceneInterface {
     }
   };
 
-  private pauseQueueCountEl: HTMLElement | null = null;
+  private onGamePaused = (): void => this.tacticalPauseOverlay?.show();
 
-  private onGamePaused = (): void => {
-    if (this.pauseOverlay) return;
-    this.pauseOverlay = document.createElement('div');
-    Object.assign(this.pauseOverlay.style, {
-      position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-      background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', zIndex: '9999', pointerEvents: 'none',
-    });
-
-    // Pulsing border frame
-    const frame = document.createElement('div');
-    Object.assign(frame.style, {
-      position: 'absolute', inset: '0',
-      border: '2px solid rgba(200,152,42,0.2)',
-      animation: 'tactical-pause-border-pulse 2s ease-in-out infinite',
-      pointerEvents: 'none',
-    });
-    this.pauseOverlay.appendChild(frame);
-
-    const text = document.createElement('div');
-    Object.assign(text.style, {
-      fontFamily: 'Teko, sans-serif', fontSize: '96px', color: '#c8982a',
-      letterSpacing: '12px', textTransform: 'uppercase',
-      textShadow: '0 0 30px rgba(200,152,42,0.4), 0 0 60px rgba(200,152,42,0.15)',
-      animation: 'tactical-pause-text-pulse 2s ease-in-out infinite',
-    });
-    text.textContent = 'TACTICAL PAUSE';
-
-    const subtitle = document.createElement('div');
-    Object.assign(subtitle.style, {
-      fontFamily: 'Share Tech Mono, monospace', fontSize: '16px', color: 'rgba(200,152,42,0.6)',
-      letterSpacing: '3px', marginTop: '8px', textAlign: 'center',
-    });
-    subtitle.textContent = 'PLANNING MODE — ISSUE ORDERS';
-
-    const queueCount = document.createElement('div');
-    Object.assign(queueCount.style, {
-      fontFamily: 'Share Tech Mono, monospace', fontSize: '13px', color: 'rgba(200,191,160,0.4)',
-      letterSpacing: '2px', marginTop: '16px', textAlign: 'center',
-      transition: 'color 0.2s',
-    });
-    queueCount.textContent = 'QUEUED ORDERS: 0';
-    this.pauseQueueCountEl = queueCount;
-
-    const hint = document.createElement('div');
-    Object.assign(hint.style, {
-      fontFamily: 'Share Tech Mono, monospace', fontSize: '12px', color: 'rgba(200,191,160,0.25)',
-      letterSpacing: '2px', marginTop: '20px', textAlign: 'center',
-    });
-    hint.textContent = 'PRESS P TO EXECUTE & RESUME';
-
-    const wrapper = document.createElement('div');
-    wrapper.style.textAlign = 'center';
-    wrapper.appendChild(text);
-    wrapper.appendChild(subtitle);
-    wrapper.appendChild(queueCount);
-    wrapper.appendChild(hint);
-    this.pauseOverlay.appendChild(wrapper);
-
-    // Add tactical pause CSS animations if not present
-    if (!document.getElementById('tactical-pause-styles')) {
-      const style = document.createElement('style');
-      style.id = 'tactical-pause-styles';
-      style.textContent = `
-        @keyframes tactical-pause-text-pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.7; }
-        }
-        @keyframes tactical-pause-border-pulse {
-          0%, 100% { border-color: rgba(200,152,42,0.15); }
-          50% { border-color: rgba(200,152,42,0.35); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    document.body.appendChild(this.pauseOverlay);
-
-    // Listen for queue changes
-    EventBus.on('tactical-queue-changed', this.onTacticalQueueChanged, this);
-  };
-
-  private onGameResumed = (): void => {
-    EventBus.off('tactical-queue-changed', this.onTacticalQueueChanged, this);
-    this.pauseQueueCountEl = null;
-    if (this.pauseOverlay) {
-      this.pauseOverlay.remove();
-      this.pauseOverlay = null;
-    }
-  };
-
-  private onTacticalQueueChanged = (data: { count: number }): void => {
-    if (this.pauseQueueCountEl) {
-      this.pauseQueueCountEl.textContent = `QUEUED ORDERS: ${data.count}`;
-      if (data.count > 0) {
-        this.pauseQueueCountEl.style.color = 'rgba(200,152,42,0.7)';
-      } else {
-        this.pauseQueueCountEl.style.color = 'rgba(200,191,160,0.4)';
-      }
-    }
-  };
+  private onGameResumed = (): void => this.tacticalPauseOverlay?.hide();
 
   /** Show floating "+Xg" text near the gold counter */
   private showFloatingGoldText(amount: number): void {
@@ -1471,10 +1382,9 @@ export class UIScene implements GameSceneInterface {
     EventBus.off('ship-ordnance-select', this.onShipOrdnanceSelect, this);
     EventBus.off('ship-ordnance-fired', this.onShipOrdnanceFired, this);
     EventBus.off('card-drag-cancel', this.onShipOrdnanceCancel, this);
-    EventBus.off('tactical-queue-changed', this.onTacticalQueueChanged, this);
     this.packPickupUI?.destroy();
     if (this.shipOrdnanceBar) { this.shipOrdnanceBar.destroy(); this.shipOrdnanceBar = null; }
-    if (this.pauseOverlay) { this.pauseOverlay.remove(); this.pauseOverlay = null; }
+    if (this.tacticalPauseOverlay) { this.tacticalPauseOverlay.destroy(); this.tacticalPauseOverlay = null; }
 
     document.removeEventListener('keydown', this.onKeyDown);
     if (this.boundMouseMove) document.removeEventListener('mousemove', this.boundMouseMove);
