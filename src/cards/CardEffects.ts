@@ -259,6 +259,7 @@ export class CardEffects {
           const dx = tileX - entity.tileX;
           const dy = tileY - entity.tileY;
           const len = Math.sqrt(dx * dx + dy * dy);
+          if (len === 0) continue;
           const pullDist = Math.min(2, dist);
           const newX = Math.round(entity.tileX + (dx / len) * pullDist);
           const newY = Math.round(entity.tileY + (dy / len) * pullDist);

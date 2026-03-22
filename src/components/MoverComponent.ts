@@ -104,7 +104,7 @@ export class MoverComponent implements Component {
       if (this.pathIndex >= this.path.length) {
         this.moving = false;
       }
-    } else {
+    } else if (dist > 1e-6) {
       // Interpolate toward target
       const nx = dx / dist;
       const ny = dy / dist;
