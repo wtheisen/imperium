@@ -535,12 +535,12 @@ export class GameOverScene implements GameSceneInterface {
     btn.addEventListener('mouseenter', () => {
       btn.style.background = `linear-gradient(180deg,${color}25 0%,${color}12 100%)`;
       btn.style.borderColor = `${color}90`;
-      btn.style.letterSpacing = '6px';
+      btn.style.textShadow = `0 0 8px ${color}40`;
     });
     btn.addEventListener('mouseleave', () => {
       btn.style.background = `linear-gradient(180deg,${color}15 0%,${color}08 100%)`;
       btn.style.borderColor = `${color}60`;
-      btn.style.letterSpacing = '4px';
+      btn.style.textShadow = 'none';
     });
     return btn;
   }
