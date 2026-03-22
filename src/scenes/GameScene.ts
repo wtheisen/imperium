@@ -163,7 +163,7 @@ export class GameScene implements GameSceneInterface {
     this.cardEffects.setEnvironmentEffects(this.envEffects);
 
     // Place enemy camps from mission definition
-    EnemyPlacement.populate(this.mission, this.entityManager);
+    EnemyPlacement.populate(this.mission, this.entityManager, this.mapManager);
 
     // Setup active mutator effects (iron_rain, toxic_atmosphere, etc.)
     this.mutatorEffects = new MutatorEffectsSystem(this.entityManager, this.envEffects);
