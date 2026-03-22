@@ -95,7 +95,7 @@ export class ProductionComponent implements Component {
       { x: -1, y: 2 }, { x: 2, y: -1 },
     ];
 
-    let spawnX = bx - 1;
+    let spawnX = bx;
     let spawnY = by;
 
     for (const off of offsets) {
