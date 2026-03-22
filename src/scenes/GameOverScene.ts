@@ -231,19 +231,19 @@ export class GameOverScene implements GameSceneInterface {
       btnsDiv.appendChild(retryBtn);
     }
 
-    const shopBtn = this.makeButton('SUPPLY DEPOT', '#50b0b0');
+    const shopBtn = this.makeButton('SUPPLY DEPOT', '#c8982a');
     shopBtn.addEventListener('click', () => {
       getSceneManager().start('ShopScene');
     });
     btnsDiv.appendChild(shopBtn);
 
-    const shipBtn = this.makeButton('SHIP', '#50b0b0');
+    const shipBtn = this.makeButton('SHIP', '#c8982a');
     shipBtn.addEventListener('click', () => {
       getSceneManager().start('ShipScene');
     });
     btnsDiv.appendChild(shipBtn);
 
-    const returnBtn = this.makeButton('RETURN TO COMMAND', this.victory ? '#4a9e4a' : '#5a7a8a');
+    const returnBtn = this.makeButton('RETURN TO COMMAND', this.victory ? '#4a9e4a' : '#c8982a');
     returnBtn.addEventListener('click', () => {
       getSceneManager().start('MissionSelectScene');
     });
