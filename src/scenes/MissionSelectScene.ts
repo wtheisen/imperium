@@ -71,6 +71,34 @@ function injectStyles(): void {
     }
     .cm-node-dot:nth-child(2) { animation-delay: -1.33s; }
     .cm-node-dot:nth-child(3) { animation-delay: -2.66s; }
+    .cm-mutator-btn:hover {
+      border-color: rgba(200,152,42,0.5) !important;
+      background: rgba(200,152,42,0.08) !important;
+      color: #c8982a !important;
+      transform: scale(1.1);
+    }
+    .cm-mutator-btn[data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: 180px;
+      white-space: normal;
+      padding: 6px 10px;
+      background: rgba(10,10,14,0.97);
+      border: 1px solid rgba(200,152,42,0.4);
+      color: #c8bfa0;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      letter-spacing: 0.5px;
+      z-index: 100;
+      pointer-events: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      box-sizing: border-box;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -245,7 +273,7 @@ export class MissionSelectScene implements GameSceneInterface {
           box-shadow:0 -4px 16px rgba(0,0,0,0.4);">
           <div style="width:100%;font-family:'Teko',sans-serif;font-size:9px;font-weight:500;
             color:rgba(200,152,42,0.35);letter-spacing:3px;text-align:center;margin-bottom:2px;">MUTATORS</div>
-          ${MODIFIER_META.map(m => `<button class="cm-mutator-btn" data-mod="${m.id}" title="${m.name}: ${m.description}" style="
+          ${MODIFIER_META.map(m => `<button class="cm-mutator-btn" data-mod="${m.id}" data-tooltip="${m.name}: ${m.description}" title="${m.name}: ${m.description}" style="
             width:30px;height:30px;
             background:rgba(200,191,160,0.03);
             border:1px solid rgba(200,191,160,0.1);
