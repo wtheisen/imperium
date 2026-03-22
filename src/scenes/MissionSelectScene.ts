@@ -85,6 +85,9 @@ function injectStyles(): void {
       color: #c8982a !important;
       background: rgba(200,152,42,0.08) !important;
     }
+    #cm-modal::-webkit-scrollbar { width: 4px; }
+    #cm-modal::-webkit-scrollbar-track { background: transparent; }
+    #cm-modal::-webkit-scrollbar-thumb { background: rgba(200,152,42,0.3); border-radius: 2px; }
     .cm-mutator-btn[data-tooltip]:hover::after {
       content: attr(data-tooltip);
       position: absolute;
@@ -569,6 +572,23 @@ export class MissionSelectScene implements GameSceneInterface {
     const completed = state.completedMissions.has(missionId);
     modal.innerHTML = this.buildMissionModal(mission, completed);
     modal.style.display = 'block';
+
+    // Scroll-hint fade overlay — shown when content overflows below visible area
+    const fade = document.createElement('div');
+    fade.id = 'cm-modal-fade';
+    Object.assign(fade.style, {
+      position: 'sticky', bottom: '0', left: '0', right: '0',
+      height: '40px', pointerEvents: 'none',
+      background: 'linear-gradient(transparent, rgba(10,10,14,0.95))',
+      marginTop: '-40px', display: 'block', zIndex: '1',
+    });
+    modal.appendChild(fade);
+    const updateFade = () => {
+      const atBottom = modal.scrollTop + modal.clientHeight >= modal.scrollHeight - 4;
+      fade.style.opacity = atBottom ? '0' : '1';
+    };
+    updateFade();
+    modal.addEventListener('scroll', updateFade);
 
     // Position modal near the node, but keep it on-screen
     const node = CAMPAIGN_NODES.find(n => n.missionId === missionId);
