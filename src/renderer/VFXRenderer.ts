@@ -23,6 +23,14 @@ interface ProjectileVFX {
   elapsed: number;
 }
 
+interface MarkerEntry {
+  group: THREE.Group;
+  spinMesh?: THREE.Mesh | null;
+  pulseMesh?: THREE.Mesh | null;
+  floatMesh?: THREE.Mesh | null;
+  ringMesh?: THREE.Mesh | null;
+}
+
 /**
  * Handles transient 3D visual effects: spawn flashes, death flashes,
  * command indicators, projectile trails, supply pod beacons, objective markers.
@@ -33,10 +41,21 @@ export class VFXRenderer {
   private projectiles: ProjectileVFX[] = [];
 
   // Persistent markers — store direct refs to animated children to avoid traverse() per frame
-  private objectiveMarkers = new Map<string, { group: THREE.Group; spinMesh: THREE.Mesh | null }>();
-  private supplyPodMeshes = new Map<string, { group: THREE.Group; pulseMesh: THREE.Mesh | null }>();
-  private packMarkers = new Map<string, { group: THREE.Group; pulseMesh: THREE.Mesh | null }>();
-  private poiMarkers = new Map<string, { group: THREE.Group; pulseMesh: THREE.Mesh | null; floatMesh: THREE.Mesh | null; ringMesh: THREE.Mesh | null }>();
+  private objectiveMarkers = new Map<string, MarkerEntry>();
+  private supplyPodMeshes = new Map<string, MarkerEntry>();
+  private packMarkers = new Map<string, MarkerEntry>();
+  private poiMarkers = new Map<string, MarkerEntry>();
+
+  private static readonly VFX_COLORS = {
+    spell:    { heal: 0x00ff00, fireball: 0xff4400, stasis: 0x4488ff, vortex: 0x9922cc, ability: 0x44ddff } as Record<string, number>,
+    mutator:  { iron_rain_warning: 0xff6600, iron_rain_impact: 0xff2200, toxic_tick: 0x22cc22, ambush_warp_in: 0x9933ff, blood_tithe_gain: 0xffcc00, blood_tithe_loss: 0xff0000 } as Record<string, number>,
+    objective: { destroy: 0xff4444, recover: 0x44aaff, purge: 0xffaa00 } as Record<string, number>,
+    cardPlayed: { unit: 0xffffff, building: 0xffffff, ordnance: 0x8844cc, equipment: 0x44dddd } as Record<string, number>,
+    command:  { move: 0x44ff44, attack: 0xff4444, gather: 0xffaa00 } as Record<string, number>,
+    pack:     { random: 0xc8982a, wargear: 0x50b0b0, ordnance: 0xa070cc, unit: 0x6090cc, building: 0x60aa60 } as Record<string, number>,
+    poi:      { gold_cache: 0xc8982a, ammo_dump: 0x50b0b0, med_station: 0x60aa60, intel: 0x6090cc, relic: 0xa070cc } as Record<string, number>,
+    tactical: { move: 0x44ff44, attack: 0xff4444, 'attack-move': 0xff8844, patrol: 0x4488ff, gather: 0xffaa00 } as Record<string, number>,
+  };
 
   // Gold mine models
   private goldMines = new Map<string, { group: THREE.Group; barFill: THREE.Mesh; barBg: THREE.Mesh; label: THREE.Mesh; labelCanvas: HTMLCanvasElement; labelTexture: THREE.CanvasTexture; remaining: number; maxGold: number; glowMesh: THREE.Mesh | null }>();
@@ -158,14 +177,7 @@ export class VFXRenderer {
   private onSpellVFX = (data: { type: string; tileX: number; tileY: number; radius: number; durationMs?: number }): void => {
     const { type, tileX, tileY, radius } = data;
 
-    const colorMap: Record<string, number> = {
-      heal: 0x00ff00,
-      fireball: 0xff4400,
-      stasis: 0x4488ff,
-      vortex: 0x9922cc,
-      ability: 0x44ddff,
-    };
-    const color = colorMap[type] || 0xffffff;
+    const color = VFXRenderer.VFX_COLORS.spell[type] ?? 0xffffff;
 
     // Expanding ring on the ground
     const ringGeo = new THREE.RingGeometry(0.3, radius * 0.8, 24);
@@ -202,15 +214,7 @@ export class VFXRenderer {
   private onMutatorVFX = (data: { type: string; tileX: number; tileY: number; radius?: number }): void => {
     const { type, tileX, tileY } = data;
 
-    const mutatorColorMap: Record<string, number> = {
-      iron_rain_warning: 0xff6600,
-      iron_rain_impact: 0xff2200,
-      toxic_tick: 0x22cc22,
-      ambush_warp_in: 0x9933ff,
-      blood_tithe_gain: 0xffcc00,
-      blood_tithe_loss: 0xff0000,
-    };
-    const color = mutatorColorMap[type] || 0xffffff;
+    const color = VFXRenderer.VFX_COLORS.mutator[type] ?? 0xffffff;
 
     if (type === 'iron_rain_warning') {
       // Pulsing warning circle on the ground
@@ -736,8 +740,7 @@ export class VFXRenderer {
   // ── Command Indicator ──────────────────────────────────────
 
   private onCommandIndicator = (data: { tileX: number; tileY: number; type: string }): void => {
-    const colorMap: Record<string, number> = { move: 0x44ff44, attack: 0xff4444, gather: 0xffaa00 };
-    const color = colorMap[data.type] || 0xffffff;
+    const color = VFXRenderer.VFX_COLORS.command[data.type] ?? 0xffffff;
 
     const ringGeo = new THREE.RingGeometry(0.15, 0.25, 16);
     ringGeo.rotateX(-Math.PI / 2);
@@ -773,13 +776,7 @@ export class VFXRenderer {
   // ── Card Played VFX ────────────────────────────────────────
 
   private onCardPlayedVFX = (data: { tileX: number; tileY: number; cardType: string }): void => {
-    const colorMap: Record<string, number> = {
-      unit: 0xffffff,
-      building: 0xffffff,
-      ordnance: 0x8844cc,
-      equipment: 0x44dddd,
-    };
-    const color = colorMap[data.cardType] || 0xffffff;
+    const color = VFXRenderer.VFX_COLORS.cardPlayed[data.cardType] ?? 0xffffff;
 
     // Central flash sphere
     this.spawnFlash(data.tileX, data.tileY, color, 0.3, 300, 3);
@@ -834,37 +831,67 @@ export class VFXRenderer {
   // ── Objective Markers ──────────────────────────────────────
 
   private onObjectiveMarker = (data: { id: string; tileX: number; tileY: number; type: string }): void => {
-    const colorMap: Record<string, number> = { destroy: 0xff4444, recover: 0x44aaff, purge: 0xffaa00 };
-    const color = colorMap[data.type] || 0xffffff;
-
-    const group = new THREE.Group();
-
-    // Pillar beacon
-    const pillarGeo = new THREE.CylinderGeometry(0.08, 0.08, 2, 8);
-    const pillarMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 });
-    const pillar = new THREE.Mesh(pillarGeo, pillarMat);
-    pillar.position.y = 1;
-    group.add(pillar);
-
-    // Base ring
-    const ringGeo = new THREE.RingGeometry(0.3, 0.5, 16);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.y = 0.12;
-    group.add(ring);
-
-    // Diamond-shaped top marker
-    const diamondGeo = new THREE.OctahedronGeometry(0.15);
-    const diamondMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3 });
-    const diamond = new THREE.Mesh(diamondGeo, diamondMat);
-    diamond.position.y = 2.2;
-    group.add(diamond);
-
-    group.position.set(data.tileX, 0, data.tileY);
+    const color = VFXRenderer.VFX_COLORS.objective[data.type] ?? 0xffffff;
+    const { group, topMesh } = this.createBeaconMarker({ tileX: data.tileX, tileY: data.tileY, color,
+      pillar: { topR: 0.08, botR: 0.08, height: 2, seg: 8, yOffset: 1, opacity: 0.4 },
+      ring: { inner: 0.3, outer: 0.5, seg: 16, yOffset: 0.12, opacity: 0.6 },
+      top: { shape: 'diamond', size: 0.15, yOffset: 2.2, emissive: true },
+    });
     this.scene.add(group);
-    this.objectiveMarkers.set(data.id, { group, spinMesh: diamond });
+    this.objectiveMarkers.set(data.id, { group, spinMesh: topMesh });
   };
+
+  private createBeaconMarker(config: {
+    tileX: number; tileY: number; color: number;
+    pillar?: { topR: number; botR: number; height: number; seg: number; yOffset: number; opacity: number; metallic?: boolean };
+    body?: { w: number; h: number; d: number; yOffset: number };
+    ring?: { inner: number; outer: number; seg: number; yOffset: number; opacity: number };
+    top: { shape: 'diamond' | 'sphere'; size: number; yOffset: number; opacity?: number; emissive?: boolean };
+  }): { group: THREE.Group; topMesh: THREE.Mesh; ringMesh: THREE.Mesh | null } {
+    const group = new THREE.Group();
+    const { color } = config;
+
+    if (config.pillar) {
+      const { topR, botR, height, seg, yOffset, opacity, metallic } = config.pillar;
+      const mat = metallic
+        ? new THREE.MeshStandardMaterial({ color, metalness: 0.6, roughness: 0.3 })
+        : new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(topR, botR, height, seg), mat);
+      mesh.position.y = yOffset;
+      group.add(mesh);
+    }
+
+    if (config.body) {
+      const { w, h, d, yOffset } = config.body;
+      const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.4 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.y = yOffset;
+      group.add(mesh);
+    }
+
+    let ringMesh: THREE.Mesh | null = null;
+    if (config.ring) {
+      const { inner, outer, seg, yOffset, opacity } = config.ring;
+      const geo = new THREE.RingGeometry(inner, outer, seg);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide });
+      ringMesh = new THREE.Mesh(geo, mat);
+      ringMesh.position.y = yOffset;
+      group.add(ringMesh);
+    }
+
+    const { shape, size, yOffset, opacity = 0.6, emissive = false } = config.top;
+    const topGeo = shape === 'diamond' ? new THREE.OctahedronGeometry(size) : new THREE.SphereGeometry(size, 8, 6);
+    const topMat = emissive
+      ? new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3 })
+      : new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+    const topMesh = new THREE.Mesh(topGeo, topMat);
+    topMesh.position.y = yOffset;
+    group.add(topMesh);
+
+    group.position.set(config.tileX, 0, config.tileY);
+    return { group, topMesh, ringMesh };
+  }
 
   private onObjectiveCompleted = (data: { objectiveId: string }): void => {
     const entry = this.objectiveMarkers.get(data.objectiveId);
@@ -1041,35 +1068,13 @@ export class VFXRenderer {
   // ── Pack Markers ──────────────────────────────────────────────
 
   private onPackMarker = (data: { id: string; type: string; tileX: number; tileY: number }): void => {
-    const group = new THREE.Group();
-
-    // Color based on pack type
-    const colorMap: Record<string, number> = {
-      random: 0xc8982a,   // gold
-      wargear: 0x50b0b0,  // teal
-      ordnance: 0xa070cc, // purple
-      unit: 0x6090cc,     // blue
-      building: 0x60aa60, // green
-    };
-    const color = colorMap[data.type] || 0xc8982a;
-
-    // Crate body
-    const bodyGeo = new THREE.BoxGeometry(0.35, 0.25, 0.35);
-    const bodyMat = new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.4 });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 0.125;
-    group.add(body);
-
-    // Glow beacon
-    const beaconGeo = new THREE.SphereGeometry(0.15, 8, 6);
-    const beaconMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 });
-    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-    beacon.position.y = 0.5;
-    group.add(beacon);
-
-    group.position.set(data.tileX, 0, data.tileY);
+    const color = VFXRenderer.VFX_COLORS.pack[data.type] ?? 0xc8982a;
+    const { group, topMesh } = this.createBeaconMarker({ tileX: data.tileX, tileY: data.tileY, color,
+      body: { w: 0.35, h: 0.25, d: 0.35, yOffset: 0.125 },
+      top: { shape: 'sphere', size: 0.15, yOffset: 0.5, opacity: 0.4 },
+    });
     this.scene.add(group);
-    this.packMarkers.set(data.id, { group, pulseMesh: beacon });
+    this.packMarkers.set(data.id, { group, pulseMesh: topMesh });
   };
 
   private onPackOpened = (data: { id: string }): void => {
@@ -1085,43 +1090,15 @@ export class VFXRenderer {
 
   // ── PoI Markers ──────────────────────────────────────────────
 
-  private static readonly POI_COLORS: Record<string, number> = {
-    gold_cache:  0xc8982a,
-    ammo_dump:   0x50b0b0,
-    med_station: 0x60aa60,
-    intel:       0x6090cc,
-    relic:       0xa070cc,
-  };
-
   private onPOIMarker = (data: { id: string; type: string; tileX: number; tileY: number }): void => {
-    const group = new THREE.Group();
-    const color = VFXRenderer.POI_COLORS[data.type] ?? 0xc8982a;
-
-    // Pillar base
-    const pillarGeo = new THREE.CylinderGeometry(0.06, 0.1, 0.6, 6);
-    const pillarMat = new THREE.MeshStandardMaterial({ color, metalness: 0.6, roughness: 0.3 });
-    const pillar = new THREE.Mesh(pillarGeo, pillarMat);
-    pillar.position.y = 0.3;
-    group.add(pillar);
-
-    // Floating icon sphere
-    const iconGeo = new THREE.SphereGeometry(0.12, 8, 6);
-    const iconMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 });
-    const icon = new THREE.Mesh(iconGeo, iconMat);
-    icon.position.y = 0.8;
-    group.add(icon);
-
-    // Ground glow ring
-    const ringGeo = new THREE.RingGeometry(0.2, 0.35, 12);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.y = 0.02;
-    group.add(ring);
-
-    group.position.set(data.tileX, 0, data.tileY);
+    const color = VFXRenderer.VFX_COLORS.poi[data.type] ?? 0xc8982a;
+    const { group, topMesh, ringMesh } = this.createBeaconMarker({ tileX: data.tileX, tileY: data.tileY, color,
+      pillar: { topR: 0.06, botR: 0.1, height: 0.6, seg: 6, yOffset: 0.3, opacity: 1, metallic: true },
+      ring: { inner: 0.2, outer: 0.35, seg: 12, yOffset: 0.02, opacity: 0.2 },
+      top: { shape: 'sphere', size: 0.12, yOffset: 0.8, opacity: 0.6 },
+    });
     this.scene.add(group);
-    this.poiMarkers.set(data.id, { group, pulseMesh: icon, floatMesh: icon, ringMesh: ring });
+    this.poiMarkers.set(data.id, { group, pulseMesh: topMesh, floatMesh: topMesh, ringMesh });
   };
 
   private onPOICollected = (data: { id: string; tileX: number; tileY: number }): void => {
@@ -1138,11 +1115,7 @@ export class VFXRenderer {
   // ── Tactical Pause Ghost Markers ────────────────────────────
 
   private onTacticalOrderQueued = (data: { type: string; targetX: number; targetY: number }): void => {
-    const colorMap: Record<string, number> = {
-      move: 0x44ff44, attack: 0xff4444, 'attack-move': 0xff8844,
-      patrol: 0x4488ff, gather: 0xffaa00,
-    };
-    const color = colorMap[data.type] || 0x44ff44;
+    const color = VFXRenderer.VFX_COLORS.tactical[data.type] ?? 0x44ff44;
 
     // Dashed ring marker at destination
     const ringGeo = new THREE.RingGeometry(0.2, 0.35, 16);
