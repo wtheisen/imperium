@@ -144,9 +144,17 @@ export class DeckEditScene implements GameSceneInterface {
     const newBtn = document.createElement('button');
     newBtn.className = 'de-tab';
     Object.assign(newBtn.style, {
-      background: 'transparent', border: '1px dashed rgba(200,191,160,0.1)',
-      color: '#3a3a2a', fontFamily: '"Share Tech Mono",monospace',
+      background: 'transparent', border: '1px dashed rgba(200,191,160,0.3)',
+      color: '#6a6a5a', fontFamily: '"Share Tech Mono",monospace',
       fontSize: '11px', padding: '5px 12px', cursor: 'pointer', letterSpacing: '1px',
+    });
+    newBtn.addEventListener('mouseenter', () => {
+      newBtn.style.borderColor = 'rgba(200,152,42,0.5)';
+      newBtn.style.color = '#c8982a';
+    });
+    newBtn.addEventListener('mouseleave', () => {
+      newBtn.style.borderColor = 'rgba(200,191,160,0.3)';
+      newBtn.style.color = '#6a6a5a';
     });
     newBtn.textContent = '+ NEW';
     newBtn.addEventListener('click', () => {
