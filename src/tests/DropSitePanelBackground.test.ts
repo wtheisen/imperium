@@ -82,3 +82,30 @@ describe('DropSiteScene panel background styles', () => {
     expect(src.default).toMatch(/background:linear-gradient\(270deg[^"]*\)[\s\S]*?padding-right:16px/);
   });
 });
+
+describe('DropSiteScene field conditions layout', () => {
+  it('left panel has overflow-x:hidden to clip horizontal overflow', async () => {
+    const src = await import('../scenes/DropSiteScene?raw');
+    expect(src.default).toContain('overflow-x:hidden');
+  });
+
+  it('field conditions rows use grid layout to keep values inside panel', async () => {
+    const src = await import('../scenes/DropSiteScene?raw');
+    expect(src.default).toContain('grid-template-columns:1fr auto');
+  });
+
+  it('field conditions rows use align-items:baseline for label/value alignment', async () => {
+    const src = await import('../scenes/DropSiteScene?raw');
+    expect(src.default).toContain('align-items:baseline');
+  });
+
+  it('field conditions rows do not use flex space-between (caused value overflow)', async () => {
+    const src = await import('../scenes/DropSiteScene?raw');
+    // Extract just the three field condition row divs that follow the FIELD CONDITIONS label.
+    // Each row had display:flex;justify-content:space-between before the fix — now grid.
+    const start = src.default.indexOf('FIELD CONDITIONS');
+    const end = src.default.indexOf('</div>\n        </div>', start);
+    const fieldConditionsSection = src.default.slice(start, end);
+    expect(fieldConditionsSection).not.toContain('display:flex;justify-content:space-between');
+  });
+});

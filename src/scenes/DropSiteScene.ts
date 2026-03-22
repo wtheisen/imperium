@@ -177,7 +177,7 @@ export class DropSiteScene implements GameSceneInterface {
         <div style="width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:0;
           background:linear-gradient(270deg, rgba(10,10,14,0.7) 0%, rgba(10,10,14,0.92) 30%, rgba(10,10,14,0.95) 100%);
           padding-right:16px;
-          overflow-y:auto;animation:ds-fade-in 0.4s ease-out;">
+          overflow-y:auto;overflow-x:hidden;animation:ds-fade-in 0.4s ease-out;">
 
           <!-- Mission name -->
           <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
@@ -243,17 +243,17 @@ export class DropSiteScene implements GameSceneInterface {
           <!-- Mission Stats -->
           <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.35);margin-bottom:8px;">FIELD CONDITIONS</div>
           <div style="display:flex;flex-direction:column;gap:4px;">
-            <div style="display:flex;justify-content:space-between;padding:4px 8px;
+            <div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;padding:4px 8px;
               background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,152,42,0.15);">
               <span style="font-size:9px;color:rgba(200,191,160,0.3);">STARTING REQ</span>
               <span style="font-family:'Teko',sans-serif;font-size:16px;color:#c8982a;font-weight:600;line-height:1;">${this.mission.startingGold}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 8px;
+            <div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;padding:4px 8px;
               background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,152,42,0.15);">
               <span style="font-size:9px;color:rgba(200,191,160,0.3);">SUPPLY INTERVAL</span>
               <span style="font-family:'Teko',sans-serif;font-size:16px;color:rgba(200,191,160,0.5);font-weight:500;line-height:1;">${Math.round(this.mission.supplyDropIntervalMs / 1000)}s</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 8px;
+            <div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;padding:4px 8px;
               background:rgba(200,191,160,0.02);border-left:2px solid rgba(196,48,48,0.2);">
               <span style="font-size:9px;color:rgba(200,191,160,0.3);">ENEMY CAMPS</span>
               <span style="font-family:'Teko',sans-serif;font-size:16px;color:#c43030;font-weight:500;line-height:1;">${this.mission.enemyCamps.length}</span>
