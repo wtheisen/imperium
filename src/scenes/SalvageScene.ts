@@ -24,6 +24,7 @@ export class SalvageScene implements GameSceneInterface {
   private container: HTMLDivElement | null = null;
   private decisions: CardDecision[] = [];
   private passData: any = null;
+  private confirmed = false;
 
   create(data?: any): void {
     this.passData = data;
@@ -248,6 +249,8 @@ export class SalvageScene implements GameSceneInterface {
   }
 
   private confirm(): void {
+    if (this.confirmed) return;
+    this.confirmed = true;
     for (const decision of this.decisions) {
       if (decision.action === 'keep') {
         addToCollection(decision.cardId, 1);
@@ -280,5 +283,6 @@ export class SalvageScene implements GameSceneInterface {
     }
     this.decisions = [];
     this.passData = null;
+    this.confirmed = false;
   }
 }
