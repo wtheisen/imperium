@@ -20,6 +20,9 @@ export class SelectionSystem {
   private lastClickTime: number = 0;
   private lastClickUnit: Unit | null = null;
 
+  // Dirty flag: set true whenever selection changes, cleared after emitting
+  private selectionDirty = false;
+
   // CSS overlay selection box
   private selectionBoxDiv: HTMLDivElement | null = null;
 
@@ -50,6 +53,7 @@ export class SelectionSystem {
             this.clearSelection();
             const allUnits = this.entityManager.getUnits('player');
             this.selectedUnits = allUnits.filter((u) => u.active && ids.includes(u.entityId));
+            this.selectionDirty = true;
             for (const unit of this.selectedUnits) {
               this.highlightUnit(unit, true);
             }
@@ -180,10 +184,12 @@ export class SelectionSystem {
 
     if (clickedUnit) {
       this.selectedUnits = [clickedUnit];
+      this.selectionDirty = true;
       this.highlightUnit(clickedUnit, true);
       EventBus.emit('selection-changed', { entities: this.selectedUnits });
     } else if (clickedBuilding) {
       this.selectedBuilding = clickedBuilding;
+      this.selectionDirty = true;
       this.highlightBuilding(clickedBuilding, true);
       EventBus.emit('selection-changed', { entities: [], building: clickedBuilding });
     } else {
@@ -208,6 +214,7 @@ export class SelectionSystem {
       const sy = (-tempVec.y * 0.5 + 0.5) * rect.height + rect.top;
       return sx >= rect.left && sx <= rect.right && sy >= rect.top && sy <= rect.bottom;
     });
+    this.selectionDirty = true;
 
     for (const unit of this.selectedUnits) {
       this.highlightUnit(unit, true);
@@ -240,6 +247,7 @@ export class SelectionSystem {
       const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height + rect.top;
       return screenX >= sx1 && screenX <= sx2 && screenY >= sy1 && screenY <= sy2;
     });
+    this.selectionDirty = true;
 
     for (const unit of this.selectedUnits) {
       this.highlightUnit(unit, true);
@@ -275,10 +283,20 @@ export class SelectionSystem {
     }
     this.selectedUnits = [];
     this.selectedBuilding = null;
+    this.selectionDirty = true;
   }
 
   update(_delta: number): void {
-    // Update 3D selection highlight
+    // Filter out units that have died since last selection
+    const activeCount = this.selectedUnits.filter((u) => u.active).length;
+    if (activeCount !== this.selectedUnits.length) {
+      this.selectedUnits = this.selectedUnits.filter((u) => u.active);
+      this.selectionDirty = true;
+    }
+
+    if (!this.selectionDirty) return;
+    this.selectionDirty = false;
+
     const ids = this.selectedUnits.map((u) => u.entityId);
     if (this.selectedBuilding) ids.push(this.selectedBuilding.entityId);
     EventBus.emit('selection-highlight', ids);
