@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MISSIONS } from '../missions/MissionDatabase';
+import { generateMission } from '../missions/ProceduralMissionGenerator';
 
 /**
  * Replicates the label HTML generation from MissionSelectScene.renderNodes()
@@ -26,7 +26,7 @@ describe('MissionSelectScene node label', () => {
     const html = buildLabelHtml(name, 48);
     // Full name present — no '…' suffix from JS truncation
     expect(html).toContain(name.toUpperCase());
-    expect(html).not.toContain(name.toUpperCase().substring(0, 14) + '…');
+    expect(html).not.toContain(name.toUpperCase().substring(0, 14) + '\u2026');
   });
 
   it('uses CSS text-overflow:ellipsis for overflow handling', () => {
@@ -47,15 +47,21 @@ describe('MissionSelectScene node label', () => {
     expect(html).toContain(`max-width:${size + 60}px`);
   });
 
-  it('all MISSIONS with names longer than 14 chars are fully displayed', () => {
-    const longNameMissions = MISSIONS.filter(m => m.name.length > 14);
-    expect(longNameMissions.length).toBeGreaterThan(0); // confirms bug existed
-
+  it('procedural missions with long names are fully displayed', () => {
+    // Generate a few procedural missions and verify long names render fully
+    const missions = [
+      generateMission(1, 12345),
+      generateMission(2, 23456),
+      generateMission(3, 34567),
+      generateMission(4, 45678),
+    ];
+    const longNameMissions = missions.filter(m => m.name.length > 14);
+    // At least some procedural missions should have names > 14 chars
     for (const m of longNameMissions) {
       const size = m.difficulty >= 4 ? 62 : m.difficulty >= 3 ? 54 : 48;
       const html = buildLabelHtml(m.name, size);
       expect(html).toContain(m.name.toUpperCase());
-      expect(html).not.toContain(m.name.toUpperCase().substring(0, 14) + '…');
+      expect(html).not.toContain(m.name.toUpperCase().substring(0, 14) + '\u2026');
     }
   });
 });

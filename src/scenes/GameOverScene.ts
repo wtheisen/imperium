@@ -1,4 +1,4 @@
-import { getPlayerState, applyPendingRewards, addRequisitionPoints, savePlayerState, getActiveModifiers, clearModifiers } from '../state/PlayerState';
+import { getPlayerState, applyPendingRewards, addRequisitionPoints, savePlayerState, getActiveModifiers, clearModifiers, addCompletedSeed } from '../state/PlayerState';
 import { CARD_DATABASE } from '../cards/CardDatabase';
 import { MissionDefinition } from '../missions/MissionDefinition';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
@@ -75,6 +75,14 @@ export class GameOverScene implements GameSceneInterface {
     const state = getPlayerState();
     if (this.victory && this.missionId) {
       state.completedMissions.add(this.missionId);
+    }
+
+    // Record completed seed for procedural missions
+    if (this.victory && this.mission) {
+      const seedStr = (this.mission as any)._seedStr;
+      if (seedStr) {
+        addCompletedSeed(seedStr);
+      }
     }
 
     const earnedCards = [...state.pendingRewards];

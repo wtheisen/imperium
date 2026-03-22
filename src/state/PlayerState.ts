@@ -42,6 +42,7 @@ export interface PlayerStateData {
   decks: SavedDeck[];
   selectedDeckIndex: number;
   completedMissions: Set<string>;
+  completedSeeds: string[];             // procedural mission seeds completed
   pendingRewards: string[];             // cards earned during current mission
   /** @deprecated Kept for save compatibility. XP now lives on CardInstance. */
   unitXp: Record<string, UnitXpData>;
@@ -62,6 +63,7 @@ const state: PlayerStateData = {
   decks: [],
   selectedDeckIndex: 0,
   completedMissions: new Set(),
+  completedSeeds: [],
   pendingRewards: [],
   unitXp: {},
   unlockedNodes: new Set(),
@@ -121,6 +123,7 @@ function initStarterCollection(): void {
 
   state.selectedDeckIndex = 0;
   state.completedMissions = new Set();
+  state.completedSeeds = [];
   state.pendingRewards = [];
   state.unitXp = {
     servitor: { earned: 0, spent: 0 },
@@ -152,6 +155,7 @@ export function savePlayerState(): void {
     decks: state.decks,
     selectedDeckIndex: state.selectedDeckIndex,
     completedMissions: Array.from(state.completedMissions),
+    completedSeeds: state.completedSeeds,
     pendingRewards: state.pendingRewards,
     requisitionPoints: state.requisitionPoints,
     activeModifiers: state.activeModifiers,
@@ -189,6 +193,7 @@ export function loadPlayerState(): boolean {
     state.decks = data.decks || [];
     state.selectedDeckIndex = data.selectedDeckIndex ?? 0;
     state.completedMissions = new Set(data.completedMissions || []);
+    state.completedSeeds = data.completedSeeds || [];
     state.pendingRewards = data.pendingRewards || [];
     // Keep deprecated fields populated so old TechTree code doesn't crash
     state.unitXp = data.unitXp || {};
@@ -359,4 +364,14 @@ export function getShipOrdnance(): string[] {
 
 export function setShipOrdnance(cardIds: string[]): void {
   state.shipOrdnance = cardIds;
+}
+
+export function addCompletedSeed(seed: string): void {
+  if (!state.completedSeeds.includes(seed)) {
+    state.completedSeeds.push(seed);
+  }
+}
+
+export function getCompletedSeeds(): string[] {
+  return state.completedSeeds;
 }
