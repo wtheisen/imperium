@@ -64,7 +64,7 @@ Key UI files:
 - **Enemy units**: Ork Boy (melee), Ork Shoota (ranged), Ork Nob (brute)
 - **Buildings**: Drop Ship (HQ — heals, passive gold, trains servitors), Barracks (+ATK aura, trains units), Tarantula (auto-turret), Aegis (barricade wall, high armor)
 - **Economy**: Requisition (gold) earned from objectives, kills, supply drops, gathering from gold mines. Spent to play cards.
-- **Missions**: Define terrain, objectives, enemy camps, starting positions in `src/missions/MissionDatabase.ts`
+- **Missions**: All missions are procedurally generated via `src/missions/ProceduralMissionGenerator.ts` (7 archetypes, 4 difficulty tiers). The campaign map generates 9 fresh missions each session (3 easy, 3 medium, 2 hard, 1 brutal). Completed mission seeds are tracked in PlayerState.
 - **Drop site selection**: Player chooses landing zone before each mission (`DropSiteScene`)
 - **Teams**: `EntityTeam = 'player' | 'enemy'`
 
@@ -87,7 +87,7 @@ Key UI files:
 - `src/renderer/TileMapMesh.ts` — 3D terrain tile mesh generation.
 - `src/renderer/TerrainTextures.ts` — Procedural terrain texture generation.
 - `src/renderer/FogRenderer.ts` — Fog of war plane (Y=0.65, above all terrain).
-- `src/missions/MissionDatabase.ts` — Mission definitions with terrain, objectives, enemy camps.
+- `src/missions/ProceduralMissionGenerator.ts` — Procedural mission generator (7 archetypes, seeded RNG, difficulty scaling).
 - `src/state/PlayerState.ts` — Persistent player progression (XP, unlocks).
 - `PLAN_building_economy_redesign.md` — Active design doc for planned building/economy changes.
 - `PLAN_procedural_missions.md` — Design doc for procedural mission generator (7 archetypes, difficulty scaling).
