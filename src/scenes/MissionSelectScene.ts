@@ -77,6 +77,14 @@ function injectStyles(): void {
       color: #c8982a !important;
       transform: scale(1.1);
     }
+    @keyframes dropdown-enter {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .ms-cmd-item:hover {
+      color: #c8982a !important;
+      background: rgba(200,152,42,0.08) !important;
+    }
     .cm-mutator-btn[data-tooltip]:hover::after {
       content: attr(data-tooltip);
       position: absolute;
@@ -697,7 +705,12 @@ export class MissionSelectScene implements GameSceneInterface {
       commandBtn.addEventListener('click', e => {
         e.stopPropagation();
         this.commandDropdownOpen = !this.commandDropdownOpen;
-        dropdown.style.display = this.commandDropdownOpen ? 'block' : 'none';
+        if (this.commandDropdownOpen) {
+          dropdown.style.display = 'block';
+          dropdown.style.animation = 'dropdown-enter 0.15s ease-out';
+        } else {
+          dropdown.style.display = 'none';
+        }
       });
       // Close dropdown on outside click
       document.addEventListener('click', this._closeDropdown);
@@ -707,8 +720,8 @@ export class MissionSelectScene implements GameSceneInterface {
     this.container.querySelectorAll('.ms-cmd-item').forEach(el => {
       const scene = (el as HTMLElement).dataset.scene || '';
       el.addEventListener('mouseenter', () => {
-        (el as HTMLElement).style.background = 'rgba(90,122,138,0.1)';
-        (el as HTMLElement).style.color = '#7a9aaa';
+        (el as HTMLElement).style.background = 'rgba(200,152,42,0.08)';
+        (el as HTMLElement).style.color = '#c8982a';
       });
       el.addEventListener('mouseleave', () => {
         (el as HTMLElement).style.background = 'transparent';
