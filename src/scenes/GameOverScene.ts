@@ -98,6 +98,20 @@ export class GameOverScene implements GameSceneInterface {
     // Save after all rewards applied
     savePlayerState();
 
+    const goStyle = document.createElement('style');
+    goStyle.id = 'game-over-animations';
+    goStyle.textContent = `
+      @keyframes go-fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes go-title-in {
+        from { opacity: 0; transform: scale(0.9); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+    `;
+    document.head.appendChild(goStyle);
+
     this.container = document.createElement('div');
     this.container.id = 'game-over-ui';
     Object.assign(this.container.style, {
@@ -107,6 +121,7 @@ export class GameOverScene implements GameSceneInterface {
       alignItems: 'center',
       fontFamily: '"Share Tech Mono","Courier New",monospace', color: '#c8bfa0',
       overflowY: 'auto',
+      animation: 'go-fade-in 0.5s ease-out both',
     });
 
     const accentColor = this.victory ? '#4a9e4a' : '#c43030';
@@ -127,7 +142,7 @@ export class GameOverScene implements GameSceneInterface {
         </div>`;
       });
       rewardsHtml = `
-        <div style="margin-top:24px;text-align:left;width:300px;">
+        <div style="margin-top:24px;text-align:left;width:300px;animation:go-fade-in 0.4s ease-out 0.3s both;">
           <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">REWARDS EARNED</div>
           <div style="font-size:12px;color:#4a9e4a;border-left:2px solid rgba(74,158,74,0.2);padding-left:10px;">
             ${lines.join('')}
@@ -137,7 +152,7 @@ export class GameOverScene implements GameSceneInterface {
 
     // Req points HTML
     const reqHtml = `
-      <div style="margin-top:${earnedCards.length > 0 ? '16' : '24'}px;text-align:left;width:300px;">
+      <div style="margin-top:${earnedCards.length > 0 ? '16' : '24'}px;text-align:left;width:300px;animation:go-fade-in 0.4s ease-out 0.35s both;">
         <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">REQUISITION POINTS</div>
         <div style="display:flex;align-items:center;gap:10px;border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">
           <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;color:#c8982a;line-height:1;">
@@ -160,7 +175,7 @@ export class GameOverScene implements GameSceneInterface {
         </div>`
       );
       xpHtml = `
-        <div style="margin-top:16px;text-align:left;width:300px;">
+        <div style="margin-top:16px;text-align:left;width:300px;animation:go-fade-in 0.4s ease-out 0.4s both;">
           <div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">EXPERIENCE GAINED</div>
           <div style="font-size:11px;border-left:2px solid rgba(96,144,204,0.2);padding-left:10px;">
             ${lines.join('')}
@@ -177,14 +192,17 @@ export class GameOverScene implements GameSceneInterface {
       </div>
 
       <div style="position:relative;text-align:center;padding:40px 20px 60px;max-width:700px;width:100%;">
-        <div style="font-size:10px;letter-spacing:4px;color:rgba(200,152,42,0.4);margin-bottom:8px;">
+        <div style="font-size:10px;letter-spacing:4px;color:rgba(200,152,42,0.4);margin-bottom:8px;
+          animation:go-fade-in 0.3s ease-out 0.05s both;">
           ${subtitleText}</div>
         <div style="font-family:'Teko',sans-serif;font-size:56px;font-weight:700;
           color:${accentColor};letter-spacing:8px;line-height:1;
-          text-shadow:0 0 30px ${accentColor}30;">
+          text-shadow:0 0 30px ${accentColor}30;
+          animation:go-title-in 0.6s ease-out 0.1s both;">
           ${titleText}</div>
 
-        <div style="margin-top:20px;display:flex;align-items:center;justify-content:center;gap:20px;">
+        <div style="margin-top:20px;display:flex;align-items:center;justify-content:center;gap:20px;
+          animation:go-fade-in 0.4s ease-out 0.2s both;">
           <div style="text-align:center;">
             <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.3);">MISSION</div>
             <div style="font-family:'Teko',sans-serif;font-size:20px;font-weight:600;
@@ -215,7 +233,7 @@ export class GameOverScene implements GameSceneInterface {
 
         ${this.renderBattleReport()}
 
-        <div id="game-over-buttons" style="display:flex;gap:16px;margin-top:32px;justify-content:center;flex-wrap:wrap;"></div>
+        <div id="game-over-buttons" style="display:flex;gap:16px;margin-top:32px;justify-content:center;flex-wrap:wrap;animation:go-fade-in 0.4s ease-out 0.55s both;"></div>
       </div>
     `;
 
@@ -260,7 +278,7 @@ export class GameOverScene implements GameSceneInterface {
     if (!r) return '';
 
     return `
-      <div style="margin-top:24px;width:100%;border-top:1px solid rgba(200,152,42,0.1);padding-top:24px;">
+      <div style="margin-top:24px;width:100%;border-top:1px solid rgba(200,152,42,0.1);padding-top:24px;animation:go-fade-in 0.4s ease-out 0.5s both;">
         <div style="font-family:'Teko',sans-serif;font-size:24px;font-weight:600;letter-spacing:6px;
           color:rgba(200,152,42,0.5);text-align:center;margin-bottom:20px;">AFTER-ACTION REPORT</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
@@ -445,7 +463,7 @@ export class GameOverScene implements GameSceneInterface {
     const bh = this.battleHonours;
     if (!bh || (bh.promoted.length === 0 && bh.fallen.length === 0)) return '';
 
-    let html = `<div style="margin-top:16px;text-align:left;width:300px;">`;
+    let html = `<div style="margin-top:16px;text-align:left;width:300px;animation:go-fade-in 0.4s ease-out 0.45s both;">`;
     html += `<div style="font-size:9px;letter-spacing:2px;color:rgba(200,152,42,0.4);margin-bottom:8px;">BATTLE HONOURS</div>`;
     html += `<div style="border-left:2px solid rgba(200,152,42,0.2);padding-left:10px;">`;
 
@@ -547,6 +565,7 @@ export class GameOverScene implements GameSceneInterface {
 
   shutdown(): void {
     EventBus.off('card-stats', this.onCardStats, this);
+    document.getElementById('game-over-animations')?.remove();
     if (this.container) {
       this.container.remove();
       this.container = null;
