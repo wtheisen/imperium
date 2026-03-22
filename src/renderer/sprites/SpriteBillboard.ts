@@ -6,6 +6,8 @@ import { SpriteSheetConfig } from './SpriteSheetConfig';
  * Gives the AoE2 "standing cutout" look — faces camera horizontally but stays upright.
  */
 export class SpriteBillboard {
+  private static _worldPos = new THREE.Vector3();
+
   readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private config: SpriteSheetConfig;
 
@@ -49,10 +51,9 @@ export class SpriteBillboard {
 
   /** Rotate the billboard to face the camera on the Y axis only. */
   faceCamera(cameraPosition: THREE.Vector3): void {
-    const worldPos = new THREE.Vector3();
-    this.mesh.getWorldPosition(worldPos);
-    const dx = cameraPosition.x - worldPos.x;
-    const dz = cameraPosition.z - worldPos.z;
+    this.mesh.getWorldPosition(SpriteBillboard._worldPos);
+    const dx = cameraPosition.x - SpriteBillboard._worldPos.x;
+    const dz = cameraPosition.z - SpriteBillboard._worldPos.z;
     this.mesh.rotation.y = Math.atan2(dx, dz);
   }
 
