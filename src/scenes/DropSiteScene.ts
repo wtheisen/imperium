@@ -53,6 +53,9 @@ export class DropSiteScene implements GameSceneInterface {
   private generatedPOIs: POIDefinition[] = [];
   private generatedPacks: PackDefinition[] = [];
   private scannerLevel: number = 0;
+  private invalidClickX: number = -1;
+  private invalidClickY: number = -1;
+  private invalidClickTimer: ReturnType<typeof setTimeout> | null = null;
 
   create(data?: { mission?: MissionDefinition }): void {
     if (!data?.mission) {
@@ -451,6 +454,8 @@ export class DropSiteScene implements GameSceneInterface {
           this.updateInfo();
           this.updateZoneButtons();
           this.enableDeployButton();
+        } else {
+          this.showInvalidClick(tx, ty);
         }
       }
     });
@@ -462,6 +467,10 @@ export class DropSiteScene implements GameSceneInterface {
       this.hoverY = Math.floor((e.clientY - rect.top) / TILE_PX);
       const coordsEl = this.container!.querySelector('#drop-coords');
       if (coordsEl) coordsEl.textContent = `${this.hoverX}, ${this.hoverY}`;
+      if (this.canvas) {
+        const inBounds = this.hoverX >= 2 && this.hoverX < MAP_WIDTH - 2 && this.hoverY >= 2 && this.hoverY < MAP_HEIGHT - 2;
+        this.canvas.style.cursor = (inBounds && !this.mapManager.isWalkable(this.hoverX, this.hoverY)) ? 'not-allowed' : 'crosshair';
+      }
       this.drawMap();
       this.updateInfo();
     });
@@ -580,6 +589,19 @@ export class DropSiteScene implements GameSceneInterface {
         </div>
       ` : ''}
     `;
+  }
+
+  private showInvalidClick(tx: number, ty: number): void {
+    if (this.invalidClickTimer !== null) clearTimeout(this.invalidClickTimer);
+    this.invalidClickX = tx;
+    this.invalidClickY = ty;
+    this.drawMap();
+    this.invalidClickTimer = setTimeout(() => {
+      this.invalidClickX = -1;
+      this.invalidClickY = -1;
+      this.invalidClickTimer = null;
+      this.drawMap();
+    }, 600);
   }
 
   private drawMap(): void {
@@ -732,6 +754,19 @@ export class DropSiteScene implements GameSceneInterface {
       ctx.strokeStyle = `${hoverColor}0.6)`;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(this.hoverX * TILE_PX, this.hoverY * TILE_PX, TILE_PX, TILE_PX);
+    }
+
+    // Invalid click flash: red X
+    if (this.invalidClickX >= 0) {
+      const cx = this.invalidClickX * TILE_PX + TILE_PX / 2;
+      const cy = this.invalidClickY * TILE_PX + TILE_PX / 2;
+      const r = TILE_PX * 0.6;
+      ctx.strokeStyle = 'rgba(220,60,60,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+      ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+      ctx.stroke();
     }
 
     // Drop marker: at hover position if no selection yet, otherwise at selection
@@ -958,6 +993,10 @@ export class DropSiteScene implements GameSceneInterface {
   }
 
   shutdown(): void {
+    if (this.invalidClickTimer !== null) {
+      clearTimeout(this.invalidClickTimer);
+      this.invalidClickTimer = null;
+    }
     if (this.container) {
       this.container.remove();
       this.container = null;
