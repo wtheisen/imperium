@@ -11,7 +11,7 @@ const OVERLAY_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9000;
+  z-index: 10000;
   font-family: 'Segoe UI', Tahoma, sans-serif;
 `;
 

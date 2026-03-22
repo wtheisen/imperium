@@ -101,7 +101,7 @@ export class PackPickupUI {
     Object.assign(overlay.style, {
       position: 'absolute',
       inset: '0',
-      zIndex: '50',
+      zIndex: '10000',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
