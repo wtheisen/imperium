@@ -286,13 +286,13 @@ export class UIScene implements GameSceneInterface {
           background:linear-gradient(90deg,transparent 5%,rgba(200,152,42,0.15) 30%,rgba(200,152,42,0.15) 70%,transparent 95%);"></div>
 
         <!-- Section: Hand -->
-        <div style="display:flex; flex-direction:column; min-width:0; overflow:hidden; position:relative;
+        <div style="display:flex; flex-direction:column; min-width:0; overflow:visible; position:relative;
           border-right:1px solid rgba(200,152,42,0.08);">
           <div style="padding:6px 12px 0; flex-shrink:0;">
             <div style="font-size:8px; letter-spacing:2px; color:rgba(200,152,42,0.3);">HAND</div>
           </div>
           <div id="hud-section-hand" style="flex:1; display:flex; align-items:flex-end; justify-content:center;
-            padding:2px 8px 8px; gap:5px; perspective:800px; min-width:0; overflow:hidden;">
+            padding:2px 8px 8px; gap:5px; perspective:800px; min-width:0; overflow:visible;">
           </div>
         </div>
 
