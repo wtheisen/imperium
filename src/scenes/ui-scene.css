@@ -15,6 +15,11 @@
   z-index: 10;
 }
 
+/* Scale down card slots inside the hand section so all cards fit without clipping */
+#hud-section-hand .card-slot {
+  zoom: 0.85;
+}
+
 /* ── MTG-style card frame ── */
 .card-frame {
   position: relative;
