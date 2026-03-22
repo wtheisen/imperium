@@ -74,6 +74,7 @@ export class GameScene implements GameSceneInterface {
   private tutorialSystem!: TutorialSystem;
   private paused: boolean = false;
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
+  private pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
   private poiManager: POIManager | null = null;
   private packManager: PackManager | null = null;
   private takenPackCards: string[] = [];
@@ -733,7 +734,7 @@ export class GameScene implements GameSceneInterface {
     if (buffedUnits.length > 0) {
       EventBus.emit('floating-text-3d', { tileX, tileY, text: `+${atkBonus} ATK BUFF`, color: '#c8982a' });
       // Schedule buff removal
-      setTimeout(() => {
+      this.scheduleTimeout(() => {
         for (const unit of buffedUnits) {
           if (unit.active) {
             unit.stats.attackDamage -= atkBonus;
@@ -890,7 +891,14 @@ export class GameScene implements GameSceneInterface {
     }
   }
 
+  private scheduleTimeout(fn: () => void, ms: number): void {
+    this.pendingTimeouts.push(setTimeout(fn, ms));
+  }
+
   shutdown(): void {
+    this.pendingTimeouts.forEach(clearTimeout);
+    this.pendingTimeouts.length = 0;
+
     EventBus.off('card-drag-start', this.onCardDragStart, this);
     EventBus.off('card-drag-released', this.onCardDragReleased, this);
     EventBus.off('card-drag-move', this.onCardDragMove, this);

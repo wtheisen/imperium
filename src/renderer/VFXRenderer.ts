@@ -60,6 +60,8 @@ export class VFXRenderer {
   // Gold mine models
   private goldMines = new Map<string, { group: THREE.Group; barFill: THREE.Mesh; barBg: THREE.Mesh; label: THREE.Mesh; labelCanvas: HTMLCanvasElement; labelTexture: THREE.CanvasTexture; remaining: number; maxGold: number; glowMesh: THREE.Mesh | null }>();
 
+  private pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
+
   // Reusable geometries
   private sphereGeo = new THREE.SphereGeometry(0.1, 8, 6);
   private boxGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
@@ -570,7 +572,7 @@ export class VFXRenderer {
       el.style.opacity = '0';
     });
 
-    setTimeout(() => el.remove(), 650);
+    this.scheduleTimeout(() => el.remove(), 650);
   };
 
   // ── Mine Tooltip (Gap 9) ──────────────────────────────────────
@@ -984,7 +986,7 @@ export class VFXRenderer {
 
     // Ground impact ring — spawns when pod lands (delayed)
     const landingDelay = 800; // roughly when the pod hits ground
-    setTimeout(() => {
+    this.scheduleTimeout(() => {
       // Dust ring
       const ringGeo = new THREE.RingGeometry(0.2, 0.5, 16);
       ringGeo.rotateX(-Math.PI / 2);
@@ -1447,7 +1449,14 @@ export class VFXRenderer {
     }
   }
 
+  private scheduleTimeout(fn: () => void, ms: number): void {
+    this.pendingTimeouts.push(setTimeout(fn, ms));
+  }
+
   dispose(): void {
+    this.pendingTimeouts.forEach(clearTimeout);
+    this.pendingTimeouts.length = 0;
+
     EventBus.off('command-indicator-3d', this.onCommandIndicator, this);
     EventBus.off('projectile-spawned', this.onProjectileSpawned, this);
     EventBus.off('card-played-3d-vfx', this.onCardPlayedVFX, this);

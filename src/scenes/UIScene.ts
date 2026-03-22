@@ -74,6 +74,7 @@ export class UIScene implements GameSceneInterface {
   // Deck gauge element (Feature 3)
   private deckGaugeEl: HTMLElement | null = null;
   private mutatorHUD: MutatorHUD | null = null;
+  private pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
 
   create(data?: { mission?: MissionDefinition; deck?: Deck }): void {
     this.mission = data?.mission || null;
@@ -406,7 +407,7 @@ export class UIScene implements GameSceneInterface {
       const slotEl = this.slotEls[cardIndex];
       if (slotEl) {
         slotEl.style.animation = 'card-shake 0.35s ease';
-        setTimeout(() => {
+        this.scheduleTimeout(() => {
           if (slotEl) slotEl.style.animation = '';
         }, 350);
       }
@@ -414,7 +415,7 @@ export class UIScene implements GameSceneInterface {
       // Fallback: shake the whole hand
       if (this.handEl) {
         this.handEl.style.animation = 'hand-shake 0.3s ease';
-        setTimeout(() => {
+        this.scheduleTimeout(() => {
           if (this.handEl) this.handEl.style.animation = '';
         }, 300);
       }
@@ -689,7 +690,7 @@ export class UIScene implements GameSceneInterface {
       const slotEl = this.slotEls[index];
       if (slotEl) {
         slotEl.style.animation = 'card-play-out 0.3s ease-in forwards';
-        setTimeout(() => {
+        this.scheduleTimeout(() => {
           this.updateSlot(index);
           this.updateDeckPile();
           this.updateDiscardPile();
@@ -711,7 +712,7 @@ export class UIScene implements GameSceneInterface {
   private showReshuffleAnimation(): void {
     if (!this.deckPileEl) return;
     this.deckPileEl.style.animation = 'deck-reshuffle 0.6s ease-in-out';
-    setTimeout(() => {
+    this.scheduleTimeout(() => {
       if (this.deckPileEl) this.deckPileEl.style.animation = '';
     }, 600);
 
@@ -733,7 +734,7 @@ export class UIScene implements GameSceneInterface {
       label.style.transform = 'translateY(-30px)';
       label.style.opacity = '0';
     });
-    setTimeout(() => label.remove(), 1000);
+    this.scheduleTimeout(() => label.remove(), 1000);
   }
 
   private showNoSwapsFlash(): void {
@@ -752,8 +753,8 @@ export class UIScene implements GameSceneInterface {
     label.style.left = `${rect.left + rect.width / 2 - 50}px`;
     label.style.top = `${rect.top - 16}px`;
     document.body.appendChild(label);
-    setTimeout(() => { label.style.opacity = '0'; }, 100);
-    setTimeout(() => label.remove(), 900);
+    this.scheduleTimeout(() => { label.style.opacity = '0'; }, 100);
+    this.scheduleTimeout(() => label.remove(), 900);
   }
 
   /** Build an empty ghost-frame slot for a hand position with no card. */
@@ -938,7 +939,7 @@ export class UIScene implements GameSceneInterface {
     this.cardPlayCounts[card.id] = (this.cardPlayCounts[card.id] || 0) + 1;
     this.deck.playCard(cardIndex);
     // Delay slot update to let play-out animation finish
-    setTimeout(() => {
+    this.scheduleTimeout(() => {
       this.updateSlot(cardIndex);
       this.updateDeckPile();
       this.updateDiscardPile();
@@ -988,7 +989,7 @@ export class UIScene implements GameSceneInterface {
         const slot = this.deck.hand.indexOf(drawn);
         if (slot >= 0) {
           const staggerDelay = drawIndex * staggerMs;
-          setTimeout(() => {
+          this.scheduleTimeout(() => {
             this.updateSlot(slot);
           }, staggerDelay);
           drawIndex++;
@@ -1149,7 +1150,7 @@ export class UIScene implements GameSceneInterface {
       span.style.transform = 'translateY(-30px)';
       span.style.opacity = '0';
     });
-    setTimeout(() => span.remove(), 1500);
+    this.scheduleTimeout(() => span.remove(), 1500);
   }
 
   /** Show a full-width banner at ~30% from the top of the screen */
@@ -1185,10 +1186,10 @@ export class UIScene implements GameSceneInterface {
       banner.style.opacity = '1';
     });
     // Slide out after duration
-    setTimeout(() => {
+    this.scheduleTimeout(() => {
       banner.style.transform = 'translateY(-100%)';
       banner.style.opacity = '0';
-      setTimeout(() => banner.remove(), 300);
+      this.scheduleTimeout(() => banner.remove(), 300);
     }, duration);
   }
 
@@ -1344,6 +1345,10 @@ export class UIScene implements GameSceneInterface {
     if (this.commandPanel) this.commandPanel.update();
   }
 
+  private scheduleTimeout(fn: () => void, ms: number): void {
+    this.pendingTimeouts.push(setTimeout(fn, ms));
+  }
+
   shutdown(): void {
     // Emit card stats for GameOverScene
     EventBus.emit('card-stats', {
@@ -1352,6 +1357,9 @@ export class UIScene implements GameSceneInterface {
       cardsDiscarded: this.cardsDiscarded,
       reshuffleCount: this.reshuffleCount,
     });
+
+    this.pendingTimeouts.forEach(clearTimeout);
+    this.pendingTimeouts.length = 0;
 
     this.cancelScry();
     if (this.boundScryCancel) document.removeEventListener('click', this.boundScryCancel);
