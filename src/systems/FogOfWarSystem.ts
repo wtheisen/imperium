@@ -50,7 +50,12 @@ export class FogOfWarSystem {
     }
 
     EventBus.on('fog-reveal', this.onFogReveal, this);
+    EventBus.on('entity-died', this.onEntityDied, this);
   }
+
+  private onEntityDied = ({ entity }: { entity: { entityId: string } }): void => {
+    this.hiddenEnemies.delete(entity.entityId);
+  };
 
   private onFogReveal = (data: { tileX: number; tileY: number; radius: number }): void => {
     this.revealAround(data.tileX, data.tileY, data.radius);
@@ -170,6 +175,7 @@ export class FogOfWarSystem {
 
   destroy(): void {
     EventBus.off('fog-reveal', this.onFogReveal, this);
+    EventBus.off('entity-died', this.onEntityDied, this);
     this.fogGrid = [];
     this.prevFogGrid = [];
     this.hiddenEnemies.clear();

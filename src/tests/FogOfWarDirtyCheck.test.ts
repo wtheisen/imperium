@@ -107,4 +107,52 @@ describe('FogOfWarSystem dirty check', () => {
 
     system.destroy();
   });
+
+  it('removes dead enemy from hiddenEnemies on entity-died', () => {
+    // Player at (0,0) sight=6 — enemy at (9,9) is ~12.7 tiles away, outside sight radius
+    const player = makeEntity(0, 0, 'player');
+    const enemy1 = makeEntity(9, 9, 'enemy');
+    const enemies: any[] = [enemy1];
+    const em = mockEntityManager([player], enemies);
+    const system = new FogOfWarSystem(em);
+
+    // First update: enemy1 enters fog → visible=false, hiddenEnemies gets enemy1.entityId
+    system.update(300);
+    expect(enemy1.visible).toBe(false);
+
+    // entity-died fires → fix removes enemy1.entityId from hiddenEnemies
+    EventBus.emit('entity-died', { entity: enemy1 });
+
+    // Simulate entity ID reuse: new entity2 spawns with same ID, visible=true (default)
+    const enemy2 = { ...enemy1, visible: true, active: true };
+    enemies[0] = enemy2;
+
+    // Move player slightly so fog changes and dirty=true triggers updateEnemyVisibility
+    player.tileX = 0;
+    player.tileY = 1;
+    system.update(300);
+
+    // enemy2 tile (9,9) is still in fog; without the fix hiddenEnemies would still have
+    // the stale ID, so !hiddenEnemies.has(id) would be false and visible would stay true.
+    // With the fix the stale entry was removed, so enemy2 gets hidden correctly.
+    expect(enemy2.visible).toBe(false);
+
+    system.destroy();
+  });
+
+  it('stops tracking hiddenEnemies after destroy', () => {
+    // Player at (0,0), enemy at (9,9) — enemy stays in fog
+    const player = makeEntity(0, 0, 'player');
+    const enemy = makeEntity(9, 9, 'enemy');
+    const em = mockEntityManager([player], [enemy]);
+    const system = new FogOfWarSystem(em);
+
+    system.update(300);
+    expect(enemy.visible).toBe(false);
+
+    system.destroy();
+
+    // After destroy, entity-died should not crash (listener was unregistered)
+    EventBus.emit('entity-died', { entity: enemy });
+  });
 });
