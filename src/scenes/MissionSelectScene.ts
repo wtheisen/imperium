@@ -1,11 +1,9 @@
-import { MISSIONS } from '../missions/MissionDatabase';
 import { MissionDefinition } from '../missions/MissionDefinition';
-import { getPlayerState, toggleModifier, savePlayerState } from '../state/PlayerState';
+import { getPlayerState, savePlayerState } from '../state/PlayerState';
 import { MODIFIERS, getModifierBonus } from '../state/DifficultyModifiers';
 import { GameSceneInterface, getSceneManager } from './SceneManager';
-import { generateMission, generateSeedString, parseSeedString } from '../missions/ProceduralMissionGenerator';
-import { EnvironmentModifier } from '../missions/MissionDefinition';
-import { MODIFIER_META } from '../systems/EnvironmentModifierSystem';
+import { generateMission, generateSeedString, parseSeedString, seedToString, getArchetypeLabel } from '../missions/ProceduralMissionGenerator';
+import { getCompletedSeeds } from '../state/PlayerState';
 
 // Inject scoped styles once
 let stylesInjected = false;
@@ -71,12 +69,6 @@ function injectStyles(): void {
     }
     .cm-node-dot:nth-child(2) { animation-delay: -1.33s; }
     .cm-node-dot:nth-child(3) { animation-delay: -2.66s; }
-    .cm-mutator-btn:hover {
-      border-color: rgba(200,152,42,0.5) !important;
-      background: rgba(200,152,42,0.08) !important;
-      color: #c8982a !important;
-      transform: scale(1.1);
-    }
     @keyframes dropdown-enter {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -88,28 +80,6 @@ function injectStyles(): void {
     #cm-modal::-webkit-scrollbar { width: 4px; }
     #cm-modal::-webkit-scrollbar-track { background: transparent; }
     #cm-modal::-webkit-scrollbar-thumb { background: rgba(200,152,42,0.3); border-radius: 2px; }
-    .cm-mutator-btn[data-tooltip]:hover::after {
-      content: attr(data-tooltip);
-      position: absolute;
-      bottom: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%);
-      width: max-content;
-      max-width: 180px;
-      white-space: normal;
-      padding: 6px 10px;
-      background: rgba(10,10,14,0.97);
-      border: 1px solid rgba(200,152,42,0.4);
-      color: #c8bfa0;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 10px;
-      line-height: 1.5;
-      letter-spacing: 0.5px;
-      z-index: 100;
-      pointer-events: none;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-      box-sizing: border-box;
-    }
   `;
   document.head.appendChild(style);
 }
@@ -118,7 +88,7 @@ const DIFF_THEMES: Record<number, { color: string; label: string; symbol: string
   1: { color: '#4a9e4a', label: 'STANDARD',  symbol: 'I'  },
   2: { color: '#c8982a', label: 'HAZARDOUS', symbol: 'II' },
   3: { color: '#c43030', label: 'EXTREMIS',  symbol: 'III' },
-  4: { color: '#8020c0', label: 'HELLDIVE',  symbol: 'IV' },
+  4: { color: '#9933ff', label: 'HELLDIVE',  symbol: 'IV' },
 };
 
 const MAP_TYPE_LABELS: Record<string, string> = {
@@ -126,50 +96,92 @@ const MAP_TYPE_LABELS: Record<string, string> = {
   space_hulk: 'SPACE HULK',
 };
 
-interface CampaignNode {
-  missionId: string;
-  x: number; // % from left of map container
-  y: number; // % from top of map container
+const ARCHETYPE_ICONS: Record<string, string> = {
+  purge_and_destroy: '\u2694',   // crossed swords
+  destroy_and_recover: '\u2726', // four-pointed star
+  hold_and_strike: '\u2761',     // shield
+  activate_sequence: '\u26A1',   // lightning
+  scavenge_and_extract: '\u2692',// pick and hammer
+  deep_infiltration: '\u25C8',   // diamond in box
+  total_purge: '\u2620',         // skull
+  intel_hunt: '\u2316',          // position indicator
+  relay_cascade: '\u2637',       // trigram
+  siege_and_breach: '\u2726',    // star
+};
+
+interface SessionNode {
+  mission: MissionDefinition;
+  seedStr: string;
+  x: number;     // % from left
+  y: number;     // % from top
+  archetypeId: string;
 }
-
-const CAMPAIGN_NODES: CampaignNode[] = [
-  // ── Difficulty 1 — STANDARD (southern landing zones) ──
-  { missionId: 'purge_outskirts', x: 28, y: 72 },
-  { missionId: 'hold_the_line',   x: 62, y: 78 },
-
-  // ── Difficulty 2 — HAZARDOUS (mid-continent band) ──
-  { missionId: 'secure_relay',      x: 18, y: 52 },
-  { missionId: 'vox_array',         x: 42, y: 58 },
-  { missionId: 'scavenge_evacuate', x: 72, y: 55 },
-  { missionId: 'night_raid',        x: 55, y: 42 },
-  { missionId: 'space_hulk_alpha',  x: 83, y: 30 },
-
-  // ── Difficulty 3 — EXTREMIS (northern contested zones) ──
-  { missionId: 'exterminatus',    x: 22, y: 28 },
-  { missionId: 'armored_assault', x: 45, y: 22 },
-  { missionId: 'green_tide',      x: 68, y: 32 },
-  { missionId: 'deep_strike',     x: 86, y: 18 },
-
-  // ── Difficulty 4 — HELLDIVE (enemy heartland) ──
-  { missionId: 'exterminatus_omega', x: 40, y: 10 },
-];
 
 /**
  * MissionSelectScene — Theater-of-war planet surface campaign map.
- * All missions displayed as deployable zones. Click a node to open
- * a floating mission detail modal.
+ * Generates 9 procedural missions each session, displayed as deployable zones.
+ * Click a node to open a floating mission detail modal.
  */
 export class MissionSelectScene implements GameSceneInterface {
   id = 'MissionSelectScene';
   private container: HTMLDivElement | null = null;
-  private selectedMissionId: string | null = null;
+  private selectedNodeIdx: number | null = null;
   private commandDropdownOpen = false;
-  private procDifficulty = 2;
-  private procSeedStr = generateSeedString();
-  private playerMutators = new Set<EnvironmentModifier>();
+  private sessionMissions: SessionNode[] = [];
+  private completedSeeds: Set<string> = new Set();
 
   create(): void {
     injectStyles();
+
+    // Load completed seeds from persistent state
+    const persistedSeeds = getCompletedSeeds();
+    this.completedSeeds = new Set(persistedSeeds);
+
+    // Generate 9 procedural missions: 3 diff1, 3 diff2, 2 diff3, 1 diff4
+    this.sessionMissions = [];
+    const diffDistribution = [1, 1, 1, 2, 2, 2, 3, 3, 4];
+
+    // Node positions by difficulty zone
+    // Easy (diff 1): lower zone (LANDING ZONE ALPHA) — y: 68-82
+    // Medium (diff 2): middle zone (CONTESTED TERRITORY) — y: 42-58
+    // Hard (diff 3): upper zone (ENEMY HEARTLAND) — y: 18-32
+    // Brutal (diff 4): topmost — y: 8-15
+    const positions: Record<number, { x: number; y: number }[]> = {
+      1: [
+        { x: 22, y: 75 }, { x: 50, y: 72 }, { x: 78, y: 78 },
+      ],
+      2: [
+        { x: 18, y: 52 }, { x: 50, y: 48 }, { x: 82, y: 55 },
+      ],
+      3: [
+        { x: 28, y: 28 }, { x: 68, y: 22 },
+      ],
+      4: [
+        { x: 48, y: 10 },
+      ],
+    };
+
+    const posCounters: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+    for (const diff of diffDistribution) {
+      const seedStr = generateSeedString();
+      const seed = parseSeedString(seedStr);
+      const mission = generateMission(diff, seed);
+      const posIdx = posCounters[diff];
+      const pos = positions[diff][posIdx];
+      posCounters[diff]++;
+
+      // Extract archetype from mission ID
+      const archetypeId = mission.id.replace(/^proc_\d+$/, '');
+
+      this.sessionMissions.push({
+        mission,
+        seedStr,
+        x: pos.x,
+        y: pos.y,
+        archetypeId,
+      });
+    }
 
     this.container = document.createElement('div');
     this.container.id = 'mission-select-ui';
@@ -223,7 +235,7 @@ export class MissionSelectScene implements GameSceneInterface {
           <div style="position:relative;">
             <button id="ms-command-btn" style="padding:6px 14px;background:transparent;
               color:#5a7a8a;border:1px solid rgba(90,122,138,0.3);font-family:'Share Tech Mono',monospace;
-              font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">COMMAND ▾</button>
+              font-size:11px;cursor:pointer;letter-spacing:1px;transition:all 0.2s;">COMMAND \u25BE</button>
             <div id="ms-command-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;
               z-index:100;background:rgba(10,10,14,0.97);
               border:1px solid rgba(200,152,42,0.2);min-width:160px;">
@@ -275,68 +287,6 @@ export class MissionSelectScene implements GameSceneInterface {
         <!-- Mission nodes (rendered by JS after DOM insert) -->
         <div id="cm-nodes"></div>
 
-        <!-- Mutator picker row -->
-        <div id="cm-mutator-picker" style="position:absolute;bottom:58px;left:50%;transform:translateX(-50%);
-          z-index:10;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;
-          padding:6px 12px;
-          background:linear-gradient(180deg,rgba(14,12,8,0.92) 0%,rgba(10,10,14,0.92) 100%);
-          border:1px solid rgba(200,152,42,0.12);border-bottom:none;
-          box-shadow:0 -4px 16px rgba(0,0,0,0.4);">
-          <div style="width:100%;font-family:'Teko',sans-serif;font-size:9px;font-weight:500;
-            color:rgba(200,152,42,0.35);letter-spacing:3px;text-align:center;margin-bottom:2px;">MUTATORS</div>
-          ${MODIFIER_META.map(m => `<button class="cm-mutator-btn" data-mod="${m.id}" data-tooltip="${m.name}: ${m.description}" title="${m.name}: ${m.description}" style="
-            width:30px;height:30px;
-            background:rgba(200,191,160,0.03);
-            border:1px solid rgba(200,191,160,0.1);
-            color:#5a5a4a;font-size:14px;
-            cursor:pointer;transition:all 0.2s;
-            display:flex;align-items:center;justify-content:center;
-            position:relative;">${m.icon}</button>`).join('')}
-        </div>
-
-        <!-- Procedural mission generator panel -->
-        <div id="cm-proc-panel" style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
-          z-index:10;display:flex;align-items:center;gap:10px;
-          padding:10px 18px;
-          background:linear-gradient(180deg,rgba(14,12,8,0.95) 0%,rgba(10,10,14,0.95) 100%);
-          border:1px solid rgba(200,152,42,0.2);
-          box-shadow:0 0 20px rgba(0,0,0,0.6),0 0 10px rgba(200,152,42,0.05);">
-          <div style="font-family:'Teko',sans-serif;font-size:11px;font-weight:500;
-            color:rgba(200,152,42,0.5);letter-spacing:3px;">GENERATE OPERATION</div>
-          <div style="width:1px;height:18px;background:rgba(200,152,42,0.15);"></div>
-          <!-- Difficulty selector -->
-          <div style="display:flex;gap:3px;" id="cm-proc-diff">
-            ${[1,2,3,4].map(d => `<button class="cm-proc-diff-btn" data-diff="${d}" style="
-              width:22px;height:22px;
-              background:${d === 2 ? 'rgba(200,152,42,0.15)' : 'rgba(200,191,160,0.03)'};
-              border:1px solid ${d === 2 ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.1)'};
-              color:${d === 2 ? '#c8982a' : '#5a5a4a'};
-              font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;
-              transition:all 0.15s;">${d}</button>`).join('')}
-          </div>
-          <div style="width:1px;height:18px;background:rgba(200,152,42,0.15);"></div>
-          <!-- Seed input -->
-          <input id="cm-proc-seed" type="text" maxlength="6" value="${this.procSeedStr}" style="
-            width:64px;padding:3px 6px;
-            background:rgba(200,191,160,0.03);
-            border:1px solid rgba(200,191,160,0.1);
-            color:#c8982a;font-family:'Share Tech Mono',monospace;font-size:11px;
-            text-align:center;letter-spacing:2px;outline:none;
-            transition:border-color 0.15s;" />
-          <button id="cm-proc-reroll" title="New Seed" style="
-            padding:3px 8px;background:transparent;
-            border:1px solid rgba(200,191,160,0.1);
-            color:#5a7a8a;font-family:'Share Tech Mono',monospace;font-size:11px;
-            cursor:pointer;transition:all 0.15s;">&#x21bb;</button>
-          <div style="width:1px;height:18px;background:rgba(200,152,42,0.15);"></div>
-          <button id="cm-proc-generate" style="
-            padding:6px 16px;
-            background:linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%);
-            border:1px solid rgba(200,152,42,0.4);
-            color:#c8982a;font-family:'Teko',sans-serif;font-size:14px;font-weight:600;
-            letter-spacing:4px;cursor:pointer;transition:all 0.2s;">DEPLOY</button>
-        </div>
-
         <!-- Mission detail modal -->
         <div id="cm-modal" style="display:none;position:absolute;z-index:50;width:340px;
           max-height:75vh;overflow-y:auto;
@@ -362,10 +312,12 @@ export class MissionSelectScene implements GameSceneInterface {
     }).join('');
   }
 
-  private buildMissionModal(mission: MissionDefinition, completed: boolean): string {
+  private buildMissionModal(node: SessionNode): string {
+    const mission = node.mission;
     const state = getPlayerState();
     const theme = DIFF_THEMES[mission.difficulty] || DIFF_THEMES[1];
     const terrainLabel = MAP_TYPE_LABELS[mission.terrain?.mapType || 'outdoor'] || 'PLANETARY SURFACE';
+    const completed = this.completedSeeds.has(node.seedStr);
     const activeIds = state.activeModifiers;
     const bonus = getModifierBonus(activeIds);
 
@@ -377,7 +329,7 @@ export class MissionSelectScene implements GameSceneInterface {
             color:#e8dcc0;letter-spacing:4px;line-height:1;">${mission.name.toUpperCase()}</div>
           <button id="cm-modal-close" style="flex-shrink:0;background:transparent;border:none;
             color:rgba(200,191,160,0.3);font-size:18px;cursor:pointer;padding:0 0 0 8px;
-            line-height:1;transition:color 0.15s;">✕</button>
+            line-height:1;transition:color 0.15s;">\u2715</button>
         </div>
 
         <!-- Threat row -->
@@ -385,7 +337,7 @@ export class MissionSelectScene implements GameSceneInterface {
           <div style="display:flex;align-items:center;gap:6px;">
             <div style="font-size:9px;letter-spacing:2px;color:rgba(200,191,160,0.4);">THREAT</div>
             <div style="display:flex;gap:2px;">
-              ${[1,2,3].map(d => `<div style="width:20px;height:5px;
+              ${[1,2,3,4].map(d => `<div style="width:20px;height:5px;
                 background:${d <= mission.difficulty ? theme.color : 'rgba(200,191,160,0.08)'};
                 ${d <= mission.difficulty ? `box-shadow:0 0 6px ${theme.color}40;` : ''}"></div>`).join('')}
             </div>
@@ -393,6 +345,8 @@ export class MissionSelectScene implements GameSceneInterface {
           </div>
           <div style="width:1px;height:12px;background:rgba(200,191,160,0.1);"></div>
           <div style="font-size:9px;letter-spacing:1px;color:rgba(200,191,160,0.35);">${terrainLabel}</div>
+          <div style="width:1px;height:12px;background:rgba(200,191,160,0.1);"></div>
+          <div style="font-size:9px;letter-spacing:1px;color:rgba(200,191,160,0.25);">SEED: ${node.seedStr}</div>
           ${completed ? `<div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
             <div style="width:6px;height:6px;background:#4a9e4a;border-radius:50%;"></div>
             <div style="font-size:9px;letter-spacing:1px;color:#4a9e4a;">PACIFIED</div>
@@ -502,24 +456,19 @@ export class MissionSelectScene implements GameSceneInterface {
     const container = this.container?.querySelector('#cm-nodes') as HTMLElement | null;
     if (!container) return;
 
-    const state = getPlayerState();
-    const missionMap = new Map(MISSIONS.map(m => [m.id, m]));
-
-    container.innerHTML = CAMPAIGN_NODES.map((node, idx) => {
-      const mission = missionMap.get(node.missionId);
-      if (!mission) return '';
-
+    container.innerHTML = this.sessionMissions.map((node, idx) => {
+      const mission = node.mission;
       const theme = DIFF_THEMES[mission.difficulty] || DIFF_THEMES[1];
-      const completed = state.completedMissions.has(mission.id);
+      const completed = this.completedSeeds.has(node.seedStr);
       const isSpaceHulk = mission.terrain?.mapType === 'space_hulk';
-      const symbol = isSpaceHulk ? '◈' : mission.difficulty >= 4 ? '✦' : '⊕';
-      const selected = this.selectedMissionId === mission.id;
+      const archetypeIcon = ARCHETYPE_ICONS[node.archetypeId] || (isSpaceHulk ? '\u25C8' : mission.difficulty >= 4 ? '\u2726' : '\u2295');
+      const selected = this.selectedNodeIdx === idx;
 
       const nodeColor = completed ? '#4a9e4a' : theme.color;
       const size = mission.difficulty >= 4 ? 62 : mission.difficulty >= 3 ? 54 : 48;
 
       return `
-        <div class="cm-node" data-mission="${mission.id}" style="
+        <div class="cm-node" data-node-idx="${idx}" style="
           position:absolute;
           left:${node.x}%;top:${node.y}%;
           width:${size}px;height:${size}px;
@@ -528,28 +477,28 @@ export class MissionSelectScene implements GameSceneInterface {
           border:${selected ? `2px solid ${nodeColor}` : `1px solid ${nodeColor}60`};
           background:radial-gradient(circle,${nodeColor}${selected ? '28' : '14'} 0%,transparent 70%);
           box-shadow:0 0 ${selected ? '24px' : '12px'} ${nodeColor}${selected ? '60' : '30'};
-          ${!completed ? `animation:cm-node-pulse ${2.5 + idx * 0.3}s ease-in-out infinite;` : ''}
+          ${completed ? `opacity:0.65;` : `animation:cm-node-pulse ${2.5 + idx * 0.3}s ease-in-out infinite;`}
           display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
           cursor:pointer;user-select:none;
           animation-delay:${idx * 0.15}s;
           transition:box-shadow 0.2s,border-color 0.2s;
         ">
-          ${!completed ? `
+          ${completed ? `
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+              font-size:${size * 0.4}px;color:${nodeColor}60;pointer-events:none;">\u2713</div>
+          ` : `
             <div class="cm-node-dot" style="background:${nodeColor};"></div>
             <div class="cm-node-dot" style="background:${nodeColor};animation-delay:-1.33s;"></div>
             <div class="cm-node-dot" style="background:${nodeColor};animation-delay:-2.66s;"></div>
-          ` : `
-            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-              font-size:${size * 0.4}px;color:${nodeColor}40;pointer-events:none;">✦</div>
           `}
-          <div style="position:relative;z-index:1;font-size:${size >= 54 ? '14' : '12'}px;color:${nodeColor};line-height:1;">${symbol}</div>
+          <div style="position:relative;z-index:1;font-size:${size >= 54 ? '14' : '12'}px;color:${nodeColor};line-height:1;">${archetypeIcon}</div>
           <div style="position:relative;z-index:1;font-family:'Teko',sans-serif;font-size:9px;
             color:${nodeColor}cc;letter-spacing:1px;text-align:center;line-height:1.2;
             max-width:${size + 60}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
             ${mission.name.toUpperCase()}
           </div>
           <div style="position:relative;z-index:1;display:flex;gap:2px;margin-top:1px;">
-            ${[1,2,3].map(d => `<div style="width:8px;height:2px;
+            ${[1,2,3,4].map(d => `<div style="width:8px;height:2px;
               background:${d <= mission.difficulty ? nodeColor : nodeColor + '20'};"></div>`).join('')}
           </div>
         </div>
@@ -557,23 +506,21 @@ export class MissionSelectScene implements GameSceneInterface {
     }).join('');
   }
 
-  private showModal(missionId: string): void {
+  private showModal(nodeIdx: number): void {
     const modal = this.container?.querySelector('#cm-modal') as HTMLElement | null;
     const mapEl = this.container?.querySelector('#cm-map') as HTMLElement | null;
     if (!modal || !mapEl) return;
 
-    const mission = MISSIONS.find(m => m.id === missionId);
-    if (!mission) return;
+    const node = this.sessionMissions[nodeIdx];
+    if (!node) return;
 
-    this.selectedMissionId = missionId;
+    this.selectedNodeIdx = nodeIdx;
     this.renderNodes();
 
-    const state = getPlayerState();
-    const completed = state.completedMissions.has(missionId);
-    modal.innerHTML = this.buildMissionModal(mission, completed);
+    modal.innerHTML = this.buildMissionModal(node);
     modal.style.display = 'block';
 
-    // Scroll-hint fade overlay — shown when content overflows below visible area
+    // Scroll-hint fade overlay
     const fade = document.createElement('div');
     fade.id = 'cm-modal-fade';
     Object.assign(fade.style, {
@@ -591,46 +538,45 @@ export class MissionSelectScene implements GameSceneInterface {
     modal.addEventListener('scroll', updateFade);
 
     // Position modal near the node, but keep it on-screen
-    const node = CAMPAIGN_NODES.find(n => n.missionId === missionId);
-    if (node) {
-      const mapRect = mapEl.getBoundingClientRect();
-      const mapW = mapRect.width || window.innerWidth;
-      const mapH = mapRect.height || (window.innerHeight - 50);
+    const mapRect = mapEl.getBoundingClientRect();
+    const mapW = mapRect.width || window.innerWidth;
+    const mapH = mapRect.height || (window.innerHeight - 50);
 
-      const nodeXpx = (node.x / 100) * mapW;
-      const nodeYpx = (node.y / 100) * mapH;
+    const nodeXpx = (node.x / 100) * mapW;
+    const nodeYpx = (node.y / 100) * mapH;
 
-      const modalW = 340;
-      const gap = 20;
+    const modalW = 340;
+    const gap = 20;
 
-      // Horizontal: prefer right, flip left if near right edge
-      let left = nodeXpx + gap;
-      if (left + modalW > mapW - 20) left = nodeXpx - modalW - gap;
-      left = Math.max(10, Math.min(left, mapW - modalW - 10));
+    let left = nodeXpx + gap;
+    if (left + modalW > mapW - 20) left = nodeXpx - modalW - gap;
+    left = Math.max(10, Math.min(left, mapW - modalW - 10));
 
-      // Vertical: prefer center-aligned to node, shift up if near bottom
-      let top = nodeYpx - 80;
-      const approxH = completed ? 560 : 440;
-      if (top + approxH > mapH - 20) top = mapH - approxH - 20;
-      top = Math.max(10, top);
+    let top = nodeYpx - 80;
+    const completed = this.completedSeeds.has(node.seedStr);
+    const approxH = completed ? 560 : 440;
+    if (top + approxH > mapH - 20) top = mapH - approxH - 20;
+    top = Math.max(10, top);
 
-      modal.style.left = `${left}px`;
-      modal.style.top = `${top}px`;
-    }
+    modal.style.left = `${left}px`;
+    modal.style.top = `${top}px`;
 
-    this.wireModalEvents(mission, completed);
+    this.wireModalEvents(node);
   }
 
   private hideModal(): void {
     const modal = this.container?.querySelector('#cm-modal') as HTMLElement | null;
     if (modal) modal.style.display = 'none';
-    this.selectedMissionId = null;
+    this.selectedNodeIdx = null;
     this.renderNodes();
   }
 
-  private wireModalEvents(mission: MissionDefinition, completed: boolean): void {
+  private wireModalEvents(node: SessionNode): void {
     const modal = this.container?.querySelector('#cm-modal');
     if (!modal) return;
+
+    const mission = node.mission;
+    const completed = this.completedSeeds.has(node.seedStr);
 
     // Close button
     modal.querySelector('#cm-modal-close')?.addEventListener('click', e => {
@@ -652,23 +598,29 @@ export class MissionSelectScene implements GameSceneInterface {
         deployBtn.style.letterSpacing = '6px';
       });
       deployBtn.addEventListener('click', () => {
+        // Attach the seed string to the mission for tracking
+        (mission as any)._seedStr = node.seedStr;
         getSceneManager().start('DropSiteScene', { mission });
       });
     }
 
-    // Skull modifier toggles
+    // Skull modifier toggles (only on completed missions)
     if (completed) {
       modal.querySelectorAll('.ms-skull-btn').forEach(el => {
         const modId = (el as HTMLElement).dataset.mod || '';
         el.addEventListener('click', () => {
-          toggleModifier(modId);
-          savePlayerState();
-          // Re-render modal in place
           const state = getPlayerState();
-          const isCompleted = state.completedMissions.has(mission.id);
+          const idx = state.activeModifiers.indexOf(modId);
+          if (idx >= 0) {
+            state.activeModifiers.splice(idx, 1);
+          } else {
+            state.activeModifiers.push(modId);
+          }
+          savePlayerState();
+          // Re-render modal
           (this.container?.querySelector('#cm-modal') as HTMLElement).innerHTML =
-            this.buildMissionModal(mission, isCompleted);
-          this.wireModalEvents(mission, isCompleted);
+            this.buildMissionModal(node);
+          this.wireModalEvents(node);
         });
       });
     }
@@ -684,11 +636,12 @@ export class MissionSelectScene implements GameSceneInterface {
     // Node clicks
     this.container.querySelector('#cm-nodes')?.addEventListener('click', e => {
       const target = (e.target as HTMLElement).closest('.cm-node') as HTMLElement | null;
-      if (target?.dataset.mission) {
-        if (this.selectedMissionId === target.dataset.mission) {
+      if (target?.dataset.nodeIdx !== undefined) {
+        const idx = parseInt(target.dataset.nodeIdx);
+        if (this.selectedNodeIdx === idx) {
           this.hideModal();
         } else {
-          this.showModal(target.dataset.mission);
+          this.showModal(idx);
         }
       }
     });
@@ -732,7 +685,6 @@ export class MissionSelectScene implements GameSceneInterface {
           dropdown.style.display = 'none';
         }
       });
-      // Close dropdown on outside click
       document.addEventListener('click', this._closeDropdown);
     }
 
@@ -752,62 +704,6 @@ export class MissionSelectScene implements GameSceneInterface {
       });
     });
 
-    // Mutator picker toggle buttons
-    this.container.querySelectorAll('.cm-mutator-btn').forEach(el => {
-      const modId = (el as HTMLElement).dataset.mod as EnvironmentModifier;
-      el.addEventListener('click', () => {
-        if (this.playerMutators.has(modId)) {
-          this.playerMutators.delete(modId);
-        } else {
-          this.playerMutators.add(modId);
-        }
-        this.updateMutatorButtons();
-      });
-    });
-
-    // Procedural mission generator panel
-    this.container.querySelectorAll('.cm-proc-diff-btn').forEach(el => {
-      const d = parseInt((el as HTMLElement).dataset.diff || '2');
-      el.addEventListener('click', () => {
-        this.procDifficulty = d;
-        this.updateProcDiffButtons();
-      });
-    });
-
-    this.container.querySelector('#cm-proc-reroll')?.addEventListener('click', () => {
-      this.procSeedStr = generateSeedString();
-      const seedInput = this.container?.querySelector('#cm-proc-seed') as HTMLInputElement | null;
-      if (seedInput) seedInput.value = this.procSeedStr;
-    });
-
-    this.container.querySelector('#cm-proc-seed')?.addEventListener('input', (e) => {
-      this.procSeedStr = ((e.target as HTMLInputElement).value || '').toUpperCase().slice(0, 6);
-    });
-
-    this.container.querySelector('#cm-proc-generate')?.addEventListener('click', () => {
-      const seedInput = this.container?.querySelector('#cm-proc-seed') as HTMLInputElement | null;
-      if (seedInput) this.procSeedStr = seedInput.value.toUpperCase().slice(0, 6);
-      const seed = parseSeedString(this.procSeedStr);
-      const state = getPlayerState();
-      // Merge skull modifiers + player-toggled mutators
-      const allModifiers = [...(state.activeModifiers || []), ...Array.from(this.playerMutators)];
-      const mission = generateMission(this.procDifficulty, seed, allModifiers);
-      getSceneManager().start('DropSiteScene', { mission });
-    });
-
-    // Hover effects on proc generate button
-    const procGen = this.container.querySelector('#cm-proc-generate') as HTMLElement | null;
-    if (procGen) {
-      procGen.addEventListener('mouseenter', () => {
-        procGen.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.25) 0%,rgba(200,152,42,0.1) 100%)';
-        procGen.style.borderColor = 'rgba(200,152,42,0.7)';
-      });
-      procGen.addEventListener('mouseleave', () => {
-        procGen.style.background = 'linear-gradient(180deg,rgba(200,152,42,0.12) 0%,rgba(200,152,42,0.04) 100%)';
-        procGen.style.borderColor = 'rgba(200,152,42,0.4)';
-      });
-    }
-
     // Hover effects on top bar buttons
     ['#ms-edit-decks', '#ms-command-btn'].forEach(sel => {
       const btn = this.container?.querySelector(sel) as HTMLElement | null;
@@ -821,27 +717,6 @@ export class MissionSelectScene implements GameSceneInterface {
           btn.style.color = '#5a7a8a';
         });
       }
-    });
-  }
-
-  private updateProcDiffButtons(): void {
-    this.container?.querySelectorAll('.cm-proc-diff-btn').forEach(el => {
-      const d = parseInt((el as HTMLElement).dataset.diff || '0');
-      const selected = d === this.procDifficulty;
-      (el as HTMLElement).style.background = selected ? 'rgba(200,152,42,0.15)' : 'rgba(200,191,160,0.03)';
-      (el as HTMLElement).style.borderColor = selected ? 'rgba(200,152,42,0.5)' : 'rgba(200,191,160,0.1)';
-      (el as HTMLElement).style.color = selected ? '#c8982a' : '#5a5a4a';
-    });
-  }
-
-  private updateMutatorButtons(): void {
-    this.container?.querySelectorAll('.cm-mutator-btn').forEach(el => {
-      const modId = (el as HTMLElement).dataset.mod as EnvironmentModifier;
-      const active = this.playerMutators.has(modId);
-      (el as HTMLElement).style.background = active ? 'rgba(200,152,42,0.2)' : 'rgba(200,191,160,0.03)';
-      (el as HTMLElement).style.borderColor = active ? 'rgba(200,152,42,0.6)' : 'rgba(200,191,160,0.1)';
-      (el as HTMLElement).style.color = active ? '#c8982a' : '#5a5a4a';
-      (el as HTMLElement).style.boxShadow = active ? '0 0 8px rgba(200,152,42,0.3),inset 0 0 6px rgba(200,152,42,0.1)' : 'none';
     });
   }
 

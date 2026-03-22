@@ -21,7 +21,7 @@ import { Card } from '../cards/Card';
 import { Building } from '../entities/Building';
 import { MissionDefinition } from '../missions/MissionDefinition';
 import { ObjectiveMarker } from '../missions/ObjectiveMarker';
-import { MISSIONS } from '../missions/MissionDatabase';
+import { generateMission } from '../missions/ProceduralMissionGenerator';
 import { SupplyPod } from '../entities/SupplyPod';
 import { XpTracker } from '../systems/XpTracker';
 import { TutorialSystem } from '../systems/TutorialSystem';
@@ -87,7 +87,7 @@ export class GameScene implements GameSceneInterface {
   private terrainEffects!: TerrainEffectSystem;
 
   create(data?: { mission?: MissionDefinition }): void {
-    this.mission = data?.mission || MISSIONS[0];
+    this.mission = data?.mission || generateMission(1, Date.now());
 
     // Setup map
     this.mapManager = new MapManager();
