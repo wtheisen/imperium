@@ -156,3 +156,70 @@ describe('FogOfWarSystem dirty check', () => {
     EventBus.emit('entity-died', { entity: enemy });
   });
 });
+
+describe('FogOfWarSystem out-of-bounds entity coordinates', () => {
+  afterEach(() => {
+    EventBus.removeAllListeners();
+  });
+
+  it('does not throw when a player entity has negative tileX', () => {
+    const unit = makeEntity(-1, 5);
+    const em = mockEntityManager([unit]);
+    const system = new FogOfWarSystem(em);
+    expect(() => system.update(300)).not.toThrow();
+    system.destroy();
+  });
+
+  it('does not throw when a player entity has negative tileY', () => {
+    const unit = makeEntity(5, -1);
+    const em = mockEntityManager([unit]);
+    const system = new FogOfWarSystem(em);
+    expect(() => system.update(300)).not.toThrow();
+    system.destroy();
+  });
+
+  it('does not throw when a player entity tileX >= MAP_WIDTH', () => {
+    const unit = makeEntity(10, 5); // MAP_WIDTH = 10
+    const em = mockEntityManager([unit]);
+    const system = new FogOfWarSystem(em);
+    expect(() => system.update(300)).not.toThrow();
+    system.destroy();
+  });
+
+  it('does not throw when a player entity tileY >= MAP_HEIGHT', () => {
+    const unit = makeEntity(5, 10); // MAP_HEIGHT = 10
+    const em = mockEntityManager([unit]);
+    const system = new FogOfWarSystem(em);
+    expect(() => system.update(300)).not.toThrow();
+    system.destroy();
+  });
+
+  it('skips out-of-bounds entity but still reveals in-bounds entities', () => {
+    const oobUnit = makeEntity(-5, -5);
+    const validUnit = makeEntity(5, 5);
+    let fogUpdatedCalls = 0;
+    EventBus.on('fog-updated', () => { fogUpdatedCalls++; });
+
+    const em = mockEntityManager([oobUnit, validUnit]);
+    const system = new FogOfWarSystem(em);
+
+    system.update(300);
+    // The valid unit should have revealed tiles and triggered a fog update
+    expect(fogUpdatedCalls).toBe(1);
+    system.destroy();
+  });
+
+  it('does not emit fog-updated when only out-of-bounds entities are present', () => {
+    const oobUnit = makeEntity(-100, 200);
+    let fogUpdatedCalls = 0;
+    EventBus.on('fog-updated', () => { fogUpdatedCalls++; });
+
+    const em = mockEntityManager([oobUnit]);
+    const system = new FogOfWarSystem(em);
+
+    system.update(300);
+    // No in-bounds reveals → no tile changes → no event
+    expect(fogUpdatedCalls).toBe(0);
+    system.destroy();
+  });
+});
