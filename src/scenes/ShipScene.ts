@@ -39,6 +39,9 @@ function injectShipStyles(): void {
     .ship-upgrade-btn {
       transition: all 0.15s;
     }
+    .ship-upgrade-btn:not(:disabled) {
+      box-shadow: 0 0 8px rgba(200,152,42,0.15);
+    }
     .ship-upgrade-btn:not(:disabled):hover {
       border-color: rgba(200,152,42,0.7) !important;
       background: rgba(200,152,42,0.18) !important;
@@ -317,9 +320,9 @@ export class ShipScene implements GameSceneInterface {
         Object.assign(upgradeBtn.style, {
           width: '100%',
           padding: '10px 16px',
-          background: canAfford ? 'rgba(200,152,42,0.1)' : 'transparent',
-          border: `1px solid ${canAfford ? 'rgba(200,152,42,0.4)' : 'rgba(200,191,160,0.08)'}`,
-          color: canAfford ? '#c8982a' : '#3a3a2a',
+          background: canAfford ? 'rgba(200,152,42,0.15)' : 'transparent',
+          border: `1px solid ${canAfford ? 'rgba(200,152,42,0.6)' : 'rgba(200,191,160,0.08)'}`,
+          color: canAfford ? '#e8d48b' : '#4a4a3a',
           fontFamily: '"Share Tech Mono",monospace',
           fontSize: '12px',
           cursor: canAfford ? 'pointer' : 'default',
