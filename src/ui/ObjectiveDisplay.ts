@@ -72,12 +72,22 @@ export class ObjectiveDisplay {
       const modLabels: Record<string, string> = {
         dense_fog: 'DENSE FOG', ork_frenzy: 'ORK FRENZY',
         supply_shortage: 'NO SUPPLY', armored_advance: 'ARMORED',
-        night_raid: 'NIGHT OPS',
+        night_raid: 'NIGHT OPS', iron_rain: 'IRON RAIN',
+        toxic_atmosphere: 'TOXIC', ambush_spawns: 'AMBUSH',
+        blood_tithe: 'BLOOD TITHE', killzone: 'KILLZONE',
+        elite_only: 'ELITE ONLY', scrapyard: 'SCRAPYARD',
+        reinforced_walls: 'FORTIFIED', warp_interference: 'WARP',
+        rapid_deployment: 'RAPID DEPLOY',
       };
       const modColors: Record<string, string> = {
         dense_fog: '#6080a0', ork_frenzy: '#c43030',
         supply_shortage: '#c8982a', armored_advance: '#808080',
-        night_raid: '#4060a0',
+        night_raid: '#4060a0', iron_rain: '#ff6600',
+        toxic_atmosphere: '#22cc22', ambush_spawns: '#9933ff',
+        blood_tithe: '#cc0000', killzone: '#ff4444',
+        elite_only: '#c8982a', scrapyard: '#888888',
+        reinforced_walls: '#808080', warp_interference: '#9933ff',
+        rapid_deployment: '#44ccdd',
       };
       for (const mod of mission.environmentModifiers) {
         const tag = document.createElement('span');
