@@ -53,6 +53,7 @@ export class EnemyAI {
             enemy.tileX, enemy.tileY,
             nearestTarget.tileX, nearestTarget.tileY
           );
+          if (!enemy.active) return;
           if (path && path.length > 1) {
             mover.setPath(path.slice(1));
           }
@@ -70,6 +71,7 @@ export class EnemyAI {
             enemy.tileX, enemy.tileY,
             nearestTarget.tileX, nearestTarget.tileY
           );
+          if (!enemy.active) return;
           if (path && path.length > 1) {
             mover.setPath(path.slice(1));
           }
@@ -90,6 +92,7 @@ export class EnemyAI {
         enemy.tileX, enemy.tileY,
         homeX, homeY
       );
+      if (!enemy.active) return;
       if (path && path.length > 1) {
         mover.setPath(path.slice(1));
       }
@@ -105,6 +108,7 @@ export class EnemyAI {
           enemy.tileX, enemy.tileY,
           target.x, target.y
         );
+        if (!enemy.active) return;
         if (path && path.length > 1) {
           mover.setPath(path.slice(1));
         }

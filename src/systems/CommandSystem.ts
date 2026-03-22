@@ -355,6 +355,7 @@ export class CommandSystem {
     if (!mover) return;
 
     const path = await this.pathfinding.findPath(unit.tileX, unit.tileY, targetX, targetY);
+    if (!unit.active) return;
     if (path && path.length > 1) {
       mover.setPath(path.slice(1)); // skip current position
     }
