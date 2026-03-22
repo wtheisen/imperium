@@ -256,18 +256,23 @@ export class TechTreeScene implements GameSceneInterface {
     const isAvailable = canUnlockNode(node.id);
     const isActive = node.effect.type === 'active';
 
-    let borderColor = '#444466';
+    let borderColor = '#333344';
     let fillColor = '#1a1a2e';
     let textColor = '#666666';
+    let boxShadow = 'none';
+    let opacity = '0.5';
 
     if (isUnlocked) {
       borderColor = isActive ? '#44aacc' : '#44aa44';
       fillColor = isActive ? '#1a2e2e' : '#1a2e1a';
       textColor = isActive ? '#88eeff' : '#88ff88';
+      opacity = '0.95';
     } else if (isAvailable) {
       borderColor = isActive ? '#44ccdd' : '#ccaa44';
-      fillColor = isActive ? '#1a2a2e' : '#2e2a1a';
+      fillColor = isActive ? '#1a2a2e' : '#352e1a';
       textColor = isActive ? '#44ccdd' : '#ccaa44';
+      boxShadow = '0 0 10px rgba(204,170,68,0.3), inset 0 0 6px rgba(204,170,68,0.1)';
+      opacity = '0.95';
     } else if (isActive) {
       borderColor = '#335566';
       fillColor = '#151a22';
@@ -291,7 +296,8 @@ export class TechTreeScene implements GameSceneInterface {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      opacity: '0.95',
+      opacity,
+      boxShadow,
     });
 
     // "ACTIVE" badge
@@ -359,12 +365,14 @@ export class TechTreeScene implements GameSceneInterface {
     // Hover and click for available nodes
     if (isAvailable) {
       nodeEl.addEventListener('mouseenter', () => {
-        nodeEl.style.background = '#3a3a1a';
+        nodeEl.style.background = '#3e351a';
         nodeEl.style.borderColor = '#ffd700';
+        nodeEl.style.boxShadow = '0 0 14px rgba(204,170,68,0.4)';
       });
       nodeEl.addEventListener('mouseleave', () => {
         nodeEl.style.background = fillColor;
         nodeEl.style.borderColor = borderColor;
+        nodeEl.style.boxShadow = boxShadow;
       });
       nodeEl.addEventListener('click', () => {
         unlockNode(node.id);
