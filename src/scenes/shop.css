@@ -61,7 +61,6 @@
   letter-spacing: 2px !important;
 }
 .shop-pack-btn:disabled {
-  opacity: 0.3;
   cursor: default !important;
 }
 @keyframes shop-notification-in {

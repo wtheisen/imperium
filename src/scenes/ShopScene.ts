@@ -268,11 +268,12 @@ export class ShopScene implements GameSceneInterface {
         background: canAfford
           ? `linear-gradient(180deg,${pack.color}15 0%,${pack.color}08 100%)`
           : 'transparent',
-        border: `1px solid ${canAfford ? `${pack.color}50` : 'rgba(200,191,160,0.08)'}`,
-        color: canAfford ? pack.color : '#3a3a2a',
+        border: `1px solid ${canAfford ? `${pack.color}50` : 'rgba(200,191,160,0.15)'}`,
+        color: canAfford ? pack.color : '#5a5a4a',
         fontFamily: '"Share Tech Mono",monospace', fontSize: '10px',
         cursor: canAfford ? 'pointer' : 'default',
         letterSpacing: '1px', transition: 'all 0.15s',
+        opacity: canAfford ? '1' : '0.5',
       });
       btn.textContent = `${pack.label} - ${pack.price} RP`;
 
