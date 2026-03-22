@@ -506,8 +506,8 @@ export class MissionSelectScene implements GameSceneInterface {
           <div style="position:relative;z-index:1;font-size:${size >= 54 ? '14' : '12'}px;color:${nodeColor};line-height:1;">${symbol}</div>
           <div style="position:relative;z-index:1;font-family:'Teko',sans-serif;font-size:9px;
             color:${nodeColor}cc;letter-spacing:1px;text-align:center;line-height:1.2;
-            max-width:${size + 20}px;white-space:nowrap;">
-            ${mission.name.toUpperCase().substring(0, 14)}${mission.name.length > 14 ? '…' : ''}
+            max-width:${size + 60}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            ${mission.name.toUpperCase()}
           </div>
           <div style="position:relative;z-index:1;display:flex;gap:2px;margin-top:1px;">
             ${[1,2,3].map(d => `<div style="width:8px;height:2px;
