@@ -181,7 +181,8 @@ export class DropSiteScene implements GameSceneInterface {
 
           <!-- Mission name -->
           <div style="font-family:'Teko',sans-serif;font-size:28px;font-weight:700;
-            color:#e8dcc0;letter-spacing:4px;line-height:1;margin-bottom:4px;">${this.mission.name.toUpperCase()}</div>
+            color:#e8dcc0;letter-spacing:4px;line-height:1.1;margin-bottom:4px;
+            word-break:break-word;">${this.mission.name.toUpperCase()}</div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
             <div style="display:flex;gap:3px;">
               ${[1,2,3].map(d => `<div style="width:18px;height:5px;
