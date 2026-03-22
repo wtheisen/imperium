@@ -175,6 +175,8 @@ export class DropSiteScene implements GameSceneInterface {
 
         <!-- Left: Mission Briefing -->
         <div style="width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:0;
+          background:linear-gradient(270deg, rgba(10,10,14,0.7) 0%, rgba(10,10,14,0.92) 30%, rgba(10,10,14,0.95) 100%);
+          padding-right:16px;
           overflow-y:auto;animation:ds-fade-in 0.4s ease-out;">
 
           <!-- Mission name -->
@@ -309,6 +311,8 @@ export class DropSiteScene implements GameSceneInterface {
 
         <!-- Right: Controls -->
         <div style="width:220px;flex-shrink:0;display:flex;flex-direction:column;gap:0;
+          background:linear-gradient(90deg, rgba(10,10,14,0.7) 0%, rgba(10,10,14,0.92) 30%, rgba(10,10,14,0.95) 100%);
+          padding-left:16px;
           animation:ds-fade-in 0.5s ease-out 0.1s both;">
 
           <!-- Header -->
@@ -547,7 +551,7 @@ export class DropSiteScene implements GameSceneInterface {
         padding:6px 8px;background:rgba(200,191,160,0.02);border-left:2px solid rgba(200,152,42,0.2);">
         <div style="font-size:9px;color:rgba(200,191,160,0.3);letter-spacing:1px;">COORDINATES</div>
         <div style="font-family:'Teko',sans-serif;font-size:18px;font-weight:600;
-          color:#c8982a;">${infoX}, ${infoY}</div>
+          color:#c8982a;">${infoX < 0 || infoY < 0 ? '—' : `${infoX}, ${infoY}`}</div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;
         padding:6px 8px;background:rgba(200,191,160,0.02);border-left:2px solid ${dangerColor}30;">
