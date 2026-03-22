@@ -208,7 +208,7 @@ export class CardEffects {
       }
     }
     if (healed) {
-      EventBus.emit('ordnance-vfx-3d', { type: 'heal', tileX, tileY, radius });
+      this.emitOrdnanceVfx('heal', tileX, tileY, radius);
     }
     return true;
   }
@@ -223,7 +223,7 @@ export class CardEffects {
         }
       }
     }
-    EventBus.emit('ordnance-vfx-3d', { type: 'fireball', tileX, tileY, radius });
+    this.emitOrdnanceVfx('fireball', tileX, tileY, radius);
     return true;
   }
 
@@ -241,27 +241,8 @@ export class CardEffects {
   }
 
   private ordnanceStasis(tileX: number, tileY: number, radius: number, durationMs: number): boolean {
-    const entities = this.entityManager.getEntitiesByTeam('enemy');
-    for (const entity of entities) {
-      if (IsoHelper.tileDistance(entity.tileX, entity.tileY, tileX, tileY) <= radius) {
-        const mover = entity.getComponent<MoverComponent>('mover');
-        const combat = entity.getComponent<CombatComponent>('combat');
-        if (mover) {
-          const oldSpeed = mover.getSpeed();
-          mover.setSpeed(0);
-          mover.stop();
-          const oldCd = combat ? combat.getCooldown() : 0;
-          if (combat) combat.setCooldown(999999);
-          TimerManager.get().schedule(durationMs, () => {
-            if (entity.active) {
-              mover.setSpeed(oldSpeed);
-              if (combat) combat.setCooldown(oldCd);
-            }
-          });
-        }
-      }
-    }
-    EventBus.emit('ordnance-vfx-3d', { type: 'stasis', tileX, tileY, radius, durationMs });
+    this.applyAoESpeedEffect(tileX, tileY, radius, durationMs, 'enemy', () => 0, () => 999999);
+    this.emitOrdnanceVfx('stasis', tileX, tileY, radius, durationMs);
     return true;
   }
 
@@ -288,50 +269,52 @@ export class CardEffects {
         }
       }
     }
-    EventBus.emit('ordnance-vfx-3d', { type: 'vortex', tileX, tileY, radius });
+    this.emitOrdnanceVfx('vortex', tileX, tileY, radius);
     return true;
   }
 
   private ordnanceRally(tileX: number, tileY: number, radius: number, durationMs: number): boolean {
-    const entities = this.entityManager.getEntitiesByTeam('player');
-    for (const entity of entities) {
-      if (IsoHelper.tileDistance(entity.tileX, entity.tileY, tileX, tileY) <= radius) {
-        const mover = entity.getComponent<MoverComponent>('mover');
-        if (mover) {
-          const oldSpeed = mover.getSpeed();
-          mover.setSpeed(oldSpeed * 1.5);
-          TimerManager.get().schedule(durationMs, () => {
-            if (entity.active) mover.setSpeed(oldSpeed);
-          });
-        }
-      }
-    }
-    EventBus.emit('ordnance-vfx-3d', { type: 'heal', tileX, tileY, radius });
+    this.applyAoESpeedEffect(tileX, tileY, radius, durationMs, 'player', s => s * 1.5);
+    this.emitOrdnanceVfx('heal', tileX, tileY, radius);
     return true;
   }
 
   private ordnanceSmoke(tileX: number, tileY: number, radius: number, durationMs: number): boolean {
-    const entities = this.entityManager.getEntitiesByTeam('enemy');
+    this.applyAoESpeedEffect(tileX, tileY, radius, durationMs, 'enemy', s => s * 0.3, cd => cd * 3);
+    this.emitOrdnanceVfx('stasis', tileX, tileY, radius, durationMs);
+    return true;
+  }
+
+  private applyAoESpeedEffect(
+    tileX: number, tileY: number, radius: number, durationMs: number,
+    team: 'player' | 'enemy',
+    speedFn: (oldSpeed: number) => number,
+    cooldownFn?: (oldCd: number) => number,
+  ): void {
+    const entities = this.entityManager.getEntitiesByTeam(team);
     for (const entity of entities) {
       if (IsoHelper.tileDistance(entity.tileX, entity.tileY, tileX, tileY) <= radius) {
         const mover = entity.getComponent<MoverComponent>('mover');
-        const combat = entity.getComponent<CombatComponent>('combat');
-        if (mover) {
-          const oldSpeed = mover.getSpeed();
-          mover.setSpeed(oldSpeed * 0.3);
-          const oldCd = combat ? combat.getCooldown() : 0;
-          if (combat) combat.setCooldown(oldCd * 3);
-          TimerManager.get().schedule(durationMs, () => {
-            if (entity.active) {
-              mover.setSpeed(oldSpeed);
-              if (combat) combat.setCooldown(oldCd);
-            }
-          });
-        }
+        if (!mover) continue;
+        const oldSpeed = mover.getSpeed();
+        const newSpeed = speedFn(oldSpeed);
+        mover.setSpeed(newSpeed);
+        if (newSpeed === 0) mover.stop();
+        const combat = cooldownFn ? entity.getComponent<CombatComponent>('combat') : null;
+        const oldCd = combat ? combat.getCooldown() : 0;
+        if (combat && cooldownFn) combat.setCooldown(cooldownFn(oldCd));
+        TimerManager.get().schedule(durationMs, () => {
+          if (entity.active) {
+            mover.setSpeed(oldSpeed);
+            if (combat && cooldownFn) combat.setCooldown(oldCd);
+          }
+        });
       }
     }
-    EventBus.emit('ordnance-vfx-3d', { type: 'stasis', tileX, tileY, radius, durationMs });
-    return true;
+  }
+
+  private emitOrdnanceVfx(type: string, tileX: number, tileY: number, radius?: number, durationMs?: number): void {
+    EventBus.emit('ordnance-vfx-3d', { type, tileX, tileY, radius, durationMs });
   }
 
   private equipUnit(card: Card, tileX: number, tileY: number): boolean {
