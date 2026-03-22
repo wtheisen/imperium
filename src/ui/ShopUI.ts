@@ -180,6 +180,10 @@ export class ShopUI {
     }
   }
 
+  isVisible(): boolean {
+    return this.overlay !== null;
+  }
+
   hide(): void {
     if (this.overlay) {
       this.overlay.remove();
@@ -188,6 +192,7 @@ export class ShopUI {
       this.cardsRow = null;
       this.subtitleEl = null;
       this.cardEls = [];
+      EventBus.emit('shop-closed');
     }
   }
 

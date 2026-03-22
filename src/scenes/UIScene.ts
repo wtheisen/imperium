@@ -75,6 +75,8 @@ export class UIScene implements GameSceneInterface {
   private deckGaugeEl: HTMLElement | null = null;
   private mutatorHUD: MutatorHUD | null = null;
   private pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
+  private pendingSupplyDrop = false;
+  private pendingPackCollected: { packId: string; type: string; cards: string[] } | null = null;
 
   create(data?: { mission?: MissionDefinition; deck?: Deck }): void {
     this.mission = data?.mission || null;
@@ -137,6 +139,8 @@ export class UIScene implements GameSceneInterface {
     EventBus.on('scout-alert', this.onScoutAlert, this);
     EventBus.on('pack-collected', this.onPackCollected, this);
     EventBus.on('pack-card-taken', this.onPackCardTaken, this);
+    EventBus.on('pack-decision', this.onPackDecisionUI, this);
+    EventBus.on('shop-closed', this.onShopClosed, this);
     EventBus.on('ship-ordnance-select', this.onShipOrdnanceSelect, this);
     EventBus.on('ship-ordnance-fired', this.onShipOrdnanceFired, this);
     EventBus.on('card-drag-cancel', this.onShipOrdnanceCancel, this);
@@ -967,6 +971,10 @@ export class UIScene implements GameSceneInterface {
   }
 
   private onSupplyDrop(): void {
+    if (this.packPickupUI) {
+      this.pendingSupplyDrop = true;
+      return;
+    }
     if (this.shopUI) {
       this.shopUI.showPack(1, 'SUPPLY POD');
     }
@@ -1104,7 +1112,10 @@ export class UIScene implements GameSceneInterface {
   };
 
   private onPackCollected = (data: { packId: string; type: string; cards: string[] }): void => {
-    // Create pack pickup UI overlay
+    if (this.shopUI?.isVisible()) {
+      this.pendingPackCollected = data;
+      return;
+    }
     this.packPickupUI = new PackPickupUI(data.packId, data.type as any, data.cards);
   };
 
@@ -1113,6 +1124,22 @@ export class UIScene implements GameSceneInterface {
     const card = CARD_DATABASE[data.cardId];
     if (card && this.deck) {
       this.deck.addCard(card);
+    }
+  };
+
+  private onPackDecisionUI = (): void => {
+    this.packPickupUI = null;
+    if (this.pendingSupplyDrop) {
+      this.pendingSupplyDrop = false;
+      if (this.shopUI) this.shopUI.showPack(1, 'SUPPLY POD');
+    }
+  };
+
+  private onShopClosed = (): void => {
+    if (this.pendingPackCollected) {
+      const data = this.pendingPackCollected;
+      this.pendingPackCollected = null;
+      this.packPickupUI = new PackPickupUI(data.packId, data.type as any, data.cards);
     }
   };
 
@@ -1387,6 +1414,8 @@ export class UIScene implements GameSceneInterface {
     EventBus.off('scout-alert', this.onScoutAlert, this);
     EventBus.off('pack-collected', this.onPackCollected, this);
     EventBus.off('pack-card-taken', this.onPackCardTaken, this);
+    EventBus.off('pack-decision', this.onPackDecisionUI, this);
+    EventBus.off('shop-closed', this.onShopClosed, this);
     EventBus.off('ship-ordnance-select', this.onShipOrdnanceSelect, this);
     EventBus.off('ship-ordnance-fired', this.onShipOrdnanceFired, this);
     EventBus.off('card-drag-cancel', this.onShipOrdnanceCancel, this);
