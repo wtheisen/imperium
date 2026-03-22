@@ -422,8 +422,8 @@ export class MissionSelectScene implements GameSceneInterface {
       ` : ''}
 
       <!-- Deploy bar -->
-      <div style="padding:14px 22px 18px;border-top:1px solid rgba(200,152,42,0.08);
-        background:linear-gradient(180deg,transparent,rgba(200,152,42,0.02));">
+      <div style="position:sticky;bottom:0;padding:14px 22px 18px;border-top:1px solid rgba(200,152,42,0.08);
+        background:linear-gradient(180deg,rgba(10,10,14,0.97),rgba(10,10,14,0.99));">
         <button id="ms-deploy-btn" style="
           width:100%;position:relative;overflow:hidden;
           padding:12px 0;
@@ -554,8 +554,12 @@ export class MissionSelectScene implements GameSceneInterface {
 
     let top = nodeYpx - 80;
     const completed = this.completedSeeds.has(node.seedStr);
-    const approxH = completed ? 560 : 440;
+    const approxH = 660;
     if (top + approxH > mapH - 20) top = mapH - approxH - 20;
+    // Also clamp so the modal's max-height box (75vh) doesn't extend below the viewport
+    const maxModalH = window.innerHeight * 0.75;
+    const maxTop = window.innerHeight - mapRect.top - maxModalH - 10;
+    top = Math.min(top, maxTop);
     top = Math.max(10, top);
 
     modal.style.left = `${left}px`;
